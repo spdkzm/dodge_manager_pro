@@ -1,9 +1,16 @@
+// lib/features/team_mgmt/database_helper.dart
 import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/schema.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/roster_item.dart';
+
+// 相対パスインポート
+import 'team.dart';
+import 'schema.dart';
+import 'roster_item.dart';
+
+// Phase 2で追加するモデル（簡易定義）
+// ※本格的なモデルクラスは後ほど models.dart 等で整備しますが、
+// ここではDB操作に必要なMap変換の受け口として想定します。
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -20,7 +27,7 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'roster_app.db');
+    final path = join(dbPath, 'dodge_manager_v2.db'); // バージョン変更に伴いファイル名も一新推奨
 
     return await openDatabase(
       path,
@@ -30,6 +37,8 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    // --- 既存: チーム管理用テーブル ---
+
     // 1. チームテーブル
     await db.execute('''
       CREATE TABLE teams(
@@ -59,7 +68,6 @@ class DatabaseHelper {
     ''');
 
     // 3. データ（アイテム）テーブル
-    // 中身のデータ(Map)はJSON文字列としてまとめて保存する
     await db.execute('''
       CREATE TABLE items(
         id TEXT PRIMARY KEY,
@@ -68,14 +76,57 @@ class DatabaseHelper {
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
     ''');
+
+    // --- Phase 2 追加: 試合記録・設定用テーブル ---
+
+    // 4. アクション定義テーブル (旧 ActionItem)
+    // チームごとに「アタック」「パス」などの定義を持てるようにする
+    await db.execute('''
+      CREATE TABLE action_definitions(
+        id TEXT PRIMARY KEY,
+        team_id TEXT,
+        name TEXT,
+        sub_actions TEXT, 
+        is_sub_required INTEGER,
+        sort_order INTEGER,
+        FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // 5. 試合結果テーブル (MatchRecord)
+    await db.execute('''
+      CREATE TABLE matches(
+        id TEXT PRIMARY KEY,
+        team_id TEXT,
+        opponent TEXT,
+        date TEXT,
+        created_at TEXT,
+        FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // 6. 試合ログ詳細テーブル (LogEntry)
+    await db.execute('''
+      CREATE TABLE match_logs(
+        id TEXT PRIMARY KEY,
+        match_id TEXT,
+        game_time TEXT,
+        player_number TEXT,
+        action TEXT,
+        sub_action TEXT,
+        log_type INTEGER,
+        FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+      )
+    ''');
   }
 
-  // --- チーム操作 ---
+  // ==========================================
+  //  既存メソッド (チーム・スキーマ・アイテム)
+  // ==========================================
 
   Future<void> insertTeam(Team team) async {
     final db = await database;
     await db.transaction((txn) async {
-      // チーム本体
       await txn.insert(
         'teams',
         {
@@ -85,7 +136,6 @@ class DatabaseHelper {
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      // 関連するスキーマも保存
       for (var field in team.schema) {
         await _insertField(txn, team.id, field);
       }
@@ -94,18 +144,16 @@ class DatabaseHelper {
 
   Future<void> updateTeamName(String teamId, String name) async {
     final db = await database;
-    await db.update(
-      'teams',
-      {'name': name},
-      where: 'id = ?',
-      whereArgs: [teamId],
-    );
+    await db.update('teams', {'name': name}, where: 'id = ?', whereArgs: [teamId]);
   }
 
   Future<void> deleteTeam(String teamId) async {
     final db = await database;
-    // CASCADE設定が効かない場合があるため手動で子要素も消すのが安全
     await db.transaction((txn) async {
+      // 関連データも削除 (Cascade設定済みだが念のため)
+      await txn.delete('match_logs', where: 'match_id IN (SELECT id FROM matches WHERE team_id = ?)', whereArgs: [teamId]);
+      await txn.delete('matches', where: 'team_id = ?', whereArgs: [teamId]);
+      await txn.delete('action_definitions', where: 'team_id = ?', whereArgs: [teamId]);
       await txn.delete('items', where: 'team_id = ?', whereArgs: [teamId]);
       await txn.delete('fields', where: 'team_id = ?', whereArgs: [teamId]);
       await txn.delete('teams', where: 'id = ?', whereArgs: [teamId]);
@@ -120,11 +168,9 @@ class DatabaseHelper {
     for (var map in teamMaps) {
       final teamId = map['id'] as String;
 
-      // スキーマ取得
       final fieldMaps = await db.query('fields', where: 'team_id = ?', whereArgs: [teamId]);
       final schema = fieldMaps.map((f) => _mapToField(f)).toList();
 
-      // アイテム取得
       final itemMaps = await db.query('items', where: 'team_id = ?', whereArgs: [teamId]);
       final items = itemMaps.map((i) => _mapToItem(i)).toList();
 
@@ -141,8 +187,7 @@ class DatabaseHelper {
     return teams;
   }
 
-  // --- スキーマ操作 ---
-
+  // --- スキーマ操作ヘルパー ---
   Future<void> _insertField(Transaction txn, String teamId, FieldDefinition field) async {
     await txn.insert(
       'fields',
@@ -164,12 +209,10 @@ class DatabaseHelper {
     );
   }
 
-  // 単体での追加（TeamStoreから呼ばれる）
+  // 公開メソッド
   Future<void> insertField(String teamId, FieldDefinition field) async {
     final db = await database;
-    await db.transaction((txn) async {
-      await _insertField(txn, teamId, field);
-    });
+    await db.transaction((txn) async { await _insertField(txn, teamId, field); });
   }
 
   Future<void> deleteField(String fieldId) async {
@@ -177,11 +220,9 @@ class DatabaseHelper {
     await db.delete('fields', where: 'id = ?', whereArgs: [fieldId]);
   }
 
-  // スキーマ全体を更新（並び替え時など）
   Future<void> updateSchema(String teamId, List<FieldDefinition> schema) async {
     final db = await database;
     await db.transaction((txn) async {
-      // 一旦全削除して入れ直すのが最も整合性がとりやすい
       await txn.delete('fields', where: 'team_id = ?', whereArgs: [teamId]);
       for (var field in schema) {
         await _insertField(txn, teamId, field);
@@ -191,29 +232,21 @@ class DatabaseHelper {
 
   Future<void> updateFieldVisibility(String fieldId, bool isVisible) async {
     final db = await database;
-    await db.update(
-      'fields',
-      {'is_visible': isVisible ? 1 : 0},
-      where: 'id = ?',
-      whereArgs: [fieldId],
-    );
+    await db.update('fields', {'is_visible': isVisible ? 1 : 0}, where: 'id = ?', whereArgs: [fieldId]);
+  }
+
+  Future<void> updateViewHiddenFields(String teamId, List<String> hiddenFields) async {
+    final db = await database;
+    await db.update('teams', {'view_hidden_fields': jsonEncode(hiddenFields)}, where: 'id = ?', whereArgs: [teamId]);
   }
 
   // --- アイテム操作 ---
-
   Future<void> insertItem(String teamId, RosterItem item) async {
     final db = await database;
-    // item.toJson()はデータ整形用だが、ここではDB保存用に再整形
-    // RosterItem.toJson() はDateTimeをラップするので、それをそのまま文字列化する
     final jsonStr = jsonEncode(item.toJson()['data']);
-
     await db.insert(
       'items',
-      {
-        'id': item.id,
-        'team_id': teamId,
-        'data': jsonStr,
-      },
+      {'id': item.id, 'team_id': teamId, 'data': jsonStr},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -223,18 +256,87 @@ class DatabaseHelper {
     await db.delete('items', where: 'id = ?', whereArgs: [itemId]);
   }
 
-  // --- 表示フィルター操作 ---
-  Future<void> updateViewHiddenFields(String teamId, List<String> hiddenFields) async {
+  // ==========================================
+  //  Phase 2 追加メソッド: アクション定義
+  // ==========================================
+
+  Future<void> insertActionDefinition(String teamId, Map<String, dynamic> actionData) async {
     final db = await database;
-    await db.update(
-      'teams',
-      {'view_hidden_fields': jsonEncode(hiddenFields)},
-      where: 'id = ?',
-      whereArgs: [teamId],
-    );
+    await db.insert('action_definitions', {
+      'id': actionData['id'],
+      'team_id': teamId,
+      'name': actionData['name'],
+      'sub_actions': jsonEncode(actionData['subActions'] ?? []),
+      'is_sub_required': (actionData['isSubRequired'] ?? false) ? 1 : 0,
+      'sort_order': actionData['sortOrder'] ?? 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  // --- マッピング用ヘルパー ---
+  Future<List<Map<String, dynamic>>> getActionDefinitions(String teamId) async {
+    final db = await database;
+    final res = await db.query('action_definitions', where: 'team_id = ?', orderBy: 'sort_order ASC', whereArgs: [teamId]);
+    return res.map((row) {
+      return {
+        'id': row['id'],
+        'name': row['name'],
+        'subActions': jsonDecode(row['sub_actions'] as String),
+        'isSubRequired': row['is_sub_required'] == 1,
+      };
+    }).toList();
+  }
+
+  // ==========================================
+  //  Phase 2 追加メソッド: 試合記録 (保存)
+  // ==========================================
+
+  /// 試合結果とログを一括保存する
+  /// [matchData]: 試合ヘッダ情報 (id, opponent, date...)
+  /// [logs]: ログリスト (List of Maps)
+  Future<void> insertMatchWithLogs(String teamId, Map<String, dynamic> matchData, List<Map<String, dynamic>> logs) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      // 1. 試合ヘッダ保存
+      await txn.insert('matches', {
+        'id': matchData['id'],
+        'team_id': teamId,
+        'opponent': matchData['opponent'],
+        'date': matchData['date'],
+        'created_at': DateTime.now().toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // 2. ログ保存
+      for (var log in logs) {
+        await txn.insert('match_logs', {
+          'id': log['id'],
+          'match_id': matchData['id'],
+          'game_time': log['gameTime'],
+          'player_number': log['playerNumber'],
+          'action': log['action'],
+          'sub_action': log['subAction'], // null許容
+          'log_type': log['type'], // 0 or 1
+        });
+      }
+    });
+  }
+
+  /// チームごとの全試合履歴を取得 (概要のみ)
+  Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
+    final db = await database;
+    // 日付降順
+    return await db.query('matches', where: 'team_id = ?', orderBy: 'date DESC, created_at DESC', whereArgs: [teamId]);
+  }
+
+  /// 特定の試合のログ詳細を取得
+  Future<List<Map<String, dynamic>>> getMatchLogs(String matchId) async {
+    final db = await database;
+    // 時系列順 (ID作成順と仮定、またはgame_timeでソートが必要なら適宜)
+    // ここでは保存順(通常は時系列)で取得
+    return await db.query('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
+  }
+
+  // ==========================================
+  //  マッピング用ヘルパー
+  // ==========================================
 
   FieldDefinition _mapToField(Map<String, dynamic> map) {
     return FieldDefinition(
@@ -253,9 +355,7 @@ class DatabaseHelper {
   }
 
   RosterItem _mapToItem(Map<String, dynamic> map) {
-    // DBに保存されたJSON文字列をMapに戻す
     final dataMap = jsonDecode(map['data']) as Map<String, dynamic>;
-    // RosterItem.fromJson のロジックを利用してDateTime等を復元
     return RosterItem.fromJson({'id': map['id'], 'data': dataMap});
   }
 }

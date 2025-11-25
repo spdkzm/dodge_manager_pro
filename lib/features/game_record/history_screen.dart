@@ -1,8 +1,12 @@
-// lib/history_screen.dart
+// lib/features/game_record/history_screen.dart
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+// --- インポート追加 ---
+import '../../features/team_mgmt/team_store.dart';
+import '../../features/team_mgmt/database_helper.dart';
+
 import 'models.dart';
-import 'persistence.dart';
+import 'persistence.dart'; // 旧データ読み込み用（必要であれば）
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -12,6 +16,7 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
+  final TeamStore _teamStore = TeamStore(); // チーム情報取得用
   List<MatchRecord> _records = [];
   bool _isLoading = true;
 
@@ -22,19 +27,71 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _loadHistory() async {
-    final list = await DataManager.loadMatchHistory();
-    // 日付の新しい順（降順）にソート
-    list.sort((a, b) => b.id.compareTo(a.id));
-    setState(() {
-      _records = list;
-      _isLoading = false;
-    });
+    // チームがロードされていなければロード
+    if (!_teamStore.isLoaded) {
+      await _teamStore.loadFromDb();
+    }
+    final currentTeam = _teamStore.currentTeam;
+
+    if (currentTeam == null) {
+      setState(() {
+        _isLoading = false;
+        _records = [];
+      });
+      return;
+    }
+
+    try {
+      // 1. DBから試合一覧を取得
+      final matchRows = await DatabaseHelper().getMatches(currentTeam.id);
+
+      List<MatchRecord> loadedRecords = [];
+
+      // 2. 各試合ごとのログを取得してオブジェクト化
+      for (var matchRow in matchRows) {
+        final matchId = matchRow['id'] as String;
+        final logRows = await DatabaseHelper().getMatchLogs(matchId);
+
+        // ログデータをLogEntryオブジェクトに変換
+        final logs = logRows.map((logRow) {
+          return LogEntry(
+            id: logRow['id'] as String,
+            matchDate: matchRow['date'] as String, // 親データから
+            opponent: matchRow['opponent'] as String, // 親データから
+            gameTime: logRow['game_time'] as String,
+            playerNumber: logRow['player_number'] as String,
+            action: logRow['action'] as String,
+            subAction: logRow['sub_action'] as String?,
+            type: LogType.values[logRow['log_type'] as int],
+          );
+        }).toList();
+
+        // 試合記録オブジェクトを作成 (新しい順で来ているのでそのまま追加)
+        loadedRecords.add(MatchRecord(
+          id: matchId,
+          date: matchRow['date'] as String,
+          opponent: matchRow['opponent'] as String,
+          logs: logs, // ログリスト
+        ));
+      }
+
+      setState(() {
+        _records = loadedRecords;
+        _isLoading = false;
+      });
+
+    } catch (e) {
+      debugPrint("History Load Error: $e");
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("試合記録一覧")),
+      appBar: AppBar(title: const Text("試合記録一覧 (DB)")),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _records.isEmpty
@@ -54,7 +111,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(minWidth: 800), // 最低幅を確保
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(Colors.grey[200]),
+                      headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
                       columns: const [
                         DataColumn(label: Text("背番号")),
                         DataColumn(label: Text("時間")),
@@ -65,7 +122,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       rows: record.logs.map((log) {
                         final isSystem = log.type == LogType.system;
                         return DataRow(
-                          color: isSystem ? MaterialStateProperty.all(Colors.grey[100]) : null,
+                          color: isSystem ? WidgetStateProperty.all(Colors.grey[100]) : null,
                           cells: [
                             DataCell(Text(log.playerNumber, style: const TextStyle(fontWeight: FontWeight.bold))),
                             DataCell(Text(log.gameTime, style: const TextStyle(fontFamily: 'monospace'))),

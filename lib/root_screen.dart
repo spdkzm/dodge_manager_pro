@@ -1,7 +1,10 @@
 // lib/root_screen.dart
 import 'package:flutter/material.dart';
+
+// 各機能の画面をインポート
 import 'features/game_record/match_record_screen.dart';
 import 'features/team_mgmt/main_screen.dart';
+import 'features/settings/presentation/unified_settings_screen.dart'; // ★追加
 
 class RootScreen extends StatefulWidget {
   const RootScreen({super.key});
@@ -15,8 +18,9 @@ class _RootScreenState extends State<RootScreen> {
 
   // 各機能のトップ画面
   final List<Widget> _screens = [
-    const MatchRecordScreen(), // アプリ1
-    const MainScreen(),        // アプリ2
+    const MatchRecordScreen(),     // タブ0: 試合記録
+    const MainScreen(),            // タブ1: チーム管理 (旧アプリ2のホーム)
+    const UnifiedSettingsScreen(), // タブ2: 統合設定 (★追加)
   ];
 
   @override
@@ -41,6 +45,11 @@ class _RootScreenState extends State<RootScreen> {
               NavigationRailDestination(
                 icon: Icon(Icons.people_alt),
                 label: Text('チーム管理'),
+              ),
+              // ★追加: 設定タブ
+              NavigationRailDestination(
+                icon: Icon(Icons.settings),
+                label: Text('設定'),
               ),
             ],
           ),
