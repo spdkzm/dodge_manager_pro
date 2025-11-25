@@ -1,9 +1,15 @@
-// lib/match_record_screen.dart
+// lib/features/game_record/match_record_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
+// --- インポート追加: チーム管理機能との連携 ---
+import '../../features/team_mgmt/team_store.dart';
+import '../../features/team_mgmt/schema.dart';
+import '../../features/team_mgmt/roster_item.dart';
+
 import 'models.dart';
-import 'game_settings_screen.dart';
+import 'game_settings_screen.dart'; // リネーム済みのファイル
 import 'persistence.dart';
 import 'history_screen.dart';
 
@@ -15,10 +21,19 @@ class MatchRecordScreen extends StatefulWidget {
 }
 
 class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTickerProviderStateMixin {
+  // チームストアへの参照
+  final TeamStore _teamStore = TeamStore();
+
   AppSettings settings = AppSettings(squadNumbers: [], actions: []);
+
+  // 選手リスト (背番号を格納)
   List<String> courtPlayers = [];
   List<String> benchPlayers = [];
   List<String> absentPlayers = [];
+
+  // 背番号から名前を引くためのマップ (表示用)
+  Map<String, String> _playerNames = {};
+
   List<LogEntry> logs = [];
 
   String? selectedPlayer;
@@ -42,19 +57,79 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() { setState(() {}); });
+
+    // データ読み込み開始
     _loadData();
   }
 
   Future<void> _loadData() async {
+    // 1. 既存の設定（アクション設定や試合時間など）をロード
     final loadedSettings = await DataManager.loadSettings();
     final currentLogs = await DataManager.loadCurrentLogs();
+
+    // 2. チーム管理データ（名簿）をロード
+    // TeamStoreがまだロードされていなければロードを待つ
+    if (!_teamStore.isLoaded) {
+      await _teamStore.loadFromDb();
+    }
+
+    final currentTeam = _teamStore.currentTeam;
+    List<String> rosterNumbers = [];
+    Map<String, String> nameMap = {};
+
+    if (currentTeam != null) {
+      // スキーマから「背番号」と「氏名」のフィールドIDを探す
+      String? numberFieldId;
+      String? nameFieldId;
+
+      for (var field in currentTeam.schema) {
+        if (field.type == FieldType.uniformNumber) {
+          numberFieldId = field.id;
+        } else if (field.type == FieldType.personName) {
+          nameFieldId = field.id;
+        }
+      }
+
+      // 背番号が設定されている選手を抽出
+      if (numberFieldId != null) {
+        for (var item in currentTeam.items) {
+          final numVal = item.data[numberFieldId]?.toString();
+          if (numVal != null && numVal.isNotEmpty) {
+            rosterNumbers.add(numVal);
+
+            // 名前も取得（表示用）
+            String name = "";
+            if (nameFieldId != null) {
+              final nameVal = item.data[nameFieldId];
+              if (nameVal is Map) {
+                name = "${nameVal['last'] ?? ''} ${nameVal['first'] ?? ''}".trim();
+              }
+            }
+            nameMap[numVal] = name;
+          }
+        }
+        // 背番号順にソート (数値として比較)
+        rosterNumbers.sort((a, b) {
+          final intA = int.tryParse(a) ?? 999;
+          final intB = int.tryParse(b) ?? 999;
+          return intA.compareTo(intB);
+        });
+      }
+    }
 
     setState(() {
       settings = loadedSettings;
       logs = currentLogs;
       _opponentName = settings.lastOpponent;
-      benchPlayers = List.from(settings.squadNumbers);
       _remainingSeconds = settings.matchDurationMinutes * 60;
+
+      // 名簿データがある場合はそちらを優先、なければ既存設定を使う（互換性維持）
+      if (rosterNumbers.isNotEmpty) {
+        benchPlayers = rosterNumbers;
+        _playerNames = nameMap;
+      } else {
+        benchPlayers = List.from(settings.squadNumbers);
+      }
     });
   }
 
@@ -67,7 +142,6 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
     });
     _saveCurrentLogs();
 
-    // Undo機能付きスナックバーを表示
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text("ログを削除しました"),
@@ -80,24 +154,34 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
             _saveCurrentLogs();
           },
         ),
-        duration: const Duration(seconds: 5), // 5秒間表示
+        duration: const Duration(seconds: 5),
       ),
     );
   }
 
   void _showEditLogDialog(LogEntry log, int index) {
-    // 編集用の一時変数
     String editNumber = log.playerNumber;
     String editActionName = log.action;
     String? editSubAction = log.subAction;
 
-    // 現在選択されている親アクションを取得（サブアクションのリスト用）
     ActionItem? currentActionItem;
     try {
       currentActionItem = settings.actions.firstWhere((a) => a.name == editActionName);
     } catch (e) {
       currentActionItem = null;
     }
+
+    // 選択肢用のリスト（名簿があればそれを使う）
+    final playerList = _playerNames.isNotEmpty
+        ? _playerNames.keys.toList()
+        : settings.squadNumbers;
+
+    // ソート
+    playerList.sort((a, b) {
+      final intA = int.tryParse(a) ?? 999;
+      final intB = int.tryParse(b) ?? 999;
+      return intA.compareTo(intB);
+    });
 
     showDialog(
       context: context,
@@ -115,9 +199,13 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                   children: [
                     // 選手選択
                     DropdownButtonFormField<String>(
-                      value: settings.squadNumbers.contains(editNumber) ? editNumber : null,
+                      value: playerList.contains(editNumber) ? editNumber : null,
                       decoration: const InputDecoration(labelText: "選手"),
-                      items: settings.squadNumbers.map((n) => DropdownMenuItem(value: n, child: Text(n))).toList(),
+                      items: playerList.map((n) {
+                        final name = _playerNames[n] ?? "";
+                        final label = name.isNotEmpty ? "$n ($name)" : n;
+                        return DropdownMenuItem(value: n, child: Text(label));
+                      }).toList(),
                       onChanged: (val) {
                         if (val != null) setStateDialog(() => editNumber = val);
                       },
@@ -132,7 +220,6 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                         if (val != null) {
                           setStateDialog(() {
                             editActionName = val;
-                            // 親が変わったら子はリセット
                             editSubAction = null;
                             currentActionItem = settings.actions.firstWhere((a) => a.name == val);
                           });
@@ -140,7 +227,7 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                       },
                     ),
                     const SizedBox(height: 16),
-                    // 子アクション選択 (親アクションがサブアクションを持っている場合のみ)
+                    // 子アクション選択
                     if (currentActionItem != null && currentActionItem!.subActions.isNotEmpty)
                       DropdownButtonFormField<String>(
                         value: (editSubAction != null && currentActionItem!.subActions.contains(editSubAction)) ? editSubAction : null,
@@ -152,11 +239,10 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                 ),
               ),
               actions: [
-                // 削除ボタン（ここでしか削除できない）
                 TextButton.icon(
                   onPressed: () {
-                    Navigator.pop(context); // ダイアログを閉じる
-                    _deleteLogWithUndo(log, index); // 削除＆復元バー表示
+                    Navigator.pop(context);
+                    _deleteLogWithUndo(log, index);
                   },
                   icon: const Icon(Icons.delete, color: Colors.red),
                   label: const Text("削除", style: TextStyle(color: Colors.red)),
@@ -317,7 +403,7 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                 child: DataTable(
                   headingRowColor: MaterialStateProperty.all(Colors.grey[200]),
                   columns: const [
-                    DataColumn(label: Text("操作")), // 削除ボタンを操作に変更
+                    DataColumn(label: Text("操作")),
                     DataColumn(label: Text("背番号")),
                     DataColumn(label: Text("時間")),
                     DataColumn(label: Text("親カテゴリ")),
@@ -331,9 +417,6 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                     return DataRow(
                       cells: [
                         DataCell(
-                          // ここでの編集・削除は、ダイアログを一度閉じてからメイン画面で行うように誘導するか、
-                          // 簡易的に削除のみ許可する。今回は「タップで編集」がメイン画面の機能なので
-                          // ここでは削除のみ提供する
                           IconButton(
                             icon: const Icon(Icons.delete, color: Colors.grey),
                             onPressed: () {
@@ -405,7 +488,8 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
       _hasMatchStarted = false;
       _isRunning = false;
       _remainingSeconds = settings.matchDurationMinutes * 60;
-      benchPlayers = List.from(settings.squadNumbers);
+      // リセット時は全選手をベンチに戻す（名簿データがあればそれを再ロード）
+      _loadData();
       courtPlayers.clear();
       absentPlayers.clear();
       selectedForMove.clear();
@@ -458,16 +542,22 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
   void _sortList(List<String> list) => list.sort((a, b) => int.parse(a).compareTo(int.parse(b)));
 
   Future<void> _openSettings() async {
-    final result = await Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen(currentSettings: settings)));
+    final result = await Navigator.of(context).push(MaterialPageRoute(builder: (context) => GameSettingsScreen(currentSettings: settings)));
     if (result != null && result is AppSettings) {
       await DataManager.saveSettings(result);
-      setState(() { settings = result; _loadData(); });
+      setState(() {
+        settings = result;
+        // 設定変更時も、名簿データがあれば優先されるロジックになっているので
+        // 意図的に上書きしたい場合は _loadData を調整する必要があるが、
+        // 今回はアクション設定などの更新が主なので _loadData() を呼ぶ
+        _loadData();
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (settings.squadNumbers.isEmpty && settings.actions.isEmpty) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (settings.squadNumbers.isEmpty && settings.actions.isEmpty && benchPlayers.isEmpty) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
       appBar: AppBar(
@@ -576,7 +666,13 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     const Text("選手:", style: TextStyle(color: Colors.grey)),
-                                    Text(selectedPlayer ?? "-", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                                    // 選手名表示を強化
+                                    Text(
+                                        selectedPlayer != null
+                                            ? "$selectedPlayer ${_playerNames[selectedPlayer] != null ? '(${_playerNames[selectedPlayer]})' : ''}"
+                                            : "-",
+                                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
+                                    ),
                                     const SizedBox(width: 16),
                                     const Icon(Icons.arrow_right, color: Colors.grey),
                                     const SizedBox(width: 16),
@@ -698,7 +794,6 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
                               ],
                             ),
                           ),
-                          // ★修正：ゴミ箱アイコンを削除し、タップで編集ダイアログを開く
                           onTap: () => _showEditLogDialog(log, index),
                         ),
                       );
@@ -719,13 +814,18 @@ class _MatchRecordScreenState extends State<MatchRecordScreen> with SingleTicker
       itemCount: players.length,
       itemBuilder: (context, index) {
         final number = players[index];
+        final name = _playerNames[number] ?? ""; // 名前を取得
         final isSelected = selectedPlayer == number;
         final isMultiSelected = selectedForMove.contains(number);
 
         return Card(
           color: isMultiSelected ? Colors.orange[200] : (isSelected ? Colors.yellow[100] : Colors.white),
           child: ListTile(
+            // 背番号を大きく、名前を小さく表示
             title: Text(number, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+            subtitle: name.isNotEmpty
+                ? Text(name, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center, overflow: TextOverflow.ellipsis)
+                : null,
             onTap: () {
               if (isMultiSelectMode) {
                 _toggleMultiSelect(number);

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team_store.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/schema.dart';
+
+// 相対パスインポート
+import 'team_store.dart';
+import 'schema.dart';
 
 class SchemaSettingsScreen extends StatefulWidget {
   const SchemaSettingsScreen({super.key});
@@ -189,7 +191,9 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
             }
 
             Widget buildUniqueSetting() {
-              if (useDropdown) {
+              // ★背番号はデフォルトでUnique推奨だが、DropdownでなくてもUnique設定を出せるようにしてもよい
+              // ここでは「プルダウンか、または背番号タイプ」の場合に重複禁止設定を出せるようにする
+              if (useDropdown || selectedType == FieldType.uniformNumber) {
                 return Column(
                   children: [
                     const Divider(),
@@ -227,6 +231,8 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
                         DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
                         DropdownMenuItem(value: FieldType.number, child: Text('数値')),
                         DropdownMenuItem(value: FieldType.date, child: Text('日付')),
+                        // ★ユーザーが任意に追加したい場合のために背番号も選べるようにする
+                        DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')),
                       ],
                       onChanged: (val) {
                         if (val != null) {
@@ -234,7 +240,8 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
                             selectedType = val;
                             useDropdown = false;
                             isRange = false;
-                            isUnique = false;
+                            // 背番号ならデフォルトで重複禁止にする
+                            isUnique = (val == FieldType.uniformNumber);
                             tempOptions.clear();
                           });
                         }
@@ -489,6 +496,7 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
       case FieldType.address: return Icons.home;
       case FieldType.phone: return Icons.phone;
       case FieldType.age: return Icons.cake;
+      case FieldType.uniformNumber: return Icons.looks_one; // ★追加
     }
   }
 
@@ -498,6 +506,7 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
       case FieldType.text: typeName = 'テキスト'; break;
       case FieldType.number: typeName = '数値'; break;
       case FieldType.date: typeName = '日付'; break;
+      case FieldType.uniformNumber: typeName = '背番号'; break; // ★追加
       default: typeName = '';
     }
     if (field.useDropdown) {
@@ -505,6 +514,8 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
       if (field.isRange) typeName += ':範囲';
       if (field.isUnique) typeName += ':重複不可';
       typeName += ')';
+    } else if (field.isUnique) { // DropdownでなくてもUniqueなら表示
+      typeName += ' (重複不可)';
     }
     return typeName;
   }

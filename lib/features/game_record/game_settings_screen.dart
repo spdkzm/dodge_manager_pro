@@ -1,17 +1,18 @@
-// lib/settings_screen.dart
+// lib/features/game_record/game_settings_screen.dart
 import 'package:flutter/material.dart';
 import 'models.dart';
 
-class SettingsScreen extends StatefulWidget {
+// クラス名を SettingsScreen -> GameSettingsScreen に変更
+class GameSettingsScreen extends StatefulWidget {
   final AppSettings currentSettings;
 
-  const SettingsScreen({super.key, required this.currentSettings});
+  const GameSettingsScreen({super.key, required this.currentSettings});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  State<GameSettingsScreen> createState() => _GameSettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _GameSettingsScreenState extends State<GameSettingsScreen> {
   late List<String> _numbers;
   late List<ActionItem> _actions;
   late int _durationMinutes;
@@ -302,7 +303,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Container(
                 decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(8)),
                 padding: const EdgeInsets.all(8),
-                // ★修正点：ダミーデータでプレビューを表示するように変更
                 child: GridView.builder(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: _gridColumns,
@@ -310,7 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
                   ),
-                  itemCount: 8, // ダミーで8個表示
+                  itemCount: 8,
                   itemBuilder: (context, index) => ElevatedButton(
                     onPressed: null,
                     child: Text("ボタン${index + 1}"),

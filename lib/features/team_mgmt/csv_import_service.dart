@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/schema.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/roster_item.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team_store.dart';
 import 'package:uuid/uuid.dart';
+
+// 相対パスインポート
+import 'team.dart';
+import 'schema.dart';
+import 'roster_item.dart';
+import 'team_store.dart';
 
 // インポート結果の統計クラス
 class ImportStats {
@@ -154,8 +156,6 @@ class CsvImportService {
           if (_hasChanges(existingItem.data, newItemData, team.schema)) {
             // 変更あり -> 上書き
             existingItem.data = newItemData;
-            // ※ここでsaveItemを呼ぶと大量件数で重くなるため、最後にまとめて保存するか、
-            // TeamStoreに一括更新メソッドを作るのがベストだが、今回は個別に呼ぶ
             _store.saveItem(team.id, existingItem);
             stats.updated++;
           } else {
@@ -192,6 +192,10 @@ class CsvImportService {
       case FieldType.age:
         return num.tryParse(strVal);
 
+      case FieldType.uniformNumber:
+      // 背番号は数値入力だが、「01」などを維持するために文字列として扱う
+        return strVal;
+
       case FieldType.date:
       // yyyy-MM-dd 前提
         try {
@@ -213,14 +217,10 @@ class CsvImportService {
 
       // 複合型(Map)の場合
       if (oldVal is Map && newVal is Map) {
-        // 中身のキーを全比較
-        // CSVから作られたMapは全てのキーを持っているとは限らないので、結合したキーで比較する
-        // ここでは簡易的にtoString()比較、またはキーごとの比較を行う
         if (oldVal.toString() != newVal.toString()) return true;
       }
       // 単純型の場合
       else {
-        // nullと空文字の扱いや、数値の型違い(int vs double)を吸収して比較
         String s1 = oldVal?.toString() ?? '';
         String s2 = newVal?.toString() ?? '';
         if (s1 != s2) return true;

@@ -3,8 +3,10 @@ import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/schema.dart';
+
+// 相対パスインポート
+import 'team.dart';
+import 'schema.dart';
 
 class CsvExportService {
 

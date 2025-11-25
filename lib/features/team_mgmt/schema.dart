@@ -9,6 +9,7 @@ enum FieldType {
   address,    // 住所
   phone,      // 電話番号
   age,        // 年齢
+  uniformNumber, // ★追加: 背番号
 }
 
 class FieldDefinition {

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team_store.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/schema.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/roster_item.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team.dart';
+
+// 相対パスインポート
+import 'team_store.dart';
+import 'schema.dart';
+import 'roster_item.dart';
+import 'team.dart';
 
 class PlayerListScreen extends StatefulWidget {
   const PlayerListScreen({super.key});
@@ -118,12 +120,12 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
 
             Future<void> saveProcess() async {
               for (var field in inputFields) {
-                if (field.isUnique && field.useDropdown) {
+                if (field.isUnique) {
                   final newValue = tempData[field.id];
                   if (newValue == null || newValue.toString().isEmpty) continue;
 
                   final conflictItem = currentTeam.items.cast<RosterItem?>().firstWhere(
-                        (i) => i!.id != (item?.id ?? '') && i.data[field.id] == newValue,
+                        (i) => i!.id != (item?.id ?? '') && i.data[field.id].toString() == newValue.toString(),
                     orElse: () => null,
                   );
 
@@ -155,7 +157,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
 
                     if (doSwap == true) {
                       conflictItem.data[field.id] = null;
-                      _store.updateItem();
+                      _store.saveItem(currentTeam.id, conflictItem); // StoreのsaveItemを使用
                     } else {
                       return;
                     }
@@ -240,20 +242,13 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
       return data[field.id] as Map<String, dynamic>;
     }
 
-    // ▼▼▼ カスタムプルダウンの防御コード追加 ▼▼▼
     if (field.useDropdown) {
-      // 1. 選択肢リストを生成
       final dropdownItems = _generateDropdownItems(field);
-
-      // 2. 現在の値がリストに含まれているかチェック
       dynamic currentValue = data[field.id];
-      final containsValue = dropdownItems.any((item) => item.value == currentValue);
+      final containsValue = dropdownItems.any((item) => item.value.toString() == currentValue.toString());
 
-      // 3. 含まれていなければ null (未選択) にリセットしてクラッシュを防ぐ
       if (!containsValue) {
         currentValue = null;
-        // 必要であればデータ自体も修正しておく
-        // data[field.id] = null;
       }
 
       return Column(
@@ -262,7 +257,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
           Text(field.label, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
           DropdownButtonFormField<dynamic>(
-            value: currentValue, // 安全な値を渡す
+            value: currentValue,
             decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0)),
             items: dropdownItems,
             onChanged: (val) { setStateDialog(() { data[field.id] = val; onChange(); }); },
@@ -362,10 +357,9 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
 
       case FieldType.address:
         final map = getMap();
-        // ▼▼▼ 都道府県プルダウンの防御コード追加 ▼▼▼
         String? currentPref = map['pref'];
         if (currentPref != null && !_prefectures.contains(currentPref)) {
-          currentPref = null; // リストにない値ならnullにしてクラッシュ回避
+          currentPref = null;
         }
 
         return Column(
@@ -402,7 +396,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: currentPref, // 安全な値を渡す
+              value: currentPref,
               decoration: const InputDecoration(labelText: '都道府県'),
               items: _prefectures.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
               onChanged: (v) { map['pref'] = v; onChange(); },
@@ -475,6 +469,22 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
           },
         );
 
+    // ★追加: 背番号入力フォーム (数値キーボードだが文字列として扱う)
+      case FieldType.uniformNumber:
+        return TextFormField(
+          initialValue: data[field.id]?.toString(),
+          decoration: InputDecoration(
+              labelText: field.label,
+              suffixIcon: const Icon(Icons.looks_one),
+              hintText: '例: 1, 10, 01'
+          ),
+          keyboardType: TextInputType.number,
+          onChanged: (val) {
+            data[field.id] = val; // Stringとして保存
+            onChange();
+          },
+        );
+
       case FieldType.text:
       default:
         return TextFormField(
@@ -518,6 +528,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
       case FieldType.address: if (val is Map) return '〒${val['zip1']}-${val['zip2']} ${val['pref']}${val['city']}...'; return val.toString();
       case FieldType.phone: if (val is Map) return '${val['part1']}-${val['part2']}-${val['part3']}'; return val.toString();
       case FieldType.age: return '$val歳';
+      case FieldType.uniformNumber: return '#$val'; // ★追加: 表示形式
       default: return val.toString();
     }
   }
