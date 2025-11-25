@@ -1,12 +1,11 @@
 // lib/features/game_record/history_screen.dart
 import 'package:flutter/material.dart';
 
-// --- インポート追加 ---
 import '../../features/team_mgmt/team_store.dart';
-import '../../features/team_mgmt/database_helper.dart';
+// import '../../features/team_mgmt/database_helper.dart'; // 削除
+import 'data/match_dao.dart'; // ★変更: DAOインポート
 
 import 'models.dart';
-import 'persistence.dart'; // 旧データ読み込み用（必要であれば）
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -16,7 +15,8 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  final TeamStore _teamStore = TeamStore(); // チーム情報取得用
+  final TeamStore _teamStore = TeamStore();
+  final MatchDao _matchDao = MatchDao(); // ★追加
   List<MatchRecord> _records = [];
   bool _isLoading = true;
 
@@ -27,7 +27,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _loadHistory() async {
-    // チームがロードされていなければロード
     if (!_teamStore.isLoaded) {
       await _teamStore.loadFromDb();
     }
@@ -42,36 +41,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     try {
-      // 1. DBから試合一覧を取得
-      final matchRows = await DatabaseHelper().getMatches(currentTeam.id);
+      // ★変更: DAO使用
+      final matchRows = await _matchDao.getMatches(currentTeam.id);
 
       List<MatchRecord> loadedRecords = [];
 
-      // 2. 各試合ごとのログを取得してオブジェクト化
       for (var matchRow in matchRows) {
         final matchId = matchRow['id'] as String;
-        final logRows = await DatabaseHelper().getMatchLogs(matchId);
+        // ★変更: DAO使用
+        final logRows = await _matchDao.getMatchLogs(matchId);
 
-        // ログデータをLogEntryオブジェクトに変換
         final logs = logRows.map((logRow) {
           return LogEntry(
             id: logRow['id'] as String,
-            matchDate: matchRow['date'] as String, // 親データから
-            opponent: matchRow['opponent'] as String, // 親データから
+            matchDate: matchRow['date'] as String,
+            opponent: matchRow['opponent'] as String,
             gameTime: logRow['game_time'] as String,
             playerNumber: logRow['player_number'] as String,
             action: logRow['action'] as String,
             subAction: logRow['sub_action'] as String?,
             type: LogType.values[logRow['log_type'] as int],
+            result: ActionResult.values[logRow['result'] ?? 0], // result対応
           );
         }).toList();
 
-        // 試合記録オブジェクトを作成 (新しい順で来ているのでそのまま追加)
         loadedRecords.add(MatchRecord(
           id: matchId,
           date: matchRow['date'] as String,
           opponent: matchRow['opponent'] as String,
-          logs: logs, // ログリスト
+          logs: logs,
         ));
       }
 
@@ -109,7 +107,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 800), // 最低幅を確保
+                    constraints: const BoxConstraints(minWidth: 800),
                     child: DataTable(
                       headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
                       columns: const [

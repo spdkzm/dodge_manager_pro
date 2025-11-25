@@ -1,6 +1,6 @@
 // lib/features/settings/presentation/action_settings_screen.dart
 import 'package:flutter/material.dart';
-import '../../team_mgmt/database_helper.dart';
+import '../data/action_dao.dart';      // ★変更: Daoインポート
 import '../../team_mgmt/team_store.dart';
 import '../domain/action_definition.dart';
 
@@ -12,6 +12,8 @@ class ActionSettingsScreen extends StatefulWidget {
 
 class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
   final TeamStore _teamStore = TeamStore();
+  final ActionDao _actionDao = ActionDao(); // ★追加
+
   List<ActionDefinition> _actions = [];
   bool _isLoading = true;
 
@@ -22,7 +24,9 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
     if (!_teamStore.isLoaded) await _teamStore.loadFromDb();
     final currentTeam = _teamStore.currentTeam;
     if (currentTeam == null) { setState(() => _isLoading = false); return; }
-    final raw = await DatabaseHelper().getActionDefinitions(currentTeam.id);
+
+    // ★変更: Dao使用
+    final raw = await _actionDao.getActionDefinitions(currentTeam.id);
     setState(() {
       _actions = raw.map((d) => ActionDefinition.fromMap(d)).toList();
       _isLoading = false;
@@ -31,7 +35,8 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
 
   Future<void> _saveAction(ActionDefinition action) async {
     if (_teamStore.currentTeam == null) return;
-    await DatabaseHelper().insertActionDefinition(_teamStore.currentTeam!.id, action.toMap());
+    // ★変更: Dao使用
+    await _actionDao.insertActionDefinition(_teamStore.currentTeam!.id, action.toMap());
     _loadActions();
   }
 
@@ -39,8 +44,9 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
     final isNew = action == null;
     final editingAction = action ?? ActionDefinition(name: '');
     final nameCtrl = TextEditingController(text: editingAction.name);
+    final subCtrl = TextEditingController(); // (今回未使用だが既存ロジック維持)
 
-    // 入力用コントローラ（成功・失敗・共通）
+    // 入力用コントローラ
     final commonSubCtrl = TextEditingController();
     final successSubCtrl = TextEditingController();
     final failureSubCtrl = TextEditingController();
@@ -61,7 +67,6 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            // サブアクション追加ヘルパー
             void addSub(String key, TextEditingController ctrl) {
               if (ctrl.text.trim().isNotEmpty) {
                 setStateDialog(() {
@@ -71,7 +76,6 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
               }
             }
 
-            // サブアクションリスト表示ウィジェット
             Widget buildSubActionList(String key, String label, TextEditingController ctrl) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,42 +101,20 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
                     const SizedBox(height: 16),
 
                     const Text('記録設定', style: TextStyle(fontWeight: FontWeight.bold)),
-                    CheckboxListTile(
-                      title: const Text('「成功」ボタンを作成する'),
-                      value: tempSuccess,
-                      onChanged: (v) => setStateDialog(() => tempSuccess = v!),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    CheckboxListTile(
-                      title: const Text('「失敗」ボタンを作成する'),
-                      value: tempFailure,
-                      onChanged: (v) => setStateDialog(() => tempFailure = v!),
-                      contentPadding: EdgeInsets.zero,
-                    ),
+                    CheckboxListTile(title: const Text('「成功」ボタンを作成する'), value: tempSuccess, onChanged: (v) => setStateDialog(() => tempSuccess = v!), contentPadding: EdgeInsets.zero),
+                    CheckboxListTile(title: const Text('「失敗」ボタンを作成する'), value: tempFailure, onChanged: (v) => setStateDialog(() => tempFailure = v!), contentPadding: EdgeInsets.zero),
                     const Divider(),
 
-                    CheckboxListTile(
-                        title: const Text('詳細(子カテゴリ)の入力を必須にする'),
-                        value: tempRequired,
-                        onChanged: (v) => setStateDialog(() => tempRequired = v!),
-                        contentPadding: EdgeInsets.zero
-                    ),
+                    CheckboxListTile(title: const Text('詳細(子カテゴリ)の入力を必須にする'), value: tempRequired, onChanged: (v) => setStateDialog(() => tempRequired = v!), contentPadding: EdgeInsets.zero),
                     const SizedBox(height: 8),
                     const Text('詳細項目 (子カテゴリ)', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
 
-                    // 成功・失敗の設定に応じて入力欄を出し分け
-                    if (tempSuccess)
-                      buildSubActionList('success', '【成功】の時の詳細項目 (例: 正面, 横)', successSubCtrl),
+                    if (tempSuccess) buildSubActionList('success', '【成功】の時の詳細項目', successSubCtrl),
+                    if (tempFailure) buildSubActionList('failure', '【失敗】の時の詳細項目', failureSubCtrl),
+                    if (!tempSuccess && !tempFailure) buildSubActionList('default', '詳細項目 (共通)', commonSubCtrl),
 
-                    if (tempFailure)
-                      buildSubActionList('failure', '【失敗】の時の詳細項目 (例: パスミス, キャッチミス)', failureSubCtrl),
-
-                    if (!tempSuccess && !tempFailure)
-                      buildSubActionList('default', '詳細項目 (共通)', commonSubCtrl),
-
-                    if (tempSuccess || tempFailure)
-                      const Text('※成功・失敗が選択された場合、それぞれの詳細項目が使われます。', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    if (tempSuccess || tempFailure) const Text('※成功・失敗が選択された場合、それぞれの詳細項目が使われます。', style: TextStyle(fontSize: 11, color: Colors.grey)),
                   ]),
                 ),
               ),
@@ -174,7 +156,7 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
           return ListTile(
             key: ValueKey(item.id),
             title: Text(item.name),
-            subtitle: Text(typeStr),
+            subtitle: Text('$typeStr / 詳細: ${item.subActionsMap.values.fold(0, (p,e)=>p+e.length)}件'),
             trailing: IconButton(icon: const Icon(Icons.edit), onPressed: () => _showEditDialog(action: item)),
           );
         },
