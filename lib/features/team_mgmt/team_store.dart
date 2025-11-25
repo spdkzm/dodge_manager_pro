@@ -1,7 +1,7 @@
+// lib/features/team_mgmt/team_store.dart
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
-// ファイルパスは現在の構成に合わせて相対パスに変更
 import 'team.dart';
 import 'schema.dart';
 import 'roster_item.dart';
@@ -29,7 +29,6 @@ class TeamStore extends ChangeNotifier {
     );
   }
 
-  // --- DB読み込み ---
   Future<void> loadFromDb() async {
     try {
       teams = await _dbHelper.getAllTeams();
@@ -37,7 +36,6 @@ class TeamStore extends ChangeNotifier {
       if (teams.isNotEmpty) {
         currentTeamId = teams.first.id;
       } else {
-        // 初回起動（DBが空）ならデフォルト作成
         _createDefaultTeam();
       }
     } catch (e) {
@@ -49,7 +47,6 @@ class TeamStore extends ChangeNotifier {
     }
   }
 
-  // --- 初期データ生成 ---
   void _createDefaultTeam() {
     final defaultSchema = _createSystemFields();
     final defaultTeam = Team(
@@ -60,20 +57,21 @@ class TeamStore extends ChangeNotifier {
     );
     teams.add(defaultTeam);
     currentTeamId = defaultTeam.id;
-    _dbHelper.insertTeam(defaultTeam); // DBへ保存
+    _dbHelper.insertTeam(defaultTeam);
   }
 
   List<FieldDefinition> _createSystemFields() {
     return [
-      // ★追加: 背番号をシステム標準項目として定義 (重複禁止: true推奨)
+      // ★変更: 背番号とコートネーム、氏名以外はデフォルトOFF(isVisible: false)にする
       FieldDefinition(label: '背番号', type: FieldType.uniformNumber, isSystem: true, isUnique: true),
+      FieldDefinition(label: 'コートネーム', type: FieldType.courtName, isSystem: true), // ★追加
 
       FieldDefinition(label: '氏名', type: FieldType.personName, isSystem: true),
-      FieldDefinition(label: 'フリガナ', type: FieldType.personKana, isSystem: true),
-      FieldDefinition(label: '生年月日', type: FieldType.date, isSystem: true),
-      FieldDefinition(label: '年齢', type: FieldType.age, isSystem: true),
-      FieldDefinition(label: '住所', type: FieldType.address, isSystem: true),
-      FieldDefinition(label: '電話番号', type: FieldType.phone, isSystem: true),
+      FieldDefinition(label: 'フリガナ', type: FieldType.personKana, isSystem: true, isVisible: false),
+      FieldDefinition(label: '生年月日', type: FieldType.date, isSystem: true, isVisible: false),
+      FieldDefinition(label: '年齢', type: FieldType.age, isSystem: true, isVisible: false),
+      FieldDefinition(label: '住所', type: FieldType.address, isSystem: true, isVisible: false),
+      FieldDefinition(label: '電話番号', type: FieldType.phone, isSystem: true, isVisible: false),
     ];
   }
 
@@ -88,13 +86,13 @@ class TeamStore extends ChangeNotifier {
     teams.add(newTeam);
     if (teams.length == 1) currentTeamId = newTeam.id;
 
-    _dbHelper.insertTeam(newTeam); // DB保存
+    _dbHelper.insertTeam(newTeam);
     notifyListeners();
   }
 
   void updateTeamName(Team team, String newName) {
     team.name = newName;
-    _dbHelper.updateTeamName(team.id, newName); // DB更新
+    _dbHelper.updateTeamName(team.id, newName);
     notifyListeners();
   }
 
@@ -103,7 +101,7 @@ class TeamStore extends ChangeNotifier {
     if (currentTeamId == team.id) {
       currentTeamId = teams.isNotEmpty ? teams.first.id : null;
     }
-    _dbHelper.deleteTeam(team.id); // DB削除
+    _dbHelper.deleteTeam(team.id);
     notifyListeners();
   }
 
@@ -118,7 +116,7 @@ class TeamStore extends ChangeNotifier {
     final teamIndex = teams.indexWhere((t) => t.id == teamId);
     if (teamIndex != -1) {
       teams[teamIndex].schema = newSchema;
-      _dbHelper.updateSchema(teamId, newSchema); // DB更新（スキーマ一括）
+      _dbHelper.updateSchema(teamId, newSchema);
       notifyListeners();
     }
   }
@@ -126,20 +124,19 @@ class TeamStore extends ChangeNotifier {
   void addField(String teamId, FieldDefinition field) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.schema.add(field);
-    _dbHelper.insertField(teamId, field); // DB追加
+    _dbHelper.insertField(teamId, field);
     notifyListeners();
   }
 
   void deleteField(String teamId, FieldDefinition field) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.schema.remove(field);
-    _dbHelper.deleteField(field.id); // DB削除
+    _dbHelper.deleteField(field.id);
     notifyListeners();
   }
 
-  // ON/OFFの更新
   void updateField(String teamId, FieldDefinition field) {
-    _dbHelper.updateFieldVisibility(field.id, field.isVisible); // DB更新
+    _dbHelper.updateFieldVisibility(field.id, field.isVisible);
     notifyListeners();
   }
 
@@ -149,7 +146,7 @@ class TeamStore extends ChangeNotifier {
     final item = team.schema.removeAt(oldIndex);
     team.schema.insert(newIndex, item);
 
-    _dbHelper.updateSchema(teamId, team.schema); // DB更新
+    _dbHelper.updateSchema(teamId, team.schema);
     notifyListeners();
   }
 
@@ -162,7 +159,7 @@ class TeamStore extends ChangeNotifier {
     } else {
       team.viewHiddenFields.add(fieldId);
     }
-    _dbHelper.updateViewHiddenFields(teamId, team.viewHiddenFields); // DB更新
+    _dbHelper.updateViewHiddenFields(teamId, team.viewHiddenFields);
     notifyListeners();
   }
 
@@ -171,7 +168,7 @@ class TeamStore extends ChangeNotifier {
   void addItem(String teamId, RosterItem item) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.items.add(item);
-    _dbHelper.insertItem(teamId, item); // DB追加
+    _dbHelper.insertItem(teamId, item);
     notifyListeners();
   }
 
@@ -180,14 +177,14 @@ class TeamStore extends ChangeNotifier {
   }
 
   void saveItem(String teamId, RosterItem item) {
-    _dbHelper.insertItem(teamId, item); // DB上書き保存
+    _dbHelper.insertItem(teamId, item);
     notifyListeners();
   }
 
   void deleteItem(String teamId, RosterItem item) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.items.remove(item);
-    _dbHelper.deleteItem(item.id); // DB削除
+    _dbHelper.deleteItem(item.id);
     notifyListeners();
   }
 }

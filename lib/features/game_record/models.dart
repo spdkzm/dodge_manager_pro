@@ -1,5 +1,12 @@
-// lib/models.dart
+// lib/features/game_record/models.dart
 import 'dart:convert';
+
+// ★追加: アクションの結果
+enum ActionResult {
+  none,    // なし (ファールなど)
+  success, // 成功
+  failure, // 失敗
+}
 
 enum LogType { action, system }
 
@@ -7,11 +14,12 @@ class LogEntry {
   String id;
   String matchDate;
   String opponent;
-  String gameTime; // タイマー時間
+  String gameTime;
   String playerNumber;
   String action;
   String? subAction;
   LogType type;
+  ActionResult result; // ★追加: 結果
 
   LogEntry({
     required this.id,
@@ -22,6 +30,7 @@ class LogEntry {
     required this.action,
     this.subAction,
     this.type = LogType.action,
+    this.result = ActionResult.none, // デフォルトなし
   });
 
   Map<String, dynamic> toJson() => {
@@ -33,6 +42,7 @@ class LogEntry {
     'action': action,
     'subAction': subAction,
     'type': type.index,
+    'result': result.index, // 保存
   };
 
   factory LogEntry.fromJson(Map<String, dynamic> json) {
@@ -45,14 +55,14 @@ class LogEntry {
       action: json['action'],
       subAction: json['subAction'],
       type: LogType.values[json['type'] ?? 0],
+      result: ActionResult.values[json['result'] ?? 0], // 復元
     );
   }
 }
 
-// ★ 1試合分の完了データ
 class MatchRecord {
   String id;
-  String date; // YYYY-MM-DD
+  String date;
   String opponent;
   List<LogEntry> logs;
 
@@ -80,18 +90,36 @@ class MatchRecord {
   }
 }
 
+// UI表示用のアクションアイテム（DBのActionDefinitionから変換される）
 class ActionItem {
   String name;
   List<String> subActions;
   bool isSubRequired;
+  // ★追加
+  bool hasSuccess;
+  bool hasFailure;
 
-  ActionItem({required this.name, this.subActions = const [], this.isSubRequired = false});
+  ActionItem({
+    required this.name,
+    this.subActions = const [],
+    this.isSubRequired = false,
+    this.hasSuccess = false,
+    this.hasFailure = false,
+  });
 
-  Map<String, dynamic> toJson() => {'name': name, 'subActions': subActions, 'isSubRequired': isSubRequired};
+  // JSON互換性のため
+  Map<String, dynamic> toJson() => {
+    'name': name, 'subActions': subActions, 'isSubRequired': isSubRequired,
+    'hasSuccess': hasSuccess, 'hasFailure': hasFailure,
+  };
+
+  // 旧Persistence.dartからの読み込み用Factory（互換性維持）
   factory ActionItem.fromJson(Map<String, dynamic> json) => ActionItem(
     name: json['name'],
     subActions: List<String>.from(json['subActions'] ?? []),
     isSubRequired: json['isSubRequired'] ?? false,
+    hasSuccess: json['hasSuccess'] ?? false,
+    hasFailure: json['hasFailure'] ?? false,
   );
 }
 
@@ -122,6 +150,7 @@ class AppSettings {
     List<ActionItem> loadedActions = [];
     if (json['actions'] != null) {
       if ((json['actions'] as List).isNotEmpty && json['actions'][0] is String) {
+        // 互換性: 古い文字列リスト形式の場合
         loadedActions = (json['actions'] as List).map((e) => ActionItem(name: e)).toList();
       } else {
         loadedActions = (json['actions'] as List).map((e) => ActionItem.fromJson(e)).toList();

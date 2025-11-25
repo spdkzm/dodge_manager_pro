@@ -1,30 +1,32 @@
+// lib/features/team_mgmt/schema.dart
 import 'package:uuid/uuid.dart';
 
 enum FieldType {
-  text,       // テキスト
-  number,     // 数値
-  date,       // 日付
-  personName, // 氏名
-  personKana, // フリガナ
-  address,    // 住所
-  phone,      // 電話番号
-  age,        // 年齢
-  uniformNumber, // ★追加: 背番号
+  text,
+  number,
+  date,
+  personName,
+  personKana,
+  address,
+  phone,
+  age,
+  uniformNumber,
+  courtName, // ★追加: コートネーム
 }
 
 class FieldDefinition {
   String id;
-  String label;       // 項目名
-  FieldType type;     // データ型
-  bool isSystem;      // システム標準項目か
-  bool isVisible;     // 表示するか
+  String label;
+  FieldType type;
+  bool isSystem;
+  bool isVisible;
 
-  bool useDropdown;   // プルダウンを使用するか
-  bool isRange;       // 数値の場合：範囲指定か
-  List<String> options; // プルダウンの選択肢
-  int? minNum;        // 数値範囲：下限
-  int? maxNum;        // 数値範囲：上限
-  bool isUnique;      // 重複を禁止するか
+  bool useDropdown;
+  bool isRange;
+  List<String> options;
+  int? minNum;
+  int? maxNum;
+  bool isUnique;
 
   FieldDefinition({
     String? id,

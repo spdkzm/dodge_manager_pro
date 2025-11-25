@@ -1,11 +1,11 @@
+// lib/features/settings/presentation/action_settings_screen.dart
 import 'package:flutter/material.dart';
-import '../../team_mgmt/database_helper.dart'; // DBヘルパー
-import '../../team_mgmt/team_store.dart';      // チームID取得用
-import '../domain/action_definition.dart';     // 新モデル
+import '../../team_mgmt/database_helper.dart';
+import '../../team_mgmt/team_store.dart';
+import '../domain/action_definition.dart';
 
 class ActionSettingsScreen extends StatefulWidget {
   const ActionSettingsScreen({super.key});
-
   @override
   State<ActionSettingsScreen> createState() => _ActionSettingsScreenState();
 }
@@ -16,59 +16,44 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
   bool _isLoading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _loadActions();
-  }
+  void initState() { super.initState(); _loadActions(); }
 
   Future<void> _loadActions() async {
     if (!_teamStore.isLoaded) await _teamStore.loadFromDb();
     final currentTeam = _teamStore.currentTeam;
-
-    if (currentTeam == null) {
-      setState(() => _isLoading = false);
-      return;
-    }
-
-    // DBからアクション定義を取得
-    final rawData = await DatabaseHelper().getActionDefinitions(currentTeam.id);
-    final loaded = rawData.map((d) => ActionDefinition.fromMap(d)).toList();
-
-    // データがない場合、初期値をセットするロジックを入れても良いが、
-    // ここでは「空なら空」として扱う（あるいは別途初期化ボタンを作る）
-
+    if (currentTeam == null) { setState(() => _isLoading = false); return; }
+    final raw = await DatabaseHelper().getActionDefinitions(currentTeam.id);
     setState(() {
-      _actions = loaded;
+      _actions = raw.map((d) => ActionDefinition.fromMap(d)).toList();
       _isLoading = false;
     });
   }
 
   Future<void> _saveAction(ActionDefinition action) async {
-    final currentTeam = _teamStore.currentTeam;
-    if (currentTeam == null) return;
-
-    await DatabaseHelper().insertActionDefinition(currentTeam.id, action.toMap());
-    _loadActions(); // リロード
-  }
-
-  Future<void> _deleteAction(ActionDefinition action) async {
-    // 削除機能はDatabaseHelperにメソッドが必要だが、
-    // 今回のStep 2-1では insertActionDefinition しかなかったため
-    // 暫定的に「削除機能は次回実装」とするか、DBHelperへの追加が必要。
-    // ここではUIのみ実装し、削除確認だけ出す。
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('削除機能はDBHelperへの追加が必要です')));
+    if (_teamStore.currentTeam == null) return;
+    await DatabaseHelper().insertActionDefinition(_teamStore.currentTeam!.id, action.toMap());
+    _loadActions();
   }
 
   void _showEditDialog({ActionDefinition? action}) {
     final isNew = action == null;
     final editingAction = action ?? ActionDefinition(name: '');
-
     final nameCtrl = TextEditingController(text: editingAction.name);
-    final subCtrl = TextEditingController();
 
-    // UI用の一時変数
-    List<String> tempSubs = List.from(editingAction.subActions);
+    // 入力用コントローラ（成功・失敗・共通）
+    final commonSubCtrl = TextEditingController();
+    final successSubCtrl = TextEditingController();
+    final failureSubCtrl = TextEditingController();
+
+    // 一時データ
+    Map<String, List<String>> tempSubsMap = {
+      'default': List<String>.from(editingAction.subActionsMap['default'] ?? []),
+      'success': List<String>.from(editingAction.subActionsMap['success'] ?? []),
+      'failure': List<String>.from(editingAction.subActionsMap['failure'] ?? []),
+    };
     bool tempRequired = editingAction.isSubRequired;
+    bool tempSuccess = editingAction.hasSuccess;
+    bool tempFailure = editingAction.hasFailure;
 
     showDialog(
       context: context,
@@ -76,77 +61,93 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            void addSub() {
-              if (subCtrl.text.trim().isNotEmpty) {
+            // サブアクション追加ヘルパー
+            void addSub(String key, TextEditingController ctrl) {
+              if (ctrl.text.trim().isNotEmpty) {
                 setStateDialog(() {
-                  tempSubs.add(subCtrl.text.trim());
-                  subCtrl.clear();
+                  tempSubsMap[key]!.add(ctrl.text.trim());
+                  ctrl.clear();
                 });
               }
+            }
+
+            // サブアクションリスト表示ウィジェット
+            Widget buildSubActionList(String key, String label, TextEditingController ctrl) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Row(children: [
+                    Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()), onSubmitted: (_) => addSub(key, ctrl))),
+                    IconButton(icon: const Icon(Icons.add_circle, color: Colors.blue), onPressed: () => addSub(key, ctrl)),
+                  ]),
+                  Wrap(spacing: 4, children: tempSubsMap[key]!.map((sub) => Chip(label: Text(sub), onDeleted: () => setStateDialog(() => tempSubsMap[key]!.remove(sub)))).toList()),
+                  const SizedBox(height: 8),
+                ],
+              );
             }
 
             return AlertDialog(
               title: Text(isNew ? 'アクション追加' : 'アクション編集'),
               content: SizedBox(
-                width: 400,
+                width: 500,
                 child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: 'アクション名 (例: アタック成功)'),
-                      ),
-                      const SizedBox(height: 16),
-                      CheckboxListTile(
+                  child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'アクション名')),
+                    const SizedBox(height: 16),
+
+                    const Text('記録設定', style: TextStyle(fontWeight: FontWeight.bold)),
+                    CheckboxListTile(
+                      title: const Text('「成功」ボタンを作成する'),
+                      value: tempSuccess,
+                      onChanged: (v) => setStateDialog(() => tempSuccess = v!),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    CheckboxListTile(
+                      title: const Text('「失敗」ボタンを作成する'),
+                      value: tempFailure,
+                      onChanged: (v) => setStateDialog(() => tempFailure = v!),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    const Divider(),
+
+                    CheckboxListTile(
                         title: const Text('詳細(子カテゴリ)の入力を必須にする'),
                         value: tempRequired,
                         onChanged: (v) => setStateDialog(() => tempRequired = v!),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      const Divider(),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: subCtrl,
-                              decoration: const InputDecoration(labelText: '詳細項目を追加 (例: 正面, 横)'),
-                              onSubmitted: (_) => addSub(),
-                            ),
-                          ),
-                          IconButton(icon: const Icon(Icons.add_circle), onPressed: addSub),
-                        ],
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        children: tempSubs.map((sub) => Chip(
-                          label: Text(sub),
-                          onDeleted: () => setStateDialog(() => tempSubs.remove(sub)),
-                        )).toList(),
-                      ),
-                    ],
-                  ),
+                        contentPadding: EdgeInsets.zero
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('詳細項目 (子カテゴリ)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+
+                    // 成功・失敗の設定に応じて入力欄を出し分け
+                    if (tempSuccess)
+                      buildSubActionList('success', '【成功】の時の詳細項目 (例: 正面, 横)', successSubCtrl),
+
+                    if (tempFailure)
+                      buildSubActionList('failure', '【失敗】の時の詳細項目 (例: パスミス, キャッチミス)', failureSubCtrl),
+
+                    if (!tempSuccess && !tempFailure)
+                      buildSubActionList('default', '詳細項目 (共通)', commonSubCtrl),
+
+                    if (tempSuccess || tempFailure)
+                      const Text('※成功・失敗が選択された場合、それぞれの詳細項目が使われます。', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  ]),
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('キャンセル'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (nameCtrl.text.isEmpty) return;
-
-                    editingAction.name = nameCtrl.text;
-                    editingAction.subActions = tempSubs;
-                    editingAction.isSubRequired = tempRequired;
-                    // 新規なら末尾に追加するためのソート順設定ロジックなどが本来必要
-
-                    await _saveAction(editingAction);
-                    if (context.mounted) Navigator.pop(ctx);
-                  },
-                  child: const Text('保存'),
-                ),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('キャンセル')),
+                ElevatedButton(onPressed: () async {
+                  if (nameCtrl.text.isEmpty) return;
+                  editingAction.name = nameCtrl.text;
+                  editingAction.subActionsMap = tempSubsMap;
+                  editingAction.isSubRequired = tempRequired;
+                  editingAction.hasSuccess = tempSuccess;
+                  editingAction.hasFailure = tempFailure;
+                  await _saveAction(editingAction);
+                  if (context.mounted) Navigator.pop(ctx);
+                }, child: const Text('保存')),
               ],
             );
           },
@@ -158,50 +159,27 @@ class _ActionSettingsScreenState extends State<ActionSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-
     return Scaffold(
-      appBar: AppBar(title: const Text('アクション設定 (DB)')),
-      body: _actions.isEmpty
-          ? Center(
-        child: ElevatedButton.icon(
-          onPressed: () => _showEditDialog(),
-          icon: const Icon(Icons.add),
-          label: const Text('最初のアクションを追加'),
-        ),
-      )
-          : ReorderableListView.builder(
+      appBar: AppBar(title: const Text('アクション設定')),
+      body: ReorderableListView.builder(
         itemCount: _actions.length,
-        onReorder: (oldIndex, newIndex) {
-          setState(() {
-            if (oldIndex < newIndex) newIndex -= 1;
-            final item = _actions.removeAt(oldIndex);
-            _actions.insert(newIndex, item);
-          });
-          // 並び替え後の順序保存ロジック（全件update）はパフォーマンス考慮し別途実装推奨
-          // 今回はメモリ上のみ反映
-        },
+        onReorder: (o, n) { if(o<n)n--; final i=_actions.removeAt(o); _actions.insert(n, i); },
         itemBuilder: (context, index) {
           final item = _actions[index];
+          List<String> types = [];
+          if(item.hasSuccess) types.add("成功");
+          if(item.hasFailure) types.add("失敗");
+          final typeStr = types.isEmpty ? "結果なし" : types.join("・");
+
           return ListTile(
             key: ValueKey(item.id),
-            title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(item.subActions.isEmpty ? '詳細なし' : item.subActions.join(', ')),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blue),
-                  onPressed: () => _showEditDialog(action: item),
-                ),
-              ],
-            ),
+            title: Text(item.name),
+            subtitle: Text(typeStr),
+            trailing: IconButton(icon: const Icon(Icons.edit), onPressed: () => _showEditDialog(action: item)),
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showEditDialog(),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: FloatingActionButton(onPressed: () => _showEditDialog(), child: const Icon(Icons.add)),
     );
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// 相対パスインポート
 import 'team_store.dart';
 import 'schema.dart';
 import 'roster_item.dart';
@@ -26,6 +25,10 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
     '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県',
     '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
   ];
+
+  // ★ソート用状態
+  int _sortColumnIndex = 0;
+  bool _sortAscending = true;
 
   void _showViewFilterDialog(Team team) {
     final activeFields = team.schema.where((f) => f.isVisible).toList();
@@ -157,7 +160,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
 
                     if (doSwap == true) {
                       conflictItem.data[field.id] = null;
-                      _store.saveItem(currentTeam.id, conflictItem); // StoreのsaveItemを使用
+                      _store.saveItem(currentTeam.id, conflictItem);
                     } else {
                       return;
                     }
@@ -167,7 +170,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
 
               if (isEditing) {
                 item!.data = tempData;
-                _store.saveItem(currentTeam.id, item); // DB保存
+                _store.saveItem(currentTeam.id, item);
               } else {
                 final newItem = RosterItem(data: tempData);
                 _store.addItem(currentTeam.id, newItem);
@@ -469,18 +472,30 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
           },
         );
 
-    // ★追加: 背番号入力フォーム (数値キーボードだが文字列として扱う)
       case FieldType.uniformNumber:
         return TextFormField(
           initialValue: data[field.id]?.toString(),
           decoration: InputDecoration(
               labelText: field.label,
               suffixIcon: const Icon(Icons.looks_one),
-              hintText: '例: 1, 10, 01'
+              hintText: '例: 1, 10'
           ),
           keyboardType: TextInputType.number,
           onChanged: (val) {
             data[field.id] = val; // Stringとして保存
+            onChange();
+          },
+        );
+
+      case FieldType.courtName: // ★追加
+        return TextFormField(
+          initialValue: data[field.id]?.toString(),
+          decoration: InputDecoration(
+              labelText: field.label,
+              suffixIcon: const Icon(Icons.sports_handball)
+          ),
+          onChanged: (val) {
+            data[field.id] = val;
             onChange();
           },
         );
@@ -528,9 +543,31 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
       case FieldType.address: if (val is Map) return '〒${val['zip1']}-${val['zip2']} ${val['pref']}${val['city']}...'; return val.toString();
       case FieldType.phone: if (val is Map) return '${val['part1']}-${val['part2']}-${val['part3']}'; return val.toString();
       case FieldType.age: return '$val歳';
-      case FieldType.uniformNumber: return '#$val'; // ★追加: 表示形式
+      case FieldType.uniformNumber: return '#$val';
+      case FieldType.courtName: return '$val'; // ★追加
       default: return val.toString();
     }
+  }
+
+  void _sortItems(List<RosterItem> items, FieldDefinition field, bool ascending) {
+    items.sort((a, b) {
+      dynamic valA = a.data[field.id];
+      dynamic valB = b.data[field.id];
+
+      if (valA == null && valB == null) return 0;
+      if (valA == null) return 1;
+      if (valB == null) return -1;
+
+      int cmp = 0;
+      if (field.type == FieldType.uniformNumber || field.type == FieldType.number || field.type == FieldType.age) {
+        final numA = num.tryParse(valA.toString()) ?? 9999;
+        final numB = num.tryParse(valB.toString()) ?? 9999;
+        cmp = numA.compareTo(numB);
+      } else {
+        cmp = valA.toString().compareTo(valB.toString());
+      }
+      return ascending ? cmp : -cmp;
+    });
   }
 
   @override
@@ -554,8 +591,29 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
           return true;
         }).toList();
 
+        // ★デフォルトソート
+        final sortedItems = List<RosterItem>.from(currentTeam.items);
+
+        if (_sortColumnIndex < visibleColumns.length) {
+          _sortItems(sortedItems, visibleColumns[_sortColumnIndex], _sortAscending);
+        } else {
+          final uniformFieldIdx = visibleColumns.indexWhere((f) => f.type == FieldType.uniformNumber);
+          if (uniformFieldIdx != -1) {
+            _sortColumnIndex = uniformFieldIdx;
+            _sortItems(sortedItems, visibleColumns[uniformFieldIdx], true);
+          }
+        }
+
         final columns = visibleColumns.map((field) {
-          return DataColumn(label: Text(field.label));
+          return DataColumn(
+            label: Text(field.label),
+            onSort: (columnIndex, ascending) {
+              setState(() {
+                _sortColumnIndex = columnIndex;
+                _sortAscending = ascending;
+              });
+            },
+          );
         }).toList();
 
         return Scaffold(
@@ -594,9 +652,11 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
                 constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),
                 child: DataTable(
                   showCheckboxColumn: false,
+                  sortColumnIndex: _sortColumnIndex,
+                  sortAscending: _sortAscending,
                   headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
                   columns: columns,
-                  rows: currentTeam.items.map((item) {
+                  rows: sortedItems.map((item) {
                     return DataRow(
                       cells: visibleColumns.map((field) {
                         final val = item.data[field.id];
