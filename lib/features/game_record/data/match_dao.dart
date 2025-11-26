@@ -1,5 +1,6 @@
+// lib/features/game_record/data/match_dao.dart
 import 'package:sqflite/sqflite.dart';
-import '../../../core/database/database_helper.dart';
+import '../../../../core/database/database_helper.dart'; // パスは環境に合わせて調整
 
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -38,5 +39,24 @@ class MatchDao {
   Future<List<Map<String, dynamic>>> getMatchLogs(String matchId) async {
     final db = await _dbHelper.database;
     return await db.query('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
+  }
+
+  // ★追加: 指定期間内の全ログを取得 (集計用)
+  // matchesテーブルとmatch_logsテーブルを結合して取得
+  Future<List<Map<String, dynamic>>> getLogsInPeriod(String teamId, String startDate, String endDate) async {
+    final db = await _dbHelper.database;
+
+    // SQL: 指定チームの、指定期間内の試合に紐づくログを全て取得
+    final sql = '''
+      SELECT 
+        l.*, 
+        m.date as match_date, 
+        m.opponent 
+      FROM match_logs l
+      INNER JOIN matches m ON l.match_id = m.id
+      WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
+    ''';
+
+    return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 }
