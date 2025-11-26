@@ -1,7 +1,9 @@
+// lib/root_screen.dart
 import 'package:flutter/material.dart';
 
-// 修正後のパス
+// 各機能の画面をインポート
 import 'features/game_record/presentation/pages/match_record_screen.dart';
+import 'features/game_record/presentation/pages/history_screen.dart'; // ★追加: 履歴画面
 import 'features/team_mgmt/presentation/pages/main_screen.dart';
 import 'features/settings/presentation/pages/unified_settings_screen.dart';
 
@@ -18,8 +20,9 @@ class _RootScreenState extends State<RootScreen> {
   // 各機能のトップ画面
   final List<Widget> _screens = [
     const MatchRecordScreen(),     // タブ0: 試合記録
-    const MainScreen(),            // タブ1: チーム管理 (旧アプリ2のホーム)
-    const UnifiedSettingsScreen(), // タブ2: 統合設定 (★追加)
+    const HistoryScreen(),         // タブ1: 試合履歴 (★追加)
+    const MainScreen(),            // タブ2: チーム管理
+    const UnifiedSettingsScreen(), // タブ3: 設定
   ];
 
   @override
@@ -27,7 +30,6 @@ class _RootScreenState extends State<RootScreen> {
     return Scaffold(
       body: Row(
         children: [
-          // 左側のナビゲーションレール (タブレット向け)
           NavigationRail(
             selectedIndex: _selectedIndex,
             onDestinationSelected: (int index) {
@@ -41,11 +43,15 @@ class _RootScreenState extends State<RootScreen> {
                 icon: Icon(Icons.sports_handball),
                 label: Text('試合記録'),
               ),
+              // ★追加: 履歴タブ
+              NavigationRailDestination(
+                icon: Icon(Icons.history),
+                label: Text('履歴'),
+              ),
               NavigationRailDestination(
                 icon: Icon(Icons.people_alt),
                 label: Text('チーム管理'),
               ),
-              // ★追加: 設定タブ
               NavigationRailDestination(
                 icon: Icon(Icons.settings),
                 label: Text('設定'),
@@ -53,7 +59,6 @@ class _RootScreenState extends State<RootScreen> {
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
-          // メインコンテンツエリア
           Expanded(
             child: _screens[_selectedIndex],
           ),

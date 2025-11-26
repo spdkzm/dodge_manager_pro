@@ -4,15 +4,13 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 
-// UI部品 (widgets)
 import '../widgets/game_timer_bar.dart';
 import '../widgets/player_selection_panel.dart';
 import '../widgets/game_operation_panel.dart';
 import '../widgets/game_log_panel.dart';
 
-// データモデル・ロジック
 import '../../domain/models.dart';
-import 'history_screen.dart'; // 同じ階層にある想定
+// import 'history_screen.dart'; // ★削除: タブ化に伴い不要
 import '../../application/game_recorder_controller.dart';
 
 class MatchRecordScreen extends HookConsumerWidget {
@@ -20,18 +18,13 @@ class MatchRecordScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 1. コントローラーの取得 (Provider経由)
-    // autoDispose なので画面を閉じれば自動で破棄され、開けば新品が作られる
     final controller = ref.watch(gameRecorderProvider);
 
-    // 2. 初期ロード (useEffectで1回だけ実行)
     useEffect(() {
-      // ビルド完了後に実行しないとエラーになる可能性があるためMicrotaskで
       Future.microtask(() => controller.loadData());
       return null;
-    }, const []); // 空配列で初回のみ実行
+    }, const []);
 
-    // 3. TabController (Hooks)
     final tabController = useTabController(initialLength: 3);
     useListenable(tabController);
 
@@ -46,7 +39,7 @@ class MatchRecordScreen extends HookConsumerWidget {
           return AlertDialog(
             title: const Text("試合情報の記録"),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: oppCtrl, decoration: const InputDecoration(labelText: "対戦相手名")),
+              TextField(controller: oppCtrl, decoration: const InputDecoration(labelText: "対戦相手名 / タイトル")),
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: ["大会", "練習試合", "練習"].map((l) => ActionChip(label: Text(l), onPressed: () => oppCtrl.text = l)).toList()),
               const SizedBox(height: 16),
@@ -86,11 +79,17 @@ class MatchRecordScreen extends HookConsumerWidget {
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           title: const Text("試合記録の保存"),
-          content: const Text("記録をデータベースに保存しますか？"),
+          content: const Text("記録をデータベースに保存しますか？\n保存すると現在のログはクリアされます。"),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("キャンセル") // キャンセル時はログは残る（誤操作防止）
+            ),
             ElevatedButton(onPressed: () async {
+              // 保存処理
               final success = await controller.saveMatchToDb();
+              // ※ saveMatchToDb内で resetMatch() が呼ばれ、ログはクリアされます
+
               if (context.mounted) {
                 Navigator.pop(context);
                 if (success) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("保存しました")));
@@ -103,7 +102,6 @@ class MatchRecordScreen extends HookConsumerWidget {
     }
 
     void showEditLogDialog(LogEntry log, int index) {
-      // 簡易実装: 削除のみ提供
       controller.deleteLog(index);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text("ログを削除しました"), action: SnackBarAction(label: "復元", onPressed: () => controller.restoreLog(index, log))));
     }
@@ -117,17 +115,50 @@ class MatchRecordScreen extends HookConsumerWidget {
     }
 
     return Scaffold(
+      // ★修正: AppBarのデザイン変更
       appBar: AppBar(
-        title: const Text('DodgeLog'),
         elevation: 1,
-        actions: [
-          IconButton(icon: const Icon(Icons.history), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const HistoryScreen()))),
-          TextButton(onPressed: showEditMatchInfo, child: Text(controller.opponentName.isEmpty ? "相手設定" : "VS ${controller.opponentName}", style: const TextStyle(color: Colors.black))),
-          Text(controller.formattedTime, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87)),
-        ],
+        // title全体を使ってレイアウトを制御
+        title: Stack(
+          alignment: Alignment.center,
+          children: [
+            // 左寄せ: 対戦相手/タイトル設定
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: showEditMatchInfo,
+                icon: const Icon(Icons.edit, size: 20, color: Colors.black54),
+                label: Text(
+                  controller.opponentName.isEmpty ? "試合タイトル設定" : controller.opponentName,
+                  style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold
+                  ),
+                ),
+                style: TextButton.styleFrom(padding: EdgeInsets.zero),
+              ),
+            ),
+
+            // 中央: タイマー
+            Align(
+              alignment: Alignment.center,
+              child: Text(
+                controller.formattedTime,
+                style: TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.bold,
+                  color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87,
+                  fontFamily: 'monospace', // 等幅フォントで見やすく
+                ),
+              ),
+            ),
+          ],
+        ),
+        // actions（右端）にあった履歴ボタンとタイマーを削除
+        actions: const [],
       ),
       body: Row(children: [
-        // 左カラム: 選手選択パネル
         Expanded(
           flex: 2,
           child: PlayerSelectionPanel(
@@ -148,7 +179,6 @@ class MatchRecordScreen extends HookConsumerWidget {
 
         const VerticalDivider(width: 1),
 
-        // 中央カラム: 操作パネル
         Expanded(
           flex: 6,
           child: Column(children: [
@@ -178,7 +208,6 @@ class MatchRecordScreen extends HookConsumerWidget {
           ]),
         ),
 
-        // 右カラム: ログパネル
         Expanded(
           flex: 2,
           child: GameLogPanel(
