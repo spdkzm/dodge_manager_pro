@@ -45,6 +45,9 @@ class UIActionItem with _$UIActionItem {
     required ActionResult fixedResult,
     required List<String> subActions,
     required bool isSubRequired,
+    // ★追加
+    @Default(false) bool hasSuccess,
+    @Default(false) bool hasFailure,
   }) = _UIActionItem;
 }
 

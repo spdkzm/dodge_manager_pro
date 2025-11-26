@@ -1,6 +1,11 @@
-// lib/features/team_mgmt/database_helper.dart
+// lib/core/database/database_helper.dart
+import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+
+import '../../features/team_mgmt/domain/team.dart';
+import '../../features/team_mgmt/domain/schema.dart';
+import '../../features/team_mgmt/domain/roster_item.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -17,7 +22,8 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'dodge_manager_v4.db');
+    // ★バージョン変更 (v6)
+    final path = join(dbPath, 'dodge_manager_v6.db');
 
     return await openDatabase(
       path,
@@ -65,7 +71,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. アクション定義
+    // 4. アクション定義 (★カラム追加: success_pos, failure_pos)
     await db.execute('''
       CREATE TABLE action_definitions(
         id TEXT PRIMARY KEY,
@@ -74,6 +80,9 @@ class DatabaseHelper {
         sub_actions TEXT, 
         is_sub_required INTEGER,
         sort_order INTEGER,
+        position_index INTEGER,
+        success_position_index INTEGER,
+        failure_position_index INTEGER,
         has_success INTEGER,
         has_failure INTEGER,
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE

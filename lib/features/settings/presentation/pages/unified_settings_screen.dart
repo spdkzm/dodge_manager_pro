@@ -1,23 +1,22 @@
 // lib/features/settings/presentation/pages/unified_settings_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // ★追加
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// 各機能のインポート
 import '../../../team_mgmt/presentation/pages/team_management_screen.dart';
 import '../../../team_mgmt/presentation/pages/schema_settings_screen.dart';
 import '../../../team_mgmt/data/csv_export_service.dart';
 import '../../../team_mgmt/data/csv_import_service.dart';
-import '../../../team_mgmt/application/team_store.dart'; // Provider
+import '../../../team_mgmt/application/team_store.dart';
 
 import 'action_settings_screen.dart';
 import 'match_environment_screen.dart';
+import 'button_layout_settings_screen.dart';
 
-// ★変更: ConsumerWidgetにする
 class UnifiedSettingsScreen extends ConsumerWidget {
   const UnifiedSettingsScreen({super.key});
 
+  // --- CSVインポート処理 ---
   Future<void> _handleImport(BuildContext context, WidgetRef ref) async {
-    // ★修正: Providerからチーム情報を取得
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
 
@@ -36,7 +35,7 @@ class UnifiedSettingsScreen extends ConsumerWidget {
         if (stats == null) {
           // キャンセル
         } else {
-          // ★重要: インポート後にデータを再ロードして画面を更新
+          // 完了後に画面を更新するためデータをリロード
           await store.loadFromDb();
 
           showDialog(
@@ -81,13 +80,19 @@ class UnifiedSettingsScreen extends ConsumerWidget {
     }
   }
 
+  // --- CSVエクスポート処理 ---
   Future<void> _handleExport(BuildContext context, WidgetRef ref) async {
-    // ★修正: Providerから取得
     final store = ref.read(teamStoreProvider);
     if (store.currentTeam != null) {
-      await CsvExportService().exportTeamToCsv(store.currentTeam!);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSVを出力しました')));
+      try {
+        await CsvExportService().exportTeamToCsv(store.currentTeam!);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSVを出力しました')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラー: $e'), backgroundColor: Colors.red));
+        }
       }
     }
   }
@@ -113,11 +118,11 @@ class UnifiedSettingsScreen extends ConsumerWidget {
         children: [
           _buildSectionHeader(context, '試合・アクション'),
           ListTile(
-            leading: const Icon(Icons.timer),
-            title: const Text('試合環境設定'),
-            subtitle: const Text('試合時間 (分)、ボタン配置の列数'),
+            leading: const Icon(Icons.grid_view),
+            title: const Text('ボタン配置と列数'),
+            subtitle: const Text('アクションボタンの配置場所と列数をカスタマイズ'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MatchEnvironmentScreen())),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ButtonLayoutSettingsScreen())),
           ),
           ListTile(
             leading: const Icon(Icons.touch_app),
@@ -125,6 +130,13 @@ class UnifiedSettingsScreen extends ConsumerWidget {
             subtitle: const Text('ボタンの名称や詳細項目を編集 (DB保存)'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ActionSettingsScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.timer),
+            title: const Text('試合環境設定'),
+            subtitle: const Text('試合時間 (分)'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MatchEnvironmentScreen())),
           ),
 
           const Divider(),
@@ -148,14 +160,14 @@ class UnifiedSettingsScreen extends ConsumerWidget {
             title: const Text('CSV エクスポート'),
             subtitle: const Text('現在のチームデータを共有'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () => _handleExport(context, ref), // ★refを渡す
+            onTap: () => _handleExport(context, ref),
           ),
           ListTile(
             leading: const Icon(Icons.file_upload),
             title: const Text('CSV インポート'),
             subtitle: const Text('CSVファイルからデータを追加・更新'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () => _handleImport(context, ref), // ★refを渡す
+            onTap: () => _handleImport(context, ref),
           ),
         ],
       ),

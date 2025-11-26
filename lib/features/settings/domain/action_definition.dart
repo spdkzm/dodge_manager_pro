@@ -5,15 +5,17 @@ import 'package:uuid/uuid.dart';
 part 'action_definition.freezed.dart';
 part 'action_definition.g.dart';
 
-// ★変更: @unfreezed にする
 @unfreezed
 class ActionDefinition with _$ActionDefinition {
-  factory ActionDefinition({ // const を削除
+  factory ActionDefinition({
     @Default('') String id,
     required String name,
     @Default({'default': [], 'success': [], 'failure': []}) Map<String, List<String>> subActionsMap,
     @Default(false) bool isSubRequired,
     @Default(0) int sortOrder,
+    @Default(0) int positionIndex,        // 通常ボタンの位置
+    @Default(0) int successPositionIndex, // ★追加: 成功ボタンの位置
+    @Default(0) int failurePositionIndex, // ★追加: 失敗ボタンの位置
     @Default(false) bool hasSuccess,
     @Default(false) bool hasFailure,
   }) = _ActionDefinition;

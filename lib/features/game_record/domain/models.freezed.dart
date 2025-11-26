@@ -21,7 +21,9 @@ mixin _$UIActionItem {
   String get parentName => throw _privateConstructorUsedError;
   ActionResult get fixedResult => throw _privateConstructorUsedError;
   List<String> get subActions => throw _privateConstructorUsedError;
-  bool get isSubRequired => throw _privateConstructorUsedError;
+  bool get isSubRequired => throw _privateConstructorUsedError; // ★追加
+  bool get hasSuccess => throw _privateConstructorUsedError;
+  bool get hasFailure => throw _privateConstructorUsedError;
 
   /// Create a copy of UIActionItem
   /// with the given fields replaced by the non-null parameter values.
@@ -43,6 +45,8 @@ abstract class $UIActionItemCopyWith<$Res> {
     ActionResult fixedResult,
     List<String> subActions,
     bool isSubRequired,
+    bool hasSuccess,
+    bool hasFailure,
   });
 }
 
@@ -66,6 +70,8 @@ class _$UIActionItemCopyWithImpl<$Res, $Val extends UIActionItem>
     Object? fixedResult = null,
     Object? subActions = null,
     Object? isSubRequired = null,
+    Object? hasSuccess = null,
+    Object? hasFailure = null,
   }) {
     return _then(
       _value.copyWith(
@@ -89,6 +95,14 @@ class _$UIActionItemCopyWithImpl<$Res, $Val extends UIActionItem>
                 ? _value.isSubRequired
                 : isSubRequired // ignore: cast_nullable_to_non_nullable
                       as bool,
+            hasSuccess: null == hasSuccess
+                ? _value.hasSuccess
+                : hasSuccess // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            hasFailure: null == hasFailure
+                ? _value.hasFailure
+                : hasFailure // ignore: cast_nullable_to_non_nullable
+                      as bool,
           )
           as $Val,
     );
@@ -110,6 +124,8 @@ abstract class _$$UIActionItemImplCopyWith<$Res>
     ActionResult fixedResult,
     List<String> subActions,
     bool isSubRequired,
+    bool hasSuccess,
+    bool hasFailure,
   });
 }
 
@@ -132,6 +148,8 @@ class __$$UIActionItemImplCopyWithImpl<$Res>
     Object? fixedResult = null,
     Object? subActions = null,
     Object? isSubRequired = null,
+    Object? hasSuccess = null,
+    Object? hasFailure = null,
   }) {
     return _then(
       _$UIActionItemImpl(
@@ -155,6 +173,14 @@ class __$$UIActionItemImplCopyWithImpl<$Res>
             ? _value.isSubRequired
             : isSubRequired // ignore: cast_nullable_to_non_nullable
                   as bool,
+        hasSuccess: null == hasSuccess
+            ? _value.hasSuccess
+            : hasSuccess // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        hasFailure: null == hasFailure
+            ? _value.hasFailure
+            : hasFailure // ignore: cast_nullable_to_non_nullable
+                  as bool,
       ),
     );
   }
@@ -169,6 +195,8 @@ class _$UIActionItemImpl implements _UIActionItem {
     required this.fixedResult,
     required final List<String> subActions,
     required this.isSubRequired,
+    this.hasSuccess = false,
+    this.hasFailure = false,
   }) : _subActions = subActions;
 
   @override
@@ -187,10 +215,17 @@ class _$UIActionItemImpl implements _UIActionItem {
 
   @override
   final bool isSubRequired;
+  // ★追加
+  @override
+  @JsonKey()
+  final bool hasSuccess;
+  @override
+  @JsonKey()
+  final bool hasFailure;
 
   @override
   String toString() {
-    return 'UIActionItem(name: $name, parentName: $parentName, fixedResult: $fixedResult, subActions: $subActions, isSubRequired: $isSubRequired)';
+    return 'UIActionItem(name: $name, parentName: $parentName, fixedResult: $fixedResult, subActions: $subActions, isSubRequired: $isSubRequired, hasSuccess: $hasSuccess, hasFailure: $hasFailure)';
   }
 
   @override
@@ -208,7 +243,11 @@ class _$UIActionItemImpl implements _UIActionItem {
               _subActions,
             ) &&
             (identical(other.isSubRequired, isSubRequired) ||
-                other.isSubRequired == isSubRequired));
+                other.isSubRequired == isSubRequired) &&
+            (identical(other.hasSuccess, hasSuccess) ||
+                other.hasSuccess == hasSuccess) &&
+            (identical(other.hasFailure, hasFailure) ||
+                other.hasFailure == hasFailure));
   }
 
   @override
@@ -219,6 +258,8 @@ class _$UIActionItemImpl implements _UIActionItem {
     fixedResult,
     const DeepCollectionEquality().hash(_subActions),
     isSubRequired,
+    hasSuccess,
+    hasFailure,
   );
 
   /// Create a copy of UIActionItem
@@ -237,6 +278,8 @@ abstract class _UIActionItem implements UIActionItem {
     required final ActionResult fixedResult,
     required final List<String> subActions,
     required final bool isSubRequired,
+    final bool hasSuccess,
+    final bool hasFailure,
   }) = _$UIActionItemImpl;
 
   @override
@@ -248,7 +291,11 @@ abstract class _UIActionItem implements UIActionItem {
   @override
   List<String> get subActions;
   @override
-  bool get isSubRequired;
+  bool get isSubRequired; // ★追加
+  @override
+  bool get hasSuccess;
+  @override
+  bool get hasFailure;
 
   /// Create a copy of UIActionItem
   /// with the given fields replaced by the non-null parameter values.

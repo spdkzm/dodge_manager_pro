@@ -19,6 +19,9 @@ _$ActionDefinitionImpl _$$ActionDefinitionImplFromJson(
       const {'default': [], 'success': [], 'failure': []},
   isSubRequired: json['isSubRequired'] as bool? ?? false,
   sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+  positionIndex: (json['positionIndex'] as num?)?.toInt() ?? 0,
+  successPositionIndex: (json['successPositionIndex'] as num?)?.toInt() ?? 0,
+  failurePositionIndex: (json['failurePositionIndex'] as num?)?.toInt() ?? 0,
   hasSuccess: json['hasSuccess'] as bool? ?? false,
   hasFailure: json['hasFailure'] as bool? ?? false,
 );
@@ -31,6 +34,9 @@ Map<String, dynamic> _$$ActionDefinitionImplToJson(
   'subActionsMap': instance.subActionsMap,
   'isSubRequired': instance.isSubRequired,
   'sortOrder': instance.sortOrder,
+  'positionIndex': instance.positionIndex,
+  'successPositionIndex': instance.successPositionIndex,
+  'failurePositionIndex': instance.failurePositionIndex,
   'hasSuccess': instance.hasSuccess,
   'hasFailure': instance.hasFailure,
 };

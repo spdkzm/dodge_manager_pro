@@ -21,8 +21,7 @@ ActionDefinition _$ActionDefinitionFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$ActionDefinition {
-  // const を削除
-  String get id => throw _privateConstructorUsedError; // const を削除
+  String get id => throw _privateConstructorUsedError;
   set id(String value) => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
   set name(String value) => throw _privateConstructorUsedError;
@@ -34,7 +33,18 @@ mixin _$ActionDefinition {
   set isSubRequired(bool value) => throw _privateConstructorUsedError;
   int get sortOrder => throw _privateConstructorUsedError;
   set sortOrder(int value) => throw _privateConstructorUsedError;
-  bool get hasSuccess => throw _privateConstructorUsedError;
+  int get positionIndex => throw _privateConstructorUsedError;
+  set positionIndex(int value) =>
+      throw _privateConstructorUsedError; // 通常ボタンの位置
+  int get successPositionIndex =>
+      throw _privateConstructorUsedError; // 通常ボタンの位置
+  set successPositionIndex(int value) =>
+      throw _privateConstructorUsedError; // ★追加: 成功ボタンの位置
+  int get failurePositionIndex =>
+      throw _privateConstructorUsedError; // ★追加: 成功ボタンの位置
+  set failurePositionIndex(int value) =>
+      throw _privateConstructorUsedError; // ★追加: 失敗ボタンの位置
+  bool get hasSuccess => throw _privateConstructorUsedError; // ★追加: 失敗ボタンの位置
   set hasSuccess(bool value) => throw _privateConstructorUsedError;
   bool get hasFailure => throw _privateConstructorUsedError;
   set hasFailure(bool value) => throw _privateConstructorUsedError;
@@ -62,6 +72,9 @@ abstract class $ActionDefinitionCopyWith<$Res> {
     Map<String, List<String>> subActionsMap,
     bool isSubRequired,
     int sortOrder,
+    int positionIndex,
+    int successPositionIndex,
+    int failurePositionIndex,
     bool hasSuccess,
     bool hasFailure,
   });
@@ -87,6 +100,9 @@ class _$ActionDefinitionCopyWithImpl<$Res, $Val extends ActionDefinition>
     Object? subActionsMap = null,
     Object? isSubRequired = null,
     Object? sortOrder = null,
+    Object? positionIndex = null,
+    Object? successPositionIndex = null,
+    Object? failurePositionIndex = null,
     Object? hasSuccess = null,
     Object? hasFailure = null,
   }) {
@@ -111,6 +127,18 @@ class _$ActionDefinitionCopyWithImpl<$Res, $Val extends ActionDefinition>
             sortOrder: null == sortOrder
                 ? _value.sortOrder
                 : sortOrder // ignore: cast_nullable_to_non_nullable
+                      as int,
+            positionIndex: null == positionIndex
+                ? _value.positionIndex
+                : positionIndex // ignore: cast_nullable_to_non_nullable
+                      as int,
+            successPositionIndex: null == successPositionIndex
+                ? _value.successPositionIndex
+                : successPositionIndex // ignore: cast_nullable_to_non_nullable
+                      as int,
+            failurePositionIndex: null == failurePositionIndex
+                ? _value.failurePositionIndex
+                : failurePositionIndex // ignore: cast_nullable_to_non_nullable
                       as int,
             hasSuccess: null == hasSuccess
                 ? _value.hasSuccess
@@ -141,6 +169,9 @@ abstract class _$$ActionDefinitionImplCopyWith<$Res>
     Map<String, List<String>> subActionsMap,
     bool isSubRequired,
     int sortOrder,
+    int positionIndex,
+    int successPositionIndex,
+    int failurePositionIndex,
     bool hasSuccess,
     bool hasFailure,
   });
@@ -165,6 +196,9 @@ class __$$ActionDefinitionImplCopyWithImpl<$Res>
     Object? subActionsMap = null,
     Object? isSubRequired = null,
     Object? sortOrder = null,
+    Object? positionIndex = null,
+    Object? successPositionIndex = null,
+    Object? failurePositionIndex = null,
     Object? hasSuccess = null,
     Object? hasFailure = null,
   }) {
@@ -190,6 +224,18 @@ class __$$ActionDefinitionImplCopyWithImpl<$Res>
             ? _value.sortOrder
             : sortOrder // ignore: cast_nullable_to_non_nullable
                   as int,
+        positionIndex: null == positionIndex
+            ? _value.positionIndex
+            : positionIndex // ignore: cast_nullable_to_non_nullable
+                  as int,
+        successPositionIndex: null == successPositionIndex
+            ? _value.successPositionIndex
+            : successPositionIndex // ignore: cast_nullable_to_non_nullable
+                  as int,
+        failurePositionIndex: null == failurePositionIndex
+            ? _value.failurePositionIndex
+            : failurePositionIndex // ignore: cast_nullable_to_non_nullable
+                  as int,
         hasSuccess: null == hasSuccess
             ? _value.hasSuccess
             : hasSuccess // ignore: cast_nullable_to_non_nullable
@@ -212,6 +258,9 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
     this.subActionsMap = const {'default': [], 'success': [], 'failure': []},
     this.isSubRequired = false,
     this.sortOrder = 0,
+    this.positionIndex = 0,
+    this.successPositionIndex = 0,
+    this.failurePositionIndex = 0,
     this.hasSuccess = false,
     this.hasFailure = false,
   });
@@ -219,7 +268,6 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
   factory _$ActionDefinitionImpl.fromJson(Map<String, dynamic> json) =>
       _$$ActionDefinitionImplFromJson(json);
 
-  // const を削除
   @override
   @JsonKey()
   String id;
@@ -236,6 +284,18 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
   int sortOrder;
   @override
   @JsonKey()
+  int positionIndex;
+  // 通常ボタンの位置
+  @override
+  @JsonKey()
+  int successPositionIndex;
+  // ★追加: 成功ボタンの位置
+  @override
+  @JsonKey()
+  int failurePositionIndex;
+  // ★追加: 失敗ボタンの位置
+  @override
+  @JsonKey()
   bool hasSuccess;
   @override
   @JsonKey()
@@ -243,7 +303,7 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
 
   @override
   String toString() {
-    return 'ActionDefinition(id: $id, name: $name, subActionsMap: $subActionsMap, isSubRequired: $isSubRequired, sortOrder: $sortOrder, hasSuccess: $hasSuccess, hasFailure: $hasFailure)';
+    return 'ActionDefinition(id: $id, name: $name, subActionsMap: $subActionsMap, isSubRequired: $isSubRequired, sortOrder: $sortOrder, positionIndex: $positionIndex, successPositionIndex: $successPositionIndex, failurePositionIndex: $failurePositionIndex, hasSuccess: $hasSuccess, hasFailure: $hasFailure)';
   }
 
   /// Create a copy of ActionDefinition
@@ -270,6 +330,9 @@ abstract class _ActionDefinition implements ActionDefinition {
     Map<String, List<String>> subActionsMap,
     bool isSubRequired,
     int sortOrder,
+    int positionIndex,
+    int successPositionIndex,
+    int failurePositionIndex,
     bool hasSuccess,
     bool hasFailure,
   }) = _$ActionDefinitionImpl;
@@ -277,9 +340,8 @@ abstract class _ActionDefinition implements ActionDefinition {
   factory _ActionDefinition.fromJson(Map<String, dynamic> json) =
       _$ActionDefinitionImpl.fromJson;
 
-  // const を削除
   @override
-  String get id; // const を削除
+  String get id;
   set id(String value);
   @override
   String get name;
@@ -294,7 +356,16 @@ abstract class _ActionDefinition implements ActionDefinition {
   int get sortOrder;
   set sortOrder(int value);
   @override
-  bool get hasSuccess;
+  int get positionIndex;
+  set positionIndex(int value); // 通常ボタンの位置
+  @override
+  int get successPositionIndex; // 通常ボタンの位置
+  set successPositionIndex(int value); // ★追加: 成功ボタンの位置
+  @override
+  int get failurePositionIndex; // ★追加: 成功ボタンの位置
+  set failurePositionIndex(int value); // ★追加: 失敗ボタンの位置
+  @override
+  bool get hasSuccess; // ★追加: 失敗ボタンの位置
   set hasSuccess(bool value);
   @override
   bool get hasFailure;
