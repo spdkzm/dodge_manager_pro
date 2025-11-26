@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/models.dart';
 
 class GameOperationPanel extends StatelessWidget {
-  // ★変更: nullableのリスト
-  final List<UIActionItem?> uiActions;
+  final List<UIActionItem?> uiActions; // null含む
   final int gridColumns;
   final bool hasMatchStarted;
 
@@ -69,25 +68,15 @@ class GameOperationPanel extends StatelessWidget {
                       );
                     }
 
-                    // ★両方(成功/失敗)ある場合は縦に分割して2つのボタンを表示
-                    if (action.hasSuccess && action.hasFailure) {
-                      return Column(
-                        children: [
-                          Expanded(child: _buildButton(action, ActionResult.success)),
-                          const SizedBox(height: 4),
-                          Expanded(child: _buildButton(action, ActionResult.failure)),
-                        ],
-                      );
-                    }
-
-                    // 通常の1ボタン
+                    // ★修正: ここはシンプルに1つのボタンを描画するだけでOK
+                    // (成功/失敗の分離はController側で行われているため)
                     return _buildButton(action, action.fixedResult);
                   },
                 ),
               ),
             ),
           ),
-          // ... (詳細選択部分は変更なし)
+
           if (selectedUIAction != null && selectedUIAction!.subActions.isNotEmpty) ...[
             const Divider(),
             Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 4), child: Text("詳細 (${selectedUIAction!.isSubRequired ? '必須' : '任意'}):", style: TextStyle(fontWeight: FontWeight.bold, color: selectedUIAction!.isSubRequired ? Colors.red : Colors.grey))),
@@ -103,24 +92,13 @@ class GameOperationPanel extends StatelessWidget {
   }
 
   Widget _buildButton(UIActionItem action, ActionResult result) {
-    // 結果に応じたアクションクローンを作る（選択状態管理のため）
-    // 実際にはonActionSelectedで渡すときに適切なResultをセットして呼ぶ必要があるが、
-    // UIActionItem自体はイミュータブルなので、ここではタップ時にResultを上書きするロジックをControllerに持たせるか、
-    // ここで擬似的なアイテムを作って渡す。
-
-    // 簡易的に、タップされたら「その結果を持つアイテム」として扱う
-    final targetAction = action.copyWith(fixedResult: result);
     final isSelected = selectedUIAction?.parentName == action.parentName && selectedResult == result;
 
     Color? bgCol = Colors.white;
+    // 成功=赤, 失敗=青
     if (result == ActionResult.success) bgCol = Colors.red.shade50;
     if (result == ActionResult.failure) bgCol = Colors.blue.shade50;
     if (isSelected) bgCol = Colors.orange.shade100;
-
-    String label = action.name;
-    if (action.hasSuccess && action.hasFailure) {
-      label = result == ActionResult.success ? "成功" : "失敗";
-    }
 
     return SizedBox(
       width: double.infinity,
@@ -131,17 +109,15 @@ class GameOperationPanel extends StatelessWidget {
           foregroundColor: Colors.black87,
           side: isSelected ? const BorderSide(color: Colors.orange, width: 3) : BorderSide(color: Colors.grey.shade300),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: EdgeInsets.zero, // 詰め込むため
+          padding: EdgeInsets.zero,
         ),
-        onPressed: () => onActionSelected(targetAction),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        onPressed: () => onActionSelected(action),
+        child: Text(action.name, style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  // _buildConfirmBarは変更なし
   Widget _buildConfirmBar() {
-    // (前回のコードと同じ内容)
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

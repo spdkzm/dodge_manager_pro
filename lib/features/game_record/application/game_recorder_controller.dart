@@ -4,14 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// Team Management (パス修正)
 import '../../team_mgmt/application/team_store.dart';
-import '../../team_mgmt/domain/schema.dart'; // ★修正: domainを追加
-
-// Settings
+import '../../team_mgmt/domain/schema.dart';
 import '../../settings/data/action_dao.dart';
-
-// Game Record
 import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
@@ -30,7 +25,8 @@ class GameRecorderController extends ChangeNotifier {
 
   AppSettings settings = AppSettings(squadNumbers: [], actions: []);
 
-  List<UIActionItem?> uiActions = []; // null含む
+  // 空白(null)を含むグリッド用リスト
+  List<UIActionItem?> uiActions = [];
 
   Map<String, String> playerNames = {};
   List<String> courtPlayers = [];
@@ -68,10 +64,12 @@ class GameRecorderController extends ChangeNotifier {
 
     List<String> rosterNumbers = [];
     Map<String, String> nameMap = {};
+
     Map<int, UIActionItem> gridMap = {};
     int maxIndex = 0;
 
     if (currentTeam != null) {
+      // 選手ロード
       String? numberFieldId; String? nameFieldId; String? courtNameFieldId;
       for (var field in currentTeam.schema) {
         if (field.type == FieldType.uniformNumber) numberFieldId = field.id;
@@ -92,13 +90,16 @@ class GameRecorderController extends ChangeNotifier {
         rosterNumbers.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
       }
 
+      // アクションロードと配置
       final dbActions = await _actionDao.getActionDefinitions(currentTeam.id);
+
       for (var map in dbActions) {
         final name = map['name'] as String;
         final isSubReq = map['isSubRequired'] == true;
         final hasSuccess = map['hasSuccess'] == true;
         final hasFailure = map['hasFailure'] == true;
 
+        // 各パターンの位置情報を取得
         final posIndex = map['positionIndex'] as int? ?? 0;
         final successPos = map['successPositionIndex'] as int? ?? 0;
         final failurePos = map['failurePositionIndex'] as int? ?? 0;
@@ -106,32 +107,56 @@ class GameRecorderController extends ChangeNotifier {
         final subMap = map['subActionsMap'] as Map<String, dynamic>? ?? {};
         List<String> getSubs(String key) => (subMap[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
-        if (!hasSuccess && !hasFailure) {
-          gridMap[posIndex] = UIActionItem(
-              name: name, parentName: name, fixedResult: ActionResult.none,
-              subActions: getSubs('default'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: false
+        // ★修正: if-else ではなく、独立した if で判定する
+
+        // 1. 成功ボタン
+        if (hasSuccess) {
+          final item = UIActionItem(
+              name: "$name(成功)",
+              parentName: name,
+              fixedResult: ActionResult.success,
+              subActions: getSubs('success'),
+              isSubRequired: isSubReq,
+              hasSuccess: true,
+              hasFailure: false
           );
-          if (posIndex > maxIndex) maxIndex = posIndex;
+          gridMap[successPos] = item;
+          if (successPos > maxIndex) maxIndex = successPos;
         }
-        else {
-          if (hasSuccess) {
-            gridMap[successPos] = UIActionItem(
-                name: "$name(成功)", parentName: name, fixedResult: ActionResult.success,
-                subActions: getSubs('success'), isSubRequired: isSubReq, hasSuccess: true, hasFailure: false
-            );
-            if (successPos > maxIndex) maxIndex = successPos;
-          }
-          if (hasFailure) {
-            gridMap[failurePos] = UIActionItem(
-                name: "$name(失敗)", parentName: name, fixedResult: ActionResult.failure,
-                subActions: getSubs('failure'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: true
-            );
-            if (failurePos > maxIndex) maxIndex = failurePos;
-          }
+
+        // 2. 失敗ボタン
+        if (hasFailure) {
+          final item = UIActionItem(
+              name: "$name(失敗)",
+              parentName: name,
+              fixedResult: ActionResult.failure,
+              subActions: getSubs('failure'),
+              isSubRequired: isSubReq,
+              hasSuccess: false,
+              hasFailure: true
+          );
+          gridMap[failurePos] = item;
+          if (failurePos > maxIndex) maxIndex = failurePos;
+        }
+
+        // 3. 通常ボタン (成功も失敗も設定されていない場合のみ)
+        if (!hasSuccess && !hasFailure) {
+          final item = UIActionItem(
+              name: name,
+              parentName: name,
+              fixedResult: ActionResult.none,
+              subActions: getSubs('default'),
+              isSubRequired: isSubReq,
+              hasSuccess: false,
+              hasFailure: false
+          );
+          gridMap[posIndex] = item;
+          if (posIndex > maxIndex) maxIndex = posIndex;
         }
       }
     }
 
+    // グリッドリストの生成
     List<UIActionItem?> finalList = [];
     for (int i = 0; i <= maxIndex; i++) {
       finalList.add(gridMap[i]);
@@ -144,12 +169,14 @@ class GameRecorderController extends ChangeNotifier {
     _remainingSeconds = settings.matchDurationMinutes * 60;
     playerNames = nameMap;
 
-    if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
-    courtPlayers.clear(); absentPlayers.clear();
+    if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
+      if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
+    }
 
     notifyListeners();
   }
 
+  // --- 以下、変更なし ---
   void updateMatchInfo(String opponent, DateTime date) { _opponentName = opponent; _matchDate = date; settings.lastOpponent = opponent; DataManager.saveSettings(settings); notifyListeners(); }
   void selectPlayer(String number) { if (isMultiSelectMode) { _toggleMultiSelect(number); } else { selectedPlayer = number; notifyListeners(); } }
   void startMultiSelect(String number) { _toggleMultiSelect(number); }
@@ -168,7 +195,7 @@ class GameRecorderController extends ChangeNotifier {
   void restoreLog(int index, LogEntry log) { logs.insert(index, log); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
-  Future<bool> saveMatchToDb() async { final currentTeam = _teamStore.currentTeam; if (currentTeam == null) return false; final matchId = DateTime.now().millisecondsSinceEpoch.toString(); final matchData = {'id': matchId, 'opponent': _opponentName, 'date': DateFormat('yyyy-MM-dd').format(_matchDate)}; final logMaps = logs.reversed.map((log) => log.toJson()).toList(); await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps); await DataManager.clearCurrentLogs(); resetMatch(); return true; }
+  Future<bool> saveMatchToDb() async { final currentTeam = _teamStore.currentTeam; if (currentTeam == null) return false; final matchId = DateTime.now().millisecondsSinceEpoch.toString(); final matchData = {'id': matchId, 'opponent': _opponentName, 'date': DateFormat('yyyy-MM-dd').format(_matchDate)}; final logMaps = logs.reversed.map((log) => log.toJson()).toList(); await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers); await DataManager.clearCurrentLogs(); resetMatch(); return true; }
   void resetMatch() { logs.clear(); _hasMatchStarted = false; _isRunning = false; _remainingSeconds = settings.matchDurationMinutes * 60; loadData(); selectedForMove.clear(); selectedPlayer = null; selectedUIAction = null; selectedSubAction = null; notifyListeners(); }
   @override void dispose() { _gameTimer?.cancel(); super.dispose(); }
 }

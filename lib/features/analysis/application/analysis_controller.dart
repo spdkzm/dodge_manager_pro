@@ -6,6 +6,8 @@ import '../../game_record/data/match_dao.dart';
 import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
 import '../../game_record/domain/models.dart';
+import '../../settings/data/action_dao.dart';
+import '../../settings/domain/action_definition.dart';
 import '../domain/player_stats.dart';
 import '../presentation/pages/analysis_screen.dart';
 
@@ -16,6 +18,9 @@ final analysisControllerProvider = StateNotifierProvider<AnalysisController, Asy
 class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
   final Ref ref;
   final MatchDao _matchDao = MatchDao();
+  final ActionDao _actionDao = ActionDao();
+
+  List<ActionDefinition> actionDefinitions = [];
 
   AnalysisController(this.ref) : super(const AsyncValue.loading());
 
@@ -44,14 +49,14 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         endDateStr = dateFormat.format(end);
       }
 
-      final rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
+      final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
+      actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
+
       final Map<String, PlayerStats> statsMap = {};
-      final rosterMap = <String, String>{};
 
       String? numberFieldId;
       String? courtNameFieldId;
       String? nameFieldId;
-
       for(var f in currentTeam.schema) {
         if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
         if(f.type == FieldType.courtName) courtNameFieldId = f.id;
@@ -59,41 +64,54 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
 
       for (var item in currentTeam.items) {
-        final num = item.data[numberFieldId]?.toString();
-        if (num != null) {
+        final num = item.data[numberFieldId]?.toString() ?? "";
+        if (num.isNotEmpty) {
           String name = "";
           if (courtNameFieldId != null) name = item.data[courtNameFieldId]?.toString() ?? "";
           if (name.isEmpty && nameFieldId != null) {
             final n = item.data[nameFieldId];
             if (n is Map) name = "${n['last']} ${n['first']}";
           }
-          rosterMap[num] = name;
+          statsMap[num] = PlayerStats(
+            playerId: num,
+            playerNumber: num,
+            playerName: name,
+            matchesPlayed: 0,
+            actions: {},
+          );
         }
       }
 
+      // ★修正: 出場記録による試合数カウント
+      final participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
       final Map<String, Set<String>> playerMatches = {};
+
+      for (var p in participations) {
+        final pNum = p['player_number'] as String;
+        if (statsMap.containsKey(pNum)) {
+          if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
+          playerMatches[pNum]!.add(p['match_id']);
+        }
+      }
+
+      final rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
 
       for (var log in rawLogs) {
         final pNum = log['player_number'] as String;
         if (pNum.isEmpty) continue;
 
-        final matchId = log['match_id'] as String;
-        final action = log['action'] as String;
-        final subAction = log['sub_action'] as String?; // ★サブアクション取得
-        final resultVal = log['result'] as int? ?? 0;
-        final result = ActionResult.values[resultVal];
-
         if (!statsMap.containsKey(pNum)) {
-          statsMap[pNum] = PlayerStats(
-            playerId: pNum,
-            playerNumber: pNum,
-            playerName: rosterMap[pNum] ?? "",
-            actions: {},
-          );
-          playerMatches[pNum] = {};
+          statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: "(未登録)", actions: {});
         }
 
-        playerMatches[pNum]!.add(matchId);
+        // ログがあるなら試合出場とみなす（念のため）
+        if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
+        playerMatches[pNum]!.add(log['match_id']);
+
+        final action = log['action'] as String;
+        final subAction = log['sub_action'] as String?;
+        final resultVal = log['result'] as int? ?? 0;
+        final result = ActionResult.values[resultVal];
 
         final currentStats = statsMap[pNum]!;
         final actStats = currentStats.actions[action] ?? ActionStats(actionName: action);
@@ -102,7 +120,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         int failure = actStats.failureCount;
         int total = actStats.totalCount;
 
-        // ★サブアクション集計
         final Map<String, int> subs = Map.from(actStats.subActionCounts);
         if (subAction != null && subAction.isNotEmpty) {
           subs[subAction] = (subs[subAction] ?? 0) + 1;
@@ -116,7 +133,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           successCount: success,
           failureCount: failure,
           totalCount: total,
-          subActionCounts: subs, // ★更新
+          subActionCounts: subs,
         );
 
         final newActions = Map<String, ActionStats>.from(currentStats.actions);
