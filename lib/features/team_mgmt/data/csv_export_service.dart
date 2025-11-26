@@ -1,3 +1,4 @@
+// lib/features/team_mgmt/data/csv_export_service.dart
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
@@ -39,12 +40,14 @@ class CsvExportService {
     final String csvData = const ListToCsvConverter().convert(rows);
     final directory = await getApplicationDocumentsDirectory();
     final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+    // ファイル名に使えない文字を置換
     final safeTeamName = team.name.replaceAll(RegExp(r'[^\w\s\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]'), '_');
     final path = '${directory.path}/${safeTeamName}_$dateStr.csv';
 
     final file = File(path);
     await file.writeAsString('\uFEFF$csvData'); // BOM付きUTF-8
 
+    // 共有（保存）ダイアログを表示
     await Share.shareXFiles([XFile(path)], text: '${team.name}の名簿データ');
   }
 
@@ -62,7 +65,6 @@ class CsvExportService {
 
   // フィールドタイプごとの値展開
   List<dynamic> _expandValues(FieldDefinition field, dynamic val) {
-    // nullの場合はカラム数分だけ空文字を入れる
     if (val == null) {
       switch (field.type) {
         case FieldType.personName:

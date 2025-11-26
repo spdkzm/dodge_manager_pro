@@ -1,13 +1,16 @@
+// lib/features/team_mgmt/data/csv_import_service.dart
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
 
-// Domain & Application
+// Domain
 import '../domain/team.dart';
 import '../domain/schema.dart';
 import '../domain/roster_item.dart';
-import '../application/team_store.dart';
+
+// Data
+import 'team_dao.dart'; // ★変更: Daoを直接使う
 
 // インポート結果の統計クラス
 class ImportStats {
@@ -20,12 +23,12 @@ class ImportStats {
 // カラムとスキーマのマッピング情報
 class _ColMap {
   final FieldDefinition field;
-  final String? subKey; // 複合項目の場合のキー (last, zip1 etc)
+  final String? subKey;
   _ColMap(this.field, [this.subKey]);
 }
 
 class CsvImportService {
-  final TeamStore _store = TeamStore();
+  final TeamDao _teamDao = TeamDao(); // ★変更: Daoを使用
 
   Future<ImportStats?> pickAndImportCsv(Team team) async {
     try {
@@ -44,7 +47,6 @@ class CsvImportService {
       if (rows.isEmpty) return ImportStats();
 
       // 2. ヘッダー解析とマッピング
-      // ヘッダー行：[system_id, 氏名_姓, 氏名_名, 年齢, ...]
       final List<String> headers = rows.first.map((e) => e.toString().trim()).toList();
 
       int idColIndex = -1;
@@ -57,19 +59,17 @@ class CsvImportService {
           continue;
         }
 
-        // スキーマと照合
         for (var field in team.schema) {
-          // 完全一致（単純項目）
+          // 完全一致
           if (h == field.label) {
             columnMapping[i] = _ColMap(field);
             break;
           }
-          // 接尾辞マッチ（複合項目）
+          // 接尾辞マッチ
           if (h.startsWith('${field.label}_')) {
             final suffix = h.substring('${field.label}_'.length);
             String? subKey;
 
-            // ヘッダーのSuffixを内部キーに変換
             switch (field.type) {
               case FieldType.personName:
                 if (suffix == '姓') subKey = 'last';
@@ -106,22 +106,18 @@ class CsvImportService {
       final stats = ImportStats();
       final existingItemsMap = {for (var item in team.items) item.id: item};
 
-      // 1行目はヘッダーなのでスキップ
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
         if (row.isEmpty) continue;
 
-        // IDの取得（あれば）
         String? csvId;
         if (idColIndex != -1 && idColIndex < row.length) {
           final val = row[idColIndex].toString().trim();
           if (val.isNotEmpty) csvId = val;
         }
 
-        // データの構築
         final Map<String, dynamic> newItemData = {};
 
-        // まず複合項目のための空Mapを準備
         for (var mapping in columnMapping.values) {
           if (mapping.subKey != null) {
             if (!newItemData.containsKey(mapping.field.id)) {
@@ -130,46 +126,37 @@ class CsvImportService {
           }
         }
 
-        // 値を埋め込む
         columnMapping.forEach((colIndex, mapping) {
           if (colIndex < row.length) {
             final rawVal = row[colIndex];
             final parsedVal = _parseValue(mapping.field, rawVal);
 
             if (mapping.subKey != null) {
-              // 複合項目の場合、Mapの中にセット
               final map = newItemData[mapping.field.id] as Map<String, dynamic>;
-              // nullなら空文字にしておく（Map内の値として扱いやすくするため）
               map[mapping.subKey!] = parsedVal ?? '';
             } else {
-              // 単純項目の場合
               newItemData[mapping.field.id] = parsedVal;
             }
           }
         });
 
-        // 登録判断
         if (csvId != null && existingItemsMap.containsKey(csvId)) {
-          // --- 更新 (Update) ---
+          // --- 更新 ---
           final existingItem = existingItemsMap[csvId]!;
-
           if (_hasChanges(existingItem.data, newItemData, team.schema)) {
-            // 変更あり -> 上書き
             existingItem.data = newItemData;
-            _store.saveItem(team.id, existingItem);
+            await _teamDao.insertItem(team.id, existingItem); // ★Daoで更新
             stats.updated++;
           } else {
-            // 変更なし
             stats.unchanged++;
           }
         } else {
-          // --- 新規作成 (Insert) ---
-          // IDがなければ新規発行、あれば（他チームからの移行等）それを使用
+          // --- 新規 ---
           final newItem = RosterItem(
               id: csvId ?? const Uuid().v4(),
               data: newItemData
           );
-          _store.addItem(team.id, newItem);
+          await _teamDao.insertItem(team.id, newItem); // ★Daoで追加
           stats.inserted++;
         }
       }
@@ -181,7 +168,6 @@ class CsvImportService {
     }
   }
 
-  /// 値のパース処理
   dynamic _parseValue(FieldDefinition field, dynamic value) {
     if (value == null) return null;
     String strVal = value.toString().trim();
@@ -191,36 +177,27 @@ class CsvImportService {
       case FieldType.number:
       case FieldType.age:
         return num.tryParse(strVal);
-
       case FieldType.uniformNumber:
-      // 背番号は数値入力だが、「01」などを維持するために文字列として扱う
+      case FieldType.courtName:
         return strVal;
-
       case FieldType.date:
-      // yyyy-MM-dd 前提
         try {
           return DateTime.parse(strVal.replaceAll('/', '-'));
         } catch (e) {
           return null;
         }
-
       default:
         return strVal;
     }
   }
 
-  /// 変更検知ロジック
   bool _hasChanges(Map<String, dynamic> oldData, Map<String, dynamic> newData, List<FieldDefinition> schema) {
     for (var field in schema) {
       final oldVal = oldData[field.id];
       final newVal = newData[field.id];
-
-      // 複合型(Map)の場合
       if (oldVal is Map && newVal is Map) {
         if (oldVal.toString() != newVal.toString()) return true;
-      }
-      // 単純型の場合
-      else {
+      } else {
         String s1 = oldVal?.toString() ?? '';
         String s2 = newVal?.toString() ?? '';
         if (s1 != s2) return true;

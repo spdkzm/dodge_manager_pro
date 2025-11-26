@@ -1,10 +1,10 @@
 // lib/features/game_record/presentation/widgets/game_log_panel.dart
 import 'package:flutter/material.dart';
-import '../../domain/models.dart'; // LogEntry, ActionResult, LogType
+import '../../domain/models.dart';
 
 class GameLogPanel extends StatelessWidget {
   final List<LogEntry> logs;
-  final Function(LogEntry log, int index) onLogTap; // 編集用コールバック
+  final Function(LogEntry log, int index) onLogTap;
 
   const GameLogPanel({
     super.key,
@@ -32,7 +32,7 @@ class GameLogPanel extends StatelessWidget {
             itemBuilder: (context, index) {
               final log = logs[index];
 
-              // システムログの場合
+              // システムログ
               if (log.type == LogType.system) {
                 return Card(
                   color: Colors.grey[300],
@@ -46,14 +46,16 @@ class GameLogPanel extends StatelessWidget {
                 );
               }
 
-              // アクションログの場合
+              // アクションログ
               Color? resultColor;
               String resultStr = "";
+
+              // ★修正: 成功=赤, 失敗=青
               if (log.result == ActionResult.success) {
-                resultColor = Colors.blue[50];
+                resultColor = Colors.red[50];  // 背景: 薄い赤
                 resultStr = "(成功)";
               } else if (log.result == ActionResult.failure) {
-                resultColor = Colors.red[50];
+                resultColor = Colors.blue[50]; // 背景: 薄い青
                 resultStr = "(失敗)";
               }
 
@@ -72,7 +74,13 @@ class GameLogPanel extends StatelessWidget {
                       children: [
                         TextSpan(text: "#${log.playerNumber} ", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
                         TextSpan(text: log.action),
-                        TextSpan(text: " $resultStr", style: TextStyle(color: log.result == ActionResult.success ? Colors.blue : Colors.red)),
+                        // ★修正: 文字色も変更
+                        TextSpan(
+                            text: " $resultStr",
+                            style: TextStyle(
+                                color: log.result == ActionResult.success ? Colors.red : Colors.blue
+                            )
+                        ),
                         if (log.subAction != null)
                           TextSpan(text: " (${log.subAction})", style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       ],

@@ -1,7 +1,7 @@
+// lib/features/game_record/presentation/widgets/game_operation_panel.dart
 import 'package:flutter/material.dart';
-// UIActionItemなどのモデル
+// ★修正: ディレクトリ構成に合わせた正しいパスに変更
 import '../../domain/models.dart';
-
 
 class GameOperationPanel extends StatelessWidget {
   final List<UIActionItem> uiActions;
@@ -61,8 +61,9 @@ class GameOperationPanel extends StatelessWidget {
                     final isSelected = selectedUIAction == action;
 
                     Color? bgCol = Colors.white;
-                    if (action.fixedResult == ActionResult.success) bgCol = Colors.blue.shade50;
-                    if (action.fixedResult == ActionResult.failure) bgCol = Colors.red.shade50;
+                    // 成功=赤系, 失敗=青系
+                    if (action.fixedResult == ActionResult.success) bgCol = Colors.red.shade50;
+                    if (action.fixedResult == ActionResult.failure) bgCol = Colors.blue.shade50;
                     if (isSelected) bgCol = Colors.orange.shade100;
 
                     return ElevatedButton(
@@ -158,9 +159,10 @@ class GameOperationPanel extends StatelessWidget {
 
                 if (selectedResult != ActionResult.none) ...[
                   const SizedBox(width: 8),
+                  // 成功=赤系, 失敗=青系
                   Chip(
                     label: Text(selectedResult == ActionResult.success ? "成功" : "失敗"),
-                    backgroundColor: selectedResult == ActionResult.success ? Colors.blue.shade100 : Colors.red.shade100,
+                    backgroundColor: selectedResult == ActionResult.success ? Colors.red.shade100 : Colors.blue.shade100,
                     padding: EdgeInsets.zero,
                   ),
                 ],
