@@ -37,6 +37,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         return;
       }
 
+      // 1. 期間設定
       String startDateStr;
       String endDateStr;
       final dateFormat = DateFormat('yyyy-MM-dd');
@@ -49,14 +50,15 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         endDateStr = dateFormat.format(end);
       }
 
+      // 2. アクション定義 (並び順用)
       final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
       actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
+      // 3. 全選手データの初期化
       final Map<String, PlayerStats> statsMap = {};
+      final rosterMap = <String, String>{};
 
-      String? numberFieldId;
-      String? courtNameFieldId;
-      String? nameFieldId;
+      String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
       for(var f in currentTeam.schema) {
         if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
         if(f.type == FieldType.courtName) courtNameFieldId = f.id;
@@ -72,6 +74,8 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
             final n = item.data[nameFieldId];
             if (n is Map) name = "${n['last']} ${n['first']}";
           }
+          rosterMap[num] = name;
+
           statsMap[num] = PlayerStats(
             playerId: num,
             playerNumber: num,
@@ -82,22 +86,35 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         }
       }
 
-      // ★修正: 出場記録による試合数カウント
+      // 4. 出場記録 (match_participations) による試合数カウント
+      // ★修正: ここが重要。ログがなくてもコートにいただけでカウントする。
       final participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
+
+      // 選手ごとの参加試合IDセット
       final Map<String, Set<String>> playerMatches = {};
 
       for (var p in participations) {
-        final pNum = p['player_number'] as String;
-        if (statsMap.containsKey(pNum)) {
+        final pNum = p['player_number'] as String? ?? "";
+        final matchId = p['match_id'] as String? ?? "";
+
+        if (pNum.isNotEmpty && matchId.isNotEmpty) {
           if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
-          playerMatches[pNum]!.add(p['match_id']);
+          playerMatches[pNum]!.add(matchId);
+
+          // 名簿になくても出場記録にある場合のケア
+          if (!statsMap.containsKey(pNum)) {
+            statsMap[pNum] = PlayerStats(
+                playerId: pNum, playerNumber: pNum, playerName: rosterMap[pNum] ?? "(不明)", matchesPlayed: 0, actions: {}
+            );
+          }
         }
       }
 
+      // 5. ログ集計
       final rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
 
       for (var log in rawLogs) {
-        final pNum = log['player_number'] as String;
+        final pNum = log['player_number'] as String? ?? "";
         if (pNum.isEmpty) continue;
 
         if (!statsMap.containsKey(pNum)) {
@@ -105,10 +122,13 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         }
 
         // ログがあるなら試合出場とみなす（念のため）
-        if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
-        playerMatches[pNum]!.add(log['match_id']);
+        final matchId = log['match_id'] as String? ?? "";
+        if (matchId.isNotEmpty) {
+          if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
+          playerMatches[pNum]!.add(matchId);
+        }
 
-        final action = log['action'] as String;
+        final action = log['action'] as String? ?? "";
         final subAction = log['sub_action'] as String?;
         final resultVal = log['result'] as int? ?? 0;
         final result = ActionResult.values[resultVal];
@@ -142,6 +162,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         statsMap[pNum] = currentStats.copyWith(actions: newActions);
       }
 
+      // 6. 最終整形
       final List<PlayerStats> resultList = statsMap.values.map((p) {
         return p.copyWith(matchesPlayed: playerMatches[p.playerNumber]?.length ?? 0);
       }).toList();

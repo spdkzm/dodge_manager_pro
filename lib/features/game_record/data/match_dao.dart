@@ -14,7 +14,7 @@ class MatchDao {
       ) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      // 1. 試合ヘッダ
+      // 1. 試合ヘッダ保存
       await txn.insert('matches', {
         'id': matchData['id'],
         'team_id': teamId,
@@ -23,7 +23,7 @@ class MatchDao {
         'created_at': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
-      // 2. ログ
+      // 2. ログ保存
       for (var log in logs) {
         await txn.insert('match_logs', {
           'id': log['id'],
@@ -31,13 +31,13 @@ class MatchDao {
           'game_time': log['gameTime'],
           'player_number': log['player_number'],
           'action': log['action'],
-          'sub_action': log['subAction'],
+          'sub_action': log['sub_action'],
           'log_type': log['type'],
           'result': log['result'],
         });
       }
 
-      // 3. ★追加: 出場記録
+      // 3. ★追加: 出場記録保存
       for (var playerNum in participations) {
         await txn.insert('match_participations', {
           'match_id': matchData['id'],
@@ -57,10 +57,14 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
   }
 
+  // 集計用: 期間内の全ログ取得
   Future<List<Map<String, dynamic>>> getLogsInPeriod(String teamId, String startDate, String endDate) async {
     final db = await _dbHelper.database;
     final sql = '''
-      SELECT l.*, m.date as match_date, m.opponent 
+      SELECT 
+        l.*, 
+        m.date as match_date, 
+        m.opponent 
       FROM match_logs l
       INNER JOIN matches m ON l.match_id = m.id
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
@@ -68,11 +72,13 @@ class MatchDao {
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
-  // ★追加: 指定期間の出場記録を取得
+  // ★追加: 集計用: 期間内の出場記録取得 (試合数カウントの基準)
   Future<List<Map<String, dynamic>>> getParticipationsInPeriod(String teamId, String startDate, String endDate) async {
     final db = await _dbHelper.database;
     final sql = '''
-      SELECT p.player_number, p.match_id
+      SELECT 
+        p.player_number,
+        p.match_id
       FROM match_participations p
       INNER JOIN matches m ON p.match_id = m.id
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
