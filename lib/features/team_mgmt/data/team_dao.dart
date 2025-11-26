@@ -1,12 +1,13 @@
-// lib/features/team_mgmt/data/team_dao.dart
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
-// ★修正: パスの階層を ../ に変更
-import '../database_helper.dart';
-import '../team.dart';
-import '../schema.dart';
-import '../roster_item.dart';
+// Core
+import '../../../core/database/database_helper.dart';
+
+// Domain
+import '../domain/team.dart';
+import '../domain/schema.dart';
+import '../domain/roster_item.dart';
 
 class TeamDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();

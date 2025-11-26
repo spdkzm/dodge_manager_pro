@@ -3,11 +3,11 @@ import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
 
-// 相対パスインポート
-import 'team.dart';
-import 'schema.dart';
-import 'roster_item.dart';
-import 'team_store.dart';
+// Domain & Application
+import '../domain/team.dart';
+import '../domain/schema.dart';
+import '../domain/roster_item.dart';
+import '../application/team_store.dart';
 
 // インポート結果の統計クラス
 class ImportStats {

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'team_store.dart';
-import 'schema.dart';
-import 'roster_item.dart';
-import 'team.dart';
+// Application & Domain
+import '../../application/team_store.dart';
+import '../../domain/schema.dart';
+import '../../domain/roster_item.dart';
+import '../../domain/team.dart';
 
 class PlayerListScreen extends StatefulWidget {
   const PlayerListScreen({super.key});
@@ -192,8 +193,9 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
                   ],
                 ),
               );
-              if (shouldSave == true) await saveProcess();
-              else if (shouldSave == false && context.mounted) Navigator.pop(context);
+              if (shouldSave == true) {
+                await saveProcess();
+              } else if (shouldSave == false && context.mounted) Navigator.pop(context);
             }
 
             return PopScope(
@@ -260,7 +262,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
           Text(field.label, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
           DropdownButtonFormField<dynamic>(
-            value: currentValue,
+            initialValue: currentValue,
             decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0)),
             items: dropdownItems,
             onChanged: (val) { setStateDialog(() { data[field.id] = val; onChange(); }); },
@@ -399,7 +401,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: currentPref,
+              initialValue: currentPref,
               decoration: const InputDecoration(labelText: '都道府県'),
               items: _prefectures.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
               onChanged: (v) { map['pref'] = v; onChange(); },
@@ -517,7 +519,9 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
     List<dynamic> items = [];
     if (field.type == FieldType.number && field.isRange) {
       final min = field.minNum ?? 1; final max = field.maxNum ?? 99;
-      for (int i = min; i <= max; i++) items.add(i);
+      for (int i = min; i <= max; i++) {
+        items.add(i);
+      }
     } else if (field.type == FieldType.number) {
       items = field.options.map((e) => int.tryParse(e) ?? 0).toList();
     } else {

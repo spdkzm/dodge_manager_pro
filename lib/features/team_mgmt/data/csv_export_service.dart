@@ -4,9 +4,9 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-// 相対パスインポート
-import 'team.dart';
-import 'schema.dart';
+// Domain
+import '../domain/team.dart';
+import '../domain/schema.dart';
 
 class CsvExportService {
 

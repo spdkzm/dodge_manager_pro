@@ -1,12 +1,13 @@
-// lib/features/settings/presentation/unified_settings_screen.dart
 import 'package:flutter/material.dart';
 
-// --- インポート ---
-import '../../team_mgmt/team_management_screen.dart';
-import '../../team_mgmt/schema_settings_screen.dart';
-import '../../team_mgmt/csv_export_service.dart';
-import '../../team_mgmt/csv_import_service.dart'; // ★追加: インポート用サービス
-import '../../team_mgmt/team_store.dart';
+// Team Management Pages & Data
+import '../../../team_mgmt/presentation/pages/team_management_screen.dart';
+import '../../../team_mgmt/presentation/pages/schema_settings_screen.dart';
+import '../../../team_mgmt/data/csv_export_service.dart';
+import '../../../team_mgmt/data/csv_import_service.dart';
+import '../../../team_mgmt/application/team_store.dart';
+
+// Settings Pages
 import 'action_settings_screen.dart';
 import 'match_environment_screen.dart';
 

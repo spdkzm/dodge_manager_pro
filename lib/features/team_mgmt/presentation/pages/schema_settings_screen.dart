@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'team_store.dart';
-import 'schema.dart';
+// Application & Domain
+import '../../application/team_store.dart';
+import '../../domain/schema.dart';
 
 class SchemaSettingsScreen extends StatefulWidget {
   const SchemaSettingsScreen({super.key});
@@ -220,7 +221,7 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<FieldType>(
-                      value: selectedType,
+                      initialValue: selectedType,
                       decoration: const InputDecoration(labelText: 'データの種類'),
                       isExpanded: true,
                       items: const [
@@ -446,7 +447,7 @@ class _SchemaSettingsScreenState extends State<SchemaSettingsScreen> {
                       trailing: _localSchema[i].isSystem
                           ? Switch(
                         value: _localSchema[i].isVisible,
-                        activeColor: Colors.blue,
+                        activeThumbColor: Colors.blue,
                         onChanged: (val) {
                           setState(() {
                             _localSchema[i].isVisible = val;

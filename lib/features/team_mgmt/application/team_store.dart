@@ -1,19 +1,25 @@
-// lib/features/team_mgmt/team_store.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import 'team.dart';
-import 'schema.dart';
-import 'roster_item.dart';
-import 'data/team_dao.dart'; // ★変更: DAOをインポート
+// Domain & Data
+import '../domain/team.dart';
+import '../domain/schema.dart';
+import '../domain/roster_item.dart';
+import '../data/team_dao.dart';
+
+// ★追加: アプリ全体で共有するTeamStoreのプロバイダー
+final teamStoreProvider = ChangeNotifierProvider<TeamStore>((ref) {
+  return TeamStore();
+});
 
 class TeamStore extends ChangeNotifier {
-  static final TeamStore _instance = TeamStore._internal();
-  factory TeamStore() => _instance;
+  // ★削除: シングルトン関連のコード (_instance, factory)
 
-  final TeamDao _teamDao = TeamDao(); // ★変更: Helper -> Dao
+  final TeamDao _teamDao = TeamDao();
 
-  TeamStore._internal() {
+  // コンストラクタ
+  TeamStore() {
     loadFromDb();
   }
 
@@ -31,7 +37,7 @@ class TeamStore extends ChangeNotifier {
 
   Future<void> loadFromDb() async {
     try {
-      teams = await _teamDao.getAllTeams(); // ★Dao使用
+      teams = await _teamDao.getAllTeams();
 
       if (teams.isNotEmpty) {
         currentTeamId = teams.first.id;
@@ -57,7 +63,7 @@ class TeamStore extends ChangeNotifier {
     );
     teams.add(defaultTeam);
     currentTeamId = defaultTeam.id;
-    _teamDao.insertTeam(defaultTeam); // ★Dao使用
+    _teamDao.insertTeam(defaultTeam);
   }
 
   List<FieldDefinition> _createSystemFields() {
@@ -85,13 +91,13 @@ class TeamStore extends ChangeNotifier {
     teams.add(newTeam);
     if (teams.length == 1) currentTeamId = newTeam.id;
 
-    _teamDao.insertTeam(newTeam); // ★Dao使用
+    _teamDao.insertTeam(newTeam);
     notifyListeners();
   }
 
   void updateTeamName(Team team, String newName) {
     team.name = newName;
-    _teamDao.updateTeamName(team.id, newName); // ★Dao使用
+    _teamDao.updateTeamName(team.id, newName);
     notifyListeners();
   }
 
@@ -100,7 +106,7 @@ class TeamStore extends ChangeNotifier {
     if (currentTeamId == team.id) {
       currentTeamId = teams.isNotEmpty ? teams.first.id : null;
     }
-    _teamDao.deleteTeam(team.id); // ★Dao使用
+    _teamDao.deleteTeam(team.id);
     notifyListeners();
   }
 
@@ -115,7 +121,7 @@ class TeamStore extends ChangeNotifier {
     final teamIndex = teams.indexWhere((t) => t.id == teamId);
     if (teamIndex != -1) {
       teams[teamIndex].schema = newSchema;
-      _teamDao.updateSchema(teamId, newSchema); // ★Dao使用
+      _teamDao.updateSchema(teamId, newSchema);
       notifyListeners();
     }
   }
@@ -123,19 +129,19 @@ class TeamStore extends ChangeNotifier {
   void addField(String teamId, FieldDefinition field) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.schema.add(field);
-    _teamDao.insertField(teamId, field); // ★Dao使用
+    _teamDao.insertField(teamId, field);
     notifyListeners();
   }
 
   void deleteField(String teamId, FieldDefinition field) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.schema.remove(field);
-    _teamDao.deleteField(field.id); // ★Dao使用
+    _teamDao.deleteField(field.id);
     notifyListeners();
   }
 
   void updateField(String teamId, FieldDefinition field) {
-    _teamDao.updateFieldVisibility(field.id, field.isVisible); // ★Dao使用
+    _teamDao.updateFieldVisibility(field.id, field.isVisible);
     notifyListeners();
   }
 
@@ -145,7 +151,7 @@ class TeamStore extends ChangeNotifier {
     final item = team.schema.removeAt(oldIndex);
     team.schema.insert(newIndex, item);
 
-    _teamDao.updateSchema(teamId, team.schema); // ★Dao使用
+    _teamDao.updateSchema(teamId, team.schema);
     notifyListeners();
   }
 
@@ -158,7 +164,7 @@ class TeamStore extends ChangeNotifier {
     } else {
       team.viewHiddenFields.add(fieldId);
     }
-    _teamDao.updateViewHiddenFields(teamId, team.viewHiddenFields); // ★Dao使用
+    _teamDao.updateViewHiddenFields(teamId, team.viewHiddenFields);
     notifyListeners();
   }
 
@@ -167,7 +173,7 @@ class TeamStore extends ChangeNotifier {
   void addItem(String teamId, RosterItem item) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.items.add(item);
-    _teamDao.insertItem(teamId, item); // ★Dao使用
+    _teamDao.insertItem(teamId, item);
     notifyListeners();
   }
 
@@ -176,14 +182,14 @@ class TeamStore extends ChangeNotifier {
   }
 
   void saveItem(String teamId, RosterItem item) {
-    _teamDao.insertItem(teamId, item); // ★Dao使用
+    _teamDao.insertItem(teamId, item);
     notifyListeners();
   }
 
   void deleteItem(String teamId, RosterItem item) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.items.remove(item);
-    _teamDao.deleteItem(item.id); // ★Dao使用
+    _teamDao.deleteItem(item.id);
     notifyListeners();
   }
 }

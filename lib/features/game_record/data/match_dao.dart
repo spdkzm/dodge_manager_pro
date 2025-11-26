@@ -1,5 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import '../../team_mgmt/database_helper.dart';
+import '../../../core/database/database_helper.dart';
 
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();

@@ -1,60 +1,56 @@
-// lib/features/settings/presentation/match_environment_screen.dart
 import 'package:flutter/material.dart';
-import '../../game_record/models.dart';
-import '../../game_record/persistence.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 
-class MatchEnvironmentScreen extends StatefulWidget {
+// Game Record Domain & Data
+import '../../../game_record/domain/models.dart';
+import '../../../game_record/data/persistence.dart';
+
+
+// ★変更: StatefulWidget -> HookWidget
+class MatchEnvironmentScreen extends HookWidget {
   const MatchEnvironmentScreen({super.key});
 
   @override
-  State<MatchEnvironmentScreen> createState() => _MatchEnvironmentScreenState();
-}
-
-class _MatchEnvironmentScreenState extends State<MatchEnvironmentScreen> {
-  // 初期値 (ロード待ちの間)
-  AppSettings _currentSettings = AppSettings(squadNumbers: [], actions: []);
-  bool _isLoading = true;
-
-  final TextEditingController _timeController = TextEditingController();
-  int _gridColumns = 3;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final settings = await DataManager.loadSettings();
-    setState(() {
-      _currentSettings = settings;
-      _timeController.text = settings.matchDurationMinutes.toString();
-      _gridColumns = settings.gridColumns;
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _saveSettings() async {
-    final int? time = int.tryParse(_timeController.text);
-    if (time != null && time > 0) {
-      _currentSettings.matchDurationMinutes = time;
-    }
-    _currentSettings.gridColumns = _gridColumns;
-
-    // DataManagerを使って保存
-    await DataManager.saveSettings(_currentSettings);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('設定を保存しました')),
-      );
-      Navigator.pop(context, true); // trueを返して変更があったことを伝える
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    // State管理をHooksに置き換え
+    final currentSettings = useState(AppSettings(squadNumbers: [], actions: []));
+    final isLoading = useState(true);
+    final gridColumns = useState(3);
+
+    // コントローラーの自動管理
+    final timeController = useTextEditingController();
+
+    // 初期ロード (useEffectで1回だけ実行)
+    useEffect(() {
+      void load() async {
+        final settings = await DataManager.loadSettings();
+        currentSettings.value = settings;
+        timeController.text = settings.matchDurationMinutes.toString();
+        gridColumns.value = settings.gridColumns;
+        isLoading.value = false;
+      }
+      load();
+      return null;
+    }, []);
+
+    Future<void> saveSettings() async {
+      final int? time = int.tryParse(timeController.text);
+      if (time != null && time > 0) {
+        currentSettings.value.matchDurationMinutes = time;
+      }
+      currentSettings.value.gridColumns = gridColumns.value;
+
+      await DataManager.saveSettings(currentSettings.value);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('設定を保存しました')),
+        );
+        Navigator.pop(context, true);
+      }
+    }
+
+    if (isLoading.value) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -63,7 +59,7 @@ class _MatchEnvironmentScreenState extends State<MatchEnvironmentScreen> {
         title: const Text('試合環境設定'),
         actions: [
           TextButton(
-            onPressed: _saveSettings,
+            onPressed: saveSettings,
             child: const Text('保存', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
           ),
         ],
@@ -74,7 +70,7 @@ class _MatchEnvironmentScreenState extends State<MatchEnvironmentScreen> {
           const Text("試合ルール", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           TextField(
-            controller: _timeController,
+            controller: timeController,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
               labelText: "試合時間の長さ (分)",
@@ -92,19 +88,17 @@ class _MatchEnvironmentScreenState extends State<MatchEnvironmentScreen> {
             children: [
               Expanded(
                 child: Slider(
-                  value: _gridColumns.toDouble(),
+                  value: gridColumns.value.toDouble(),
                   min: 2,
                   max: 6,
                   divisions: 4,
-                  label: "$_gridColumns 列",
+                  label: "${gridColumns.value} 列",
                   onChanged: (val) {
-                    setState(() {
-                      _gridColumns = val.toInt();
-                    });
+                    gridColumns.value = val.toInt();
                   },
                 ),
               ),
-              Text("$_gridColumns 列", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text("${gridColumns.value} 列", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 20),
@@ -119,12 +113,12 @@ class _MatchEnvironmentScreenState extends State<MatchEnvironmentScreen> {
             child: GridView.builder(
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: _gridColumns,
+                crossAxisCount: gridColumns.value,
                 childAspectRatio: 2.0,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
               ),
-              itemCount: 6, // ダミー
+              itemCount: 6,
               itemBuilder: (context, index) => ElevatedButton(
                 onPressed: null,
                 style: ElevatedButton.styleFrom(

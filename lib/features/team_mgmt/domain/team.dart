@@ -1,6 +1,6 @@
 import 'package:uuid/uuid.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/schema.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/roster_item.dart';
+import 'schema.dart';
+import 'roster_item.dart';
 
 class Team {
   String id;

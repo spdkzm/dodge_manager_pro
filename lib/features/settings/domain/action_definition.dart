@@ -1,68 +1,46 @@
 // lib/features/settings/domain/action_definition.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:uuid/uuid.dart';
 
-class ActionDefinition {
-  final String id;
-  String name;
+part 'action_definition.freezed.dart';
+part 'action_definition.g.dart';
 
-  // ★変更: サブアクションをマップで管理
-  // key: "default", "success", "failure"
-  // value: List<String>
-  Map<String, List<String>> subActionsMap;
+// ★変更: @unfreezed にする
+@unfreezed
+class ActionDefinition with _$ActionDefinition {
+  factory ActionDefinition({ // const を削除
+    @Default('') String id,
+    required String name,
+    @Default({'default': [], 'success': [], 'failure': []}) Map<String, List<String>> subActionsMap,
+    @Default(false) bool isSubRequired,
+    @Default(0) int sortOrder,
+    @Default(false) bool hasSuccess,
+    @Default(false) bool hasFailure,
+  }) = _ActionDefinition;
 
-  bool isSubRequired;
-  int sortOrder;
-  bool hasSuccess;
-  bool hasFailure;
-
-  ActionDefinition({
-    String? id,
-    required this.name,
-    Map<String, List<String>>? subActionsMap,
-    this.isSubRequired = false,
-    this.sortOrder = 0,
-    this.hasSuccess = false,
-    this.hasFailure = false,
-  }) : id = id ?? const Uuid().v4(),
-        subActionsMap = subActionsMap ?? {'default': [], 'success': [], 'failure': []};
-
-  // DB保存用
-  Map<String, dynamic> toMap() {
-    // subActionsMapはDBヘルパー側でJSONエンコードする
-    return {
-      'id': id,
-      'name': name,
-      'subActionsMap': subActionsMap,
-      'isSubRequired': isSubRequired,
-      'sortOrder': sortOrder,
-      'hasSuccess': hasSuccess,
-      'hasFailure': hasFailure,
-    };
-  }
+  factory ActionDefinition.fromJson(Map<String, dynamic> json) => _$ActionDefinitionFromJson(json);
 
   factory ActionDefinition.fromMap(Map<String, dynamic> map) {
-    // DBから読み込んだMapを復元
-    // 古いデータ構造(List)との互換性も考慮しつつ、基本はMapで扱う
-    Map<String, List<String>> loadedMap = {'default': [], 'success': [], 'failure': []};
+    Map<String, dynamic> modMap = Map.from(map);
 
-    if (map['subActionsMap'] is Map) {
-      final m = map['subActionsMap'] as Map;
-      loadedMap['default'] = List<String>.from(m['default'] ?? []);
-      loadedMap['success'] = List<String>.from(m['success'] ?? []);
-      loadedMap['failure'] = List<String>.from(m['failure'] ?? []);
-    } else if (map['subActions'] is List) {
-      // 旧仕様(List)の場合、defaultに入れる
-      loadedMap['default'] = List<String>.from(map['subActions']);
+    if (modMap['subActionsMap'] is! Map) {
+      Map<String, List<String>> loadedMap = {'default': [], 'success': [], 'failure': []};
+      if (map['subActions'] is List) {
+        loadedMap['default'] = List<String>.from(map['subActions']);
+      }
+      modMap['subActionsMap'] = loadedMap;
     }
 
-    return ActionDefinition(
-      id: map['id'],
-      name: map['name'],
-      subActionsMap: loadedMap,
-      isSubRequired: map['isSubRequired'] ?? false,
-      sortOrder: map['sortOrder'] ?? 0,
-      hasSuccess: map['hasSuccess'] ?? false,
-      hasFailure: map['hasFailure'] ?? false,
-    );
+    if (modMap['id'] == null) {
+      modMap['id'] = const Uuid().v4();
+    }
+
+    return ActionDefinition.fromJson(modMap);
+  }
+}
+
+extension ActionDefinitionX on ActionDefinition {
+  Map<String, dynamic> toMap() {
+    return toJson();
   }
 }

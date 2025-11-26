@@ -1,6 +1,6 @@
 // lib/features/game_record/presentation/widgets/game_log_panel.dart
 import 'package:flutter/material.dart';
-import '../../models.dart'; // LogEntry, ActionResult, LogType
+import '../../domain/models.dart'; // LogEntry, ActionResult, LogType
 
 class GameLogPanel extends StatelessWidget {
   final List<LogEntry> logs;

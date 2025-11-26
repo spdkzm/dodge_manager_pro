@@ -1,7 +1,7 @@
-// lib/persistence.dart
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'models.dart';
+// Modelsへのパス修正
+import '../domain/models.dart';
 
 class DataManager {
   static const String _keySettings = 'dodge_log_settings_v3';

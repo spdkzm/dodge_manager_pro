@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team_store.dart';
-import 'package:dodge_manager_pro/features/team_mgmt/team.dart';
+import 'package:dodge_manager_pro/features/team_mgmt/application/team_store.dart';
+import 'package:dodge_manager_pro/features/team_mgmt/domain/team.dart';
 
 class TeamManagementScreen extends StatefulWidget {
   const TeamManagementScreen({super.key});

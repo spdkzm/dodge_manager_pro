@@ -1,29 +1,41 @@
-// lib/features/game_record/application/game_recorder_controller.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// データ関連
-import '../../team_mgmt/team_store.dart';
-import '../../team_mgmt/schema.dart';
-import '../../team_mgmt/database_helper.dart'; // ActionDao, MatchDao用 (不要なら削除可)
+// Team Management
+import '../../team_mgmt/application/team_store.dart';
+import '../../team_mgmt/domain/schema.dart';
+
+// Settings
 import '../../settings/data/action_dao.dart';
+
+// Game Record
 import '../data/match_dao.dart';
-import '../models.dart';
-import '../persistence.dart';
+import '../domain/models.dart';
+import '../data/persistence.dart';
+
+// ★追加: コントローラーのプロバイダー
+// autoDispose: 画面を閉じたら自動でdispose(破棄)され、再入場時は新品になる
+final gameRecorderProvider = ChangeNotifierProvider.autoDispose<GameRecorderController>((ref) {
+  return GameRecorderController(ref);
+});
 
 class GameRecorderController extends ChangeNotifier {
+  final Ref ref; // ★追加: 他のProviderを読むため
+
   // 依存オブジェクト
-  final TeamStore _teamStore = TeamStore();
   final ActionDao _actionDao = ActionDao();
   final MatchDao _matchDao = MatchDao();
 
+  // ★変更: TeamStoreはProviderから取得する
+  TeamStore get _teamStore => ref.read(teamStoreProvider);
+
+  GameRecorderController(this.ref);
+
   // 設定・マスタデータ
   AppSettings settings = AppSettings(squadNumbers: [], actions: []);
-
-  // ★修正: 変数名を uiActions に統一 (privateの _uiActions ではなく)
   List<UIActionItem> uiActions = [];
-
   Map<String, String> playerNames = {};
 
   // 試合状態
@@ -44,7 +56,6 @@ class GameRecorderController extends ChangeNotifier {
   bool _isRunning = false;
   bool _hasMatchStarted = false;
 
-  // Getters for Timer
   int get remainingSeconds => _remainingSeconds;
   bool get isRunning => _isRunning;
   bool get hasMatchStarted => _hasMatchStarted;
@@ -68,6 +79,7 @@ class GameRecorderController extends ChangeNotifier {
     final loadedSettings = await DataManager.loadSettings();
     final currentLogs = await DataManager.loadCurrentLogs();
 
+    // TeamStoreのロード状態を確認
     if (!_teamStore.isLoaded) {
       await _teamStore.loadFromDb();
     }
@@ -83,8 +95,9 @@ class GameRecorderController extends ChangeNotifier {
       String? nameFieldId;
       String? courtNameFieldId;
       for (var field in currentTeam.schema) {
-        if (field.type == FieldType.uniformNumber) numberFieldId = field.id;
-        else if (field.type == FieldType.personName) nameFieldId = field.id;
+        if (field.type == FieldType.uniformNumber) {
+          numberFieldId = field.id;
+        } else if (field.type == FieldType.personName) nameFieldId = field.id;
         else if (field.type == FieldType.courtName) courtNameFieldId = field.id;
       }
 
@@ -141,15 +154,13 @@ class GameRecorderController extends ChangeNotifier {
       }
     }
 
-    // 状態更新
     settings = loadedSettings;
     logs = currentLogs;
-    uiActions = generatedUIActions; // ★修正: _uiActions -> uiActions
+    uiActions = generatedUIActions;
     _opponentName = settings.lastOpponent;
     _remainingSeconds = settings.matchDurationMinutes * 60;
     playerNames = nameMap;
 
-    // 選手リスト初期化
     if (rosterNumbers.isNotEmpty) {
       benchPlayers = rosterNumbers;
     } else {
@@ -165,7 +176,9 @@ class GameRecorderController extends ChangeNotifier {
   void updateMatchInfo(String opponent, DateTime date) {
     _opponentName = opponent;
     _matchDate = date;
-    settings.lastOpponent = opponent;
+    settings.lastOpponent = opponent; // セッターエラー回避のため一時的にunfreeze対応前提
+    // Freezedの書き換え不可対応が必要な場合は copyWith を使う
+    // settings = settings.copyWith(lastOpponent: opponent);
     DataManager.saveSettings(settings);
     notifyListeners();
   }
@@ -288,7 +301,6 @@ class GameRecorderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ログ確定
   String? confirmLog() {
     if (selectedPlayer == null || selectedUIAction == null) return null;
 
@@ -368,7 +380,6 @@ class GameRecorderController extends ChangeNotifier {
     _isRunning = false;
     _remainingSeconds = settings.matchDurationMinutes * 60;
 
-    // ★修正: _loadData() -> loadData()
     loadData();
     selectedForMove.clear();
     selectedPlayer = null;

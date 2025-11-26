@@ -1,8 +1,8 @@
 // lib/features/settings/presentation/action_settings_screen.dart
 import 'package:flutter/material.dart';
-import '../data/action_dao.dart';      // ★変更: Daoインポート
-import '../../team_mgmt/team_store.dart';
-import '../domain/action_definition.dart';
+import '../../data/action_dao.dart';      // ★変更: Daoインポート
+import '../../../team_mgmt/application/team_store.dart';
+import '../../domain/action_definition.dart';
 
 class ActionSettingsScreen extends StatefulWidget {
   const ActionSettingsScreen({super.key});

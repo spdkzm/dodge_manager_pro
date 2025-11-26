@@ -1,6 +1,7 @@
-// lib/features/game_record/presentation/widgets/game_operation_panel.dart
 import 'package:flutter/material.dart';
-import '../../models.dart'; // ★修正: ここからUIActionItem等をインポート
+// UIActionItemなどのモデル
+import '../../domain/models.dart';
+
 
 class GameOperationPanel extends StatelessWidget {
   final List<UIActionItem> uiActions;

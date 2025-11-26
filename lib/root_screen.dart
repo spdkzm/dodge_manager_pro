@@ -1,10 +1,9 @@
-// lib/root_screen.dart
 import 'package:flutter/material.dart';
 
-// 各機能の画面をインポート
-import 'features/game_record/match_record_screen.dart';
-import 'features/team_mgmt/main_screen.dart';
-import 'features/settings/presentation/unified_settings_screen.dart'; // ★追加
+// 修正後のパス
+import 'features/game_record/presentation/pages/match_record_screen.dart';
+import 'features/team_mgmt/presentation/pages/main_screen.dart';
+import 'features/settings/presentation/pages/unified_settings_screen.dart';
 
 class RootScreen extends StatefulWidget {
   const RootScreen({super.key});

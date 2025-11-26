@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
-import '../../team_mgmt/database_helper.dart';
+import '../../../core/database/database_helper.dart';
 
 class ActionDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();

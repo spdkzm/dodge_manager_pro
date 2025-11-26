@@ -1,6 +1,5 @@
-// lib/features/team_mgmt/main_screen.dart
 import 'package:flutter/material.dart';
-import 'player_list_screen.dart';
+import 'player_list_screen.dart'; // 同じ階層
 
 class MainScreen extends StatelessWidget {
   const MainScreen({super.key});

@@ -1,11 +1,11 @@
 // lib/features/game_record/history_screen.dart
 import 'package:flutter/material.dart';
 
-import '../../features/team_mgmt/team_store.dart';
+import '../../../team_mgmt/application/team_store.dart';
 // import '../../features/team_mgmt/database_helper.dart'; // 削除
-import 'data/match_dao.dart'; // ★変更: DAOインポート
+import '../../data/match_dao.dart'; // ★変更: DAOインポート
 
-import 'models.dart';
+import '../../domain/models.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
