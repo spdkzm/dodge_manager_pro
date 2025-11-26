@@ -108,11 +108,23 @@ class _ButtonLayoutSettingsScreenState extends ConsumerState<ButtonLayoutSetting
     }
   }
 
+  // ★追加: 隙間を詰めて再配置する処理 (列数変更時に呼ぶ)
+  void _compactItems() {
+    // 現在のアイテムをインデックス順にソートして取得
+    final sortedItems = _gridSlots.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    _gridSlots.clear();
+
+    // 0から詰めて再配置
+    for (int i = 0; i < sortedItems.length; i++) {
+      _gridSlots[i] = sortedItems[i].value;
+    }
+  }
+
   Future<void> _save() async {
     // 1. グリッドの状態から ActionDefinition を更新
     // まず全アクションの位置情報をリセット（配置されなかったボタン対策）
-    // (今回は全ボタンが必ず配置される前提)
-
     final Map<String, ActionDefinition> updatesMap = {
       for (var a in _originalActions) a.id: a
     };
@@ -177,7 +189,16 @@ class _ButtonLayoutSettingsScreenState extends ConsumerState<ButtonLayoutSetting
                     value: _columns.toDouble(),
                     min: 2, max: 6, divisions: 4,
                     label: "$_columns 列",
-                    onChanged: (val) => setState(() => _columns = val.toInt()),
+                    onChanged: (val) {
+                      setState(() {
+                        int newCols = val.toInt();
+                        // ★修正: 列数が変わったら、隙間を詰めて再配置する
+                        if (newCols != _columns) {
+                          _columns = newCols;
+                          _compactItems();
+                        }
+                      });
+                    },
                   ),
                 ),
                 Text("$_columns 列", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -204,7 +225,7 @@ class _ButtonLayoutSettingsScreenState extends ConsumerState<ButtonLayoutSetting
                   onWillAccept: (data) => true,
                   onAccept: (data) {
                     setState(() {
-                      // 移動元のインデックスを探して削除 (valueの参照等価性で検索できないため、IDとTypeで検索)
+                      // 移動元のインデックスを探して削除
                       int oldIndex = -1;
                       _gridSlots.forEach((key, val) {
                         if (val.parentId == data.parentId && val.type == data.type) {
@@ -218,8 +239,6 @@ class _ButtonLayoutSettingsScreenState extends ConsumerState<ButtonLayoutSetting
                       if (item != null) {
                         if (oldIndex != -1) {
                           _gridSlots[oldIndex] = item;
-                        } else {
-                          // 新規ドロップ等の場合（今回はなし）
                         }
                       }
 

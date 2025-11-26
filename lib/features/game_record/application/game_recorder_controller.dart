@@ -34,10 +34,12 @@ class GameRecorderController extends ChangeNotifier {
 
   String _opponentName = "";
   DateTime _matchDate = DateTime.now();
+
   Timer? _gameTimer;
   int _remainingSeconds = 300;
   bool _isRunning = false;
   bool _hasMatchStarted = false;
+
   String? selectedPlayer;
   Set<String> selectedForMove = {};
   bool isMultiSelectMode = false;
@@ -97,7 +99,8 @@ class GameRecorderController extends ChangeNotifier {
             nameMap[numVal] = displayName;
           }
         }
-        rosterNumbers.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
+        // 初期ロード時のソートも安全策をとる (int.tryParse)
+        rosterNumbers.sort((a, b) => (int.tryParse(a) ?? 99999).compareTo(int.tryParse(b) ?? 99999));
       }
 
       // アクションロードと配置
@@ -113,10 +116,10 @@ class GameRecorderController extends ChangeNotifier {
         final subMap = map['subActionsMap'] as Map<String, dynamic>? ?? {};
         List<String> getSubs(String key) => (subMap[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
-// 1. 成功ボタン
+        // 1. 成功ボタン
         if (hasSuccess) {
           final item = UIActionItem(
-              name: "${name}成功", // カッコなし
+              name: "${name}成功",
               parentName: name,
               fixedResult: ActionResult.success,
               subActions: getSubs('success'),
@@ -130,7 +133,7 @@ class GameRecorderController extends ChangeNotifier {
         // 2. 失敗ボタン
         if (hasFailure) {
           final item = UIActionItem(
-              name: "${name}失敗", // カッコなし
+              name: "${name}失敗",
               parentName: name,
               fixedResult: ActionResult.failure,
               subActions: getSubs('failure'),
@@ -144,7 +147,7 @@ class GameRecorderController extends ChangeNotifier {
         // 3. 通常ボタン (成功も失敗もない場合)
         if (!hasSuccess && !hasFailure) {
           final item = UIActionItem(
-              name: name, // 項目名のみ
+              name: name,
               parentName: name,
               fixedResult: ActionResult.none,
               subActions: getSubs('default'),
@@ -167,7 +170,6 @@ class GameRecorderController extends ChangeNotifier {
     _remainingSeconds = settings.matchDurationMinutes * 60;
     playerNames = nameMap;
 
-    // ★修正: 既に配置済みならリセットしない（試合連続実施のため）
     if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
       if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
     }
@@ -175,27 +177,127 @@ class GameRecorderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ... (操作系メソッドは変更なし) ...
   void updateMatchInfo(String opponent, DateTime date) { _opponentName = opponent; _matchDate = date; settings.lastOpponent = opponent; DataManager.saveSettings(settings); notifyListeners(); }
   void selectPlayer(String number) { if (isMultiSelectMode) { _toggleMultiSelect(number); } else { selectedPlayer = number; notifyListeners(); } }
   void startMultiSelect(String number) { _toggleMultiSelect(number); }
   void _toggleMultiSelect(String number) { if (selectedForMove.contains(number)) { selectedForMove.remove(number); if (selectedForMove.isEmpty) isMultiSelectMode = false; } else { selectedForMove.add(number); isMultiSelectMode = true; selectedPlayer = null; } notifyListeners(); }
   void clearMultiSelect() { selectedForMove.clear(); isMultiSelectMode = false; notifyListeners(); }
-  void moveSelectedPlayers(String toType) { if (selectedForMove.isEmpty) return; courtPlayers.removeWhere((p) => selectedForMove.contains(p)); benchPlayers.removeWhere((p) => selectedForMove.contains(p)); absentPlayers.removeWhere((p) => selectedForMove.contains(p)); if (toType == 'court') courtPlayers.addAll(selectedForMove); if (toType == 'bench') benchPlayers.addAll(selectedForMove); if (toType == 'absent') absentPlayers.addAll(selectedForMove); _sortList(courtPlayers); _sortList(benchPlayers); _sortList(absentPlayers); selectedForMove.clear(); isMultiSelectMode = false; selectedPlayer = null; notifyListeners(); }
-  void _sortList(List<String> list) => list.sort((a, b) => int.parse(a).compareTo(int.parse(b)));
+
+  void moveSelectedPlayers(String toType) {
+    if (selectedForMove.isEmpty) return;
+    courtPlayers.removeWhere((p) => selectedForMove.contains(p));
+    benchPlayers.removeWhere((p) => selectedForMove.contains(p));
+    absentPlayers.removeWhere((p) => selectedForMove.contains(p));
+    if (toType == 'court') courtPlayers.addAll(selectedForMove);
+    if (toType == 'bench') benchPlayers.addAll(selectedForMove);
+    if (toType == 'absent') absentPlayers.addAll(selectedForMove);
+
+    _sortList(courtPlayers);
+    _sortList(benchPlayers);
+    _sortList(absentPlayers);
+
+    selectedForMove.clear();
+    isMultiSelectMode = false;
+    selectedPlayer = null;
+    notifyListeners();
+  }
+
+  // ★修正 [Phase1]: 安全なソート処理 (int.tryParseを使用)
+  // 数値変換できない文字列(12Aなど)が含まれていてもクラッシュしないように修正
+  void _sortList(List<String> list) {
+    list.sort((a, b) {
+      final numA = int.tryParse(a);
+      final numB = int.tryParse(b);
+
+      // 両方数値なら数値として比較
+      if (numA != null && numB != null) {
+        return numA.compareTo(numB);
+      }
+      // 片方だけ数値なら、数値を優先して前に並べる
+      if (numA != null) return -1;
+      if (numB != null) return 1;
+
+      // 両方数値でなければ文字列として辞書順比較
+      return a.compareTo(b);
+    });
+  }
+
   void selectAction(UIActionItem action) { selectedUIAction = action; selectedSubAction = null; selectedResult = action.fixedResult; notifyListeners(); }
   void selectResult(ActionResult result) { selectedResult = result; notifyListeners(); }
   void selectSubAction(String sub) { selectedSubAction = sub; notifyListeners(); }
-  void startTimer() { if (!_hasMatchStarted) { _hasMatchStarted = true; _recordSystemLog("試合開始"); } else if (!_isRunning) { _recordSystemLog("試合再開"); } _isRunning = true; notifyListeners(); _gameTimer?.cancel(); _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) { if (_remainingSeconds > 0) { _remainingSeconds--; notifyListeners(); } else { stopTimer(); } }); }
-  void stopTimer() { _gameTimer?.cancel(); _isRunning = false; if (_hasMatchStarted) _recordSystemLog("タイム"); notifyListeners(); }
+
+  // ★修正 [Phase1]: タイマーロジックを時刻差分方式に変更
+  // バックグラウンドやスリープに入っても時間がズレないように修正
+  void startTimer() {
+    if (!_hasMatchStarted) {
+      _hasMatchStarted = true;
+      _recordSystemLog("試合開始");
+    } else if (!_isRunning) {
+      _recordSystemLog("試合再開");
+    }
+    _isRunning = true;
+    notifyListeners();
+
+    _gameTimer?.cancel();
+
+    // 開始時点の情報を保持
+    final startTime = DateTime.now();
+    final initialSeconds = _remainingSeconds;
+
+    _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      // 経過時間を現在時刻との差分で計算
+      final elapsed = DateTime.now().difference(startTime).inSeconds;
+      final newRemaining = initialSeconds - elapsed;
+
+      if (newRemaining <= 0) {
+        _remainingSeconds = 0;
+        notifyListeners(); // 0を表示更新
+        stopTimer();
+      } else {
+        _remainingSeconds = newRemaining;
+        notifyListeners();
+      }
+    });
+  }
+
+  void stopTimer() {
+    _gameTimer?.cancel();
+    _isRunning = false;
+    if (_hasMatchStarted) _recordSystemLog("タイム");
+    notifyListeners();
+  }
+
   void _recordSystemLog(String action) { logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: _opponentName, gameTime: formattedTime, playerNumber: '', action: action, type: LogType.system, result: ActionResult.none)); DataManager.saveCurrentLogs(logs); notifyListeners(); }
-  String? confirmLog() { if (selectedPlayer == null || selectedUIAction == null) return null; if (selectedUIAction!.isSubRequired && selectedUIAction!.subActions.isNotEmpty && selectedSubAction == null) return "詳細項目の選択が必須です"; logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: _opponentName, gameTime: formattedTime, playerNumber: selectedPlayer!, action: selectedUIAction!.parentName, subAction: selectedSubAction, type: LogType.action, result: selectedUIAction!.fixedResult)); selectedUIAction = null; selectedSubAction = null; DataManager.saveCurrentLogs(logs); notifyListeners(); return null; }
+
+  // ★修正 [Phase1]: 詳細項目の必須チェックロジックを修正
+  // 「詳細必須」かつ「選択肢が存在する」場合のみエラーとする
+  String? confirmLog() {
+    if (selectedPlayer == null || selectedUIAction == null) return null;
+
+    // SubActionsが空でない場合のみ、未選択をエラーとする
+    if (selectedUIAction!.isSubRequired && selectedUIAction!.subActions.isNotEmpty && selectedSubAction == null) {
+      return "詳細項目の選択が必須です";
+    }
+
+    logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: _opponentName, gameTime: formattedTime, playerNumber: selectedPlayer!, action: selectedUIAction!.parentName, subAction: selectedSubAction, type: LogType.action, result: selectedUIAction!.fixedResult));
+    selectedUIAction = null;
+    selectedSubAction = null;
+    DataManager.saveCurrentLogs(logs);
+    notifyListeners();
+    return null;
+  }
+
   void deleteLog(int index) { logs.removeAt(index); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void restoreLog(int index, LogEntry log) { logs.insert(index, log); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
-  void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
 
-  // --- 保存処理 (★修正) ---
+  void endMatch() {
+    _gameTimer?.cancel();
+    _isRunning = false;
+    _recordSystemLog("試合終了");
+  }
+
+  // --- 保存処理 ---
   Future<bool> saveMatchToDb() async {
     final currentTeam = _teamStore.currentTeam;
     if (currentTeam == null) return false;
@@ -208,7 +310,6 @@ class GameRecorderController extends ChangeNotifier {
     };
     final logMaps = logs.reversed.map((log) => log.toJson()).toList();
 
-    // ★修正: コートプレイヤーリスト(参加記録)も渡す
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
     await DataManager.clearCurrentLogs();
 
@@ -223,7 +324,6 @@ class GameRecorderController extends ChangeNotifier {
     _isRunning = false;
     _remainingSeconds = settings.matchDurationMinutes * 60;
 
-    // ★修正: loadDataを呼んでUIアクション等は更新するが、選手配置はloadData内の分岐で維持される
     loadData();
 
     selectedForMove.clear();
