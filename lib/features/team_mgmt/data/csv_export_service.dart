@@ -4,6 +4,7 @@ import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart'; // ★追加: 保存ダイアログ用
 
 // Domain
 import '../domain/team.dart';
@@ -36,19 +37,41 @@ class CsvExportService {
       rows.add(row);
     }
 
-    // 3. CSV生成と保存
+    // 3. CSVデータの生成
     final String csvData = const ListToCsvConverter().convert(rows);
-    final directory = await getApplicationDocumentsDirectory();
     final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-    // ファイル名に使えない文字を置換
     final safeTeamName = team.name.replaceAll(RegExp(r'[^\w\s\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]'), '_');
-    final path = '${directory.path}/${safeTeamName}_$dateStr.csv';
+    final fileName = '${safeTeamName}_$dateStr.csv';
 
-    final file = File(path);
-    await file.writeAsString('\uFEFF$csvData'); // BOM付きUTF-8
+    // 4. プラットフォームに応じた保存・共有処理
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      // --- デスクトップの場合: 「名前を付けて保存」ダイアログを表示 ---
+      String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: 'CSVファイルの保存場所を選択',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+      );
 
-    // 共有（保存）ダイアログを表示
-    await Share.shareXFiles([XFile(path)], text: '${team.name}の名簿データ');
+      if (outputFile != null) {
+        // ユーザーがキャンセルしなかった場合、ファイルを書き込む
+        // 拡張子がなければ補完するケア
+        if (!outputFile.toLowerCase().endsWith('.csv')) {
+          outputFile = '$outputFile.csv';
+        }
+
+        final file = File(outputFile);
+        await file.writeAsString('\uFEFF$csvData'); // BOM付きUTF-8
+      }
+    } else {
+      // --- モバイルの場合: 共有シートを表示 ---
+      final directory = await getApplicationDocumentsDirectory();
+      final path = '${directory.path}/$fileName';
+      final file = File(path);
+      await file.writeAsString('\uFEFF$csvData'); // BOM付きUTF-8
+
+      await Share.shareXFiles([XFile(path)], text: '${team.name}の名簿データ');
+    }
   }
 
   // フィールドタイプごとのヘッダー名生成
