@@ -442,7 +442,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
               height: headerHeight,
               alignment: Alignment.center,
               decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), color: Colors.grey[200]),
-              child: Text(currentActionName!, style: headerStyle, textAlign: TextAlign.center),
+              child: Text(currentActionName, style: headerStyle, textAlign: TextAlign.center),
             ),
           );
         }

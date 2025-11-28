@@ -170,7 +170,7 @@ class _PlayerListScreenState extends State<PlayerListScreen> {
               }
 
               if (isEditing) {
-                item!.data = tempData;
+                item.data = tempData;
                 _store.saveItem(currentTeam.id, item);
               } else {
                 final newItem = RosterItem(data: tempData);
