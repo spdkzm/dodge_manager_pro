@@ -19,7 +19,7 @@ final availableDaysProvider = StateProvider<List<int>>((ref) => []);
 // 存在する試合IDと対戦相手名のマップを保持するプロバイダー (ID -> Name)
 final availableMatchesProvider = StateProvider<Map<String, String>>((ref) => {});
 
-// ★追加: 選択された試合のMatchRecordを保持するプロバイダー
+// 選択された試合のMatchRecordを保持するプロバイダー
 final selectedMatchRecordProvider = StateProvider<MatchRecord?>((ref) => null);
 
 final analysisControllerProvider = StateNotifierProvider<AnalysisController, AsyncValue<List<PlayerStats>>>((ref) {
@@ -86,7 +86,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       if (year == null) {
         // 年リスト抽出 (累計タブ選択時のみ実行)
         final years = allMatches
-            .map((m) => DateTime.tryParse(m['date'] as String)?.year)
+            .map((m) {
+          final dateStr = m['date'] as String?;
+          return dateStr != null ? DateTime.tryParse(dateStr)?.year : null;
+        })
             .whereType<int>()
             .toSet()
             .toList()
@@ -98,7 +101,11 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       } else if (month == null) {
         // 月リスト抽出 (特定の年が選択され、かつ月が未選択/年累計の時のみ実行)
         final months = allMatches
-            .where((m) => DateTime.tryParse(m['date'] as String)?.year == year)
+            .where((m) {
+          final dateStr = m['date'] as String?;
+          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
+          return date != null && date.year == year;
+        })
             .map((m) => DateTime.tryParse(m['date'] as String)?.month)
             .whereType<int>()
             .toSet()
@@ -111,7 +118,8 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         // 日リスト抽出 (特定の月が選択され、かつ日が未選択/月累計の時のみ実行)
         final days = allMatches
             .where((m) {
-          final date = DateTime.tryParse(m['date'] as String);
+          final dateStr = m['date'] as String?;
+          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
           return date != null && date.year == year && date.month == month;
         })
             .map((m) => DateTime.tryParse(m['date'] as String)?.day)
@@ -125,13 +133,14 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         // 試合リスト抽出 (特定の日が選択され、かつ試合が未選択/日累計の時のみ実行)
         final matches = allMatches
             .where((m) {
-          final date = DateTime.tryParse(m['date'] as String);
+          final dateStr = m['date'] as String?;
+          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
           return date != null && date.year == year && date.month == month && date.day == day;
         });
 
         final matchMap = {
           for (var m in matches)
-            m['id'] as String: m['opponent'] as String,
+            m['id'] as String: m['opponent'] as String? ?? '(相手なし)',
         };
         ref.read(availableMatchesProvider.notifier).state = matchMap;
       }
@@ -165,9 +174,12 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           }
           rosterMap[num] = name;
 
+          // ★修正: ローカル変数としてNonNullのStringを確定させる (Line 109対応)
+          final definiteNum = num;
+
           statsMap[num] = PlayerStats(
-            playerId: num,
-            playerNumber: num,
+            playerId: definiteNum,
+            playerNumber: definiteNum,
             playerName: name,
             matchesPlayed: 0,
             actions: {},
@@ -230,13 +242,19 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         final matchIdKey = p['match_id'] as String? ?? "";
 
         if (pNum.isNotEmpty && matchIdKey.isNotEmpty) {
-          if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
-          playerMatches[pNum]!.add(matchIdKey);
+          // ★修正: ローカル変数としてNonNullのStringを確定させる (Line 125対応)
+          final definitePNum = pNum;
+
+          if (!playerMatches.containsKey(definitePNum)) playerMatches[definitePNum] = {};
+          playerMatches[definitePNum]!.add(matchIdKey);
 
           // 名簿になくても出場記録にある場合のケア
-          if (!statsMap.containsKey(pNum)) {
-            statsMap[pNum] = PlayerStats(
-                playerId: pNum, playerNumber: pNum, playerName: rosterMap[pNum] ?? "(不明)", matchesPlayed: 0, actions: {}
+          if (!statsMap.containsKey(definitePNum)) {
+            statsMap[definitePNum] = PlayerStats(
+                playerId: definitePNum,
+                playerNumber: definitePNum,
+                playerName: rosterMap[definitePNum] ?? "(不明)",
+                matchesPlayed: 0, actions: {}
             );
           }
         }

@@ -30,7 +30,8 @@ class MatchDao {
           'match_id': matchData['id'],
           'game_time': log['gameTime'],
           'player_number': log['player_number'],
-          'action': log['action'],
+          // ★修正: NULLの場合は空文字列を保存 (データ永続性)
+          'action': log['action'] ?? '',
           'sub_action': log['sub_action'],
           'log_type': log['type'],
           'result': log['result'],

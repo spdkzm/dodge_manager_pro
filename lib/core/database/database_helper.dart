@@ -20,6 +20,7 @@ class DatabaseHelper {
     return _database!;
   }
 
+
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
     // ★バージョン変更 (v7)

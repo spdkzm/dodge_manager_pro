@@ -37,6 +37,11 @@ class ActionDefinition with _$ActionDefinition {
       modMap['id'] = const Uuid().v4();
     }
 
+    // ★修正: nameがNULLだった場合の安全策 (クラッシュ回避)
+    if (modMap['name'] == null) {
+      modMap['name'] = '';
+    }
+
     return ActionDefinition.fromJson(modMap);
   }
 }
