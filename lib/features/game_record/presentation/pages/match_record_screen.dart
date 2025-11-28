@@ -10,16 +10,18 @@ import '../widgets/game_operation_panel.dart';
 import '../widgets/game_log_panel.dart';
 
 import '../../domain/models.dart';
-// import 'history_screen.dart'; // ★削除: タブ化に伴い不要
 import '../../application/game_recorder_controller.dart';
 
+// ★修正: HookConsumerWidget に build メソッドを再定義
 class MatchRecordScreen extends HookConsumerWidget {
   const MatchRecordScreen({super.key});
 
+  // ★修正: 全てのロジックを build メソッド内へ移動
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.watch(gameRecorderProvider);
 
+    // Hooksの呼び出しはbuildメソッドの先頭で行う
     useEffect(() {
       Future.microtask(() => controller.loadData());
       return null;
@@ -30,33 +32,30 @@ class MatchRecordScreen extends HookConsumerWidget {
 
     // --- UIイベントハンドラ ---
 
-    void showEditMatchInfo() {
-      final oppCtrl = TextEditingController(text: controller.opponentName);
+    // showDateSelectDialog は build 内で定義
+    void showDateSelectDialog() {
       DateTime tempDate = controller.matchDate;
 
       showDialog(context: context, builder: (context) {
         return StatefulBuilder(builder: (context, setStateDialog) {
           return AlertDialog(
-            title: const Text("試合情報の記録"),
+            title: const Text("試合日付の選択"),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: oppCtrl, decoration: const InputDecoration(labelText: "対戦相手名 / タイトル")),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, children: ["大会", "練習試合", "練習"].map((l) => ActionChip(label: Text(l), onPressed: () => oppCtrl.text = l)).toList()),
-              const SizedBox(height: 16),
               Row(children: [
-                const Text("日付: "),
+                const Text("日付: ", style: TextStyle(fontWeight: FontWeight.bold)),
                 TextButton(
                   onPressed: () async {
                     final picked = await showDatePicker(context: context, initialDate: tempDate, firstDate: DateTime(2020), lastDate: DateTime(2030));
                     if (picked != null) setStateDialog(() => tempDate = picked);
                   },
-                  child: Text(DateFormat('yyyy-MM-dd').format(tempDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  child: Text(DateFormat('yyyy/MM/dd').format(tempDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                 )
               ])
             ]),
             actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
               ElevatedButton(onPressed: () {
-                controller.updateMatchInfo(oppCtrl.text, tempDate);
+                controller.updateMatchDate(tempDate);
                 Navigator.pop(context);
               }, child: const Text("設定"))
             ],
@@ -83,12 +82,11 @@ class MatchRecordScreen extends HookConsumerWidget {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("キャンセル") // キャンセル時はログは残る（誤操作防止）
+                child: const Text("キャンセル")
             ),
             ElevatedButton(onPressed: () async {
               // 保存処理
               final success = await controller.saveMatchToDb();
-              // ※ saveMatchToDb内で resetMatch() が呼ばれ、ログはクリアされます
 
               if (context.mounted) {
                 Navigator.pop(context);
@@ -115,28 +113,29 @@ class MatchRecordScreen extends HookConsumerWidget {
     }
 
     return Scaffold(
-      // ★修正: AppBarのデザイン変更
       appBar: AppBar(
         elevation: 1,
-        // title全体を使ってレイアウトを制御
         title: Stack(
           alignment: Alignment.center,
           children: [
-            // 左寄せ: 対戦相手/タイトル設定
+            // 左寄せ: 日付表示と選択ボタン
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: showEditMatchInfo,
-                icon: const Icon(Icons.edit, size: 20, color: Colors.black54),
-                label: Text(
-                  controller.opponentName.isEmpty ? "試合タイトル設定" : controller.opponentName,
-                  style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold
+              child: Row(
+                children: [
+                  Text(
+                    DateFormat('yyyy/MM/dd').format(controller.matchDate),
+                    style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold
+                    ),
                   ),
-                ),
-                style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  IconButton(
+                    onPressed: showDateSelectDialog,
+                    icon: const Icon(Icons.calendar_today, size: 20, color: Colors.black54),
+                  ),
+                ],
               ),
             ),
 
@@ -155,7 +154,6 @@ class MatchRecordScreen extends HookConsumerWidget {
             ),
           ],
         ),
-        // actions（右端）にあった履歴ボタンとタイマーを削除
         actions: const [],
       ),
       body: Row(children: [

@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 
 // 各機能の画面をインポート
 import 'features/game_record/presentation/pages/match_record_screen.dart';
-import 'features/game_record/presentation/pages/history_screen.dart';
+// import 'features/game_record/presentation/pages/history_screen.dart'; // ★削除
 import 'features/team_mgmt/presentation/pages/main_screen.dart';
 import 'features/settings/presentation/pages/unified_settings_screen.dart';
-import 'features/analysis/presentation/pages/analysis_screen.dart'; // ★追加
+import 'features/analysis/presentation/pages/analysis_screen.dart';
 
 class RootScreen extends StatefulWidget {
   const RootScreen({super.key});
@@ -20,10 +20,10 @@ class _RootScreenState extends State<RootScreen> {
 
   final List<Widget> _screens = [
     const MatchRecordScreen(),     // 0: 記録
-    const HistoryScreen(),         // 1: 履歴
-    const AnalysisScreen(),        // 2: 分析 (★追加)
-    const MainScreen(),            // 3: チーム
-    const UnifiedSettingsScreen(), // 4: 設定
+    // const HistoryScreen(),      // 1: 履歴 (★削除)
+    const AnalysisScreen(),        // 1: 分析 (★インデックス変更)
+    const MainScreen(),            // 2: チーム (★インデックス変更)
+    const UnifiedSettingsScreen(), // 3: 設定 (★インデックス変更)
   ];
 
   @override
@@ -44,11 +44,10 @@ class _RootScreenState extends State<RootScreen> {
                 icon: Icon(Icons.sports_handball),
                 label: Text('試合記録'),
               ),
-              NavigationRailDestination(
-                icon: Icon(Icons.history),
-                label: Text('履歴'),
-              ),
-              // ★追加: 分析タブ
+              // NavigationRailDestination(
+              //   icon: Icon(Icons.history),
+              //   label: Text('履歴'),
+              // ), // ★削除
               NavigationRailDestination(
                 icon: Icon(Icons.analytics),
                 label: Text('分析'),
