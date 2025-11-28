@@ -11,6 +11,7 @@ import '../../../team_mgmt/application/team_store.dart';
 import 'action_settings_screen.dart';
 import 'match_environment_screen.dart';
 import 'button_layout_settings_screen.dart';
+import 'match_deletion_screen.dart'; // ★追加
 
 class UnifiedSettingsScreen extends ConsumerWidget {
   const UnifiedSettingsScreen({super.key});
@@ -140,7 +141,20 @@ class UnifiedSettingsScreen extends ConsumerWidget {
           ),
 
           const Divider(),
-          _buildSectionHeader(context, 'チーム・データ'),
+          _buildSectionHeader(context, 'データ管理'), // セクション名変更
+
+          // ★追加: 試合削除機能
+          ListTile(
+            leading: const Icon(Icons.delete_sweep, color: Colors.red),
+            title: const Text('試合結果の削除', style: TextStyle(color: Colors.red)),
+            subtitle: const Text('過去の試合記録を一覧から完全に削除します (元に戻せません)'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MatchDeletionScreen())),
+          ),
+
+          const Divider(),
+          _buildSectionHeader(context, 'チーム・名簿管理'), // セクション名変更
+
           ListTile(
             leading: const Icon(Icons.group_work),
             title: const Text('チーム管理'),

@@ -33,7 +33,7 @@ class MatchDao {
           // ★修正: NULLの場合は空文字列を保存 (データ永続性)
           'action': log['action'] ?? '',
           'sub_action': log['sub_action'],
-          'log_type': log['type'],
+          'log_type': log['log_type'],
           'result': log['result'],
         });
       }
@@ -58,6 +58,16 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
   }
 
+  // ★追加: 試合の完全削除メソッド
+  Future<void> deleteMatch(String matchId) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      await txn.delete('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
+      await txn.delete('match_participations', where: 'match_id = ?', whereArgs: [matchId]);
+      await txn.delete('matches', where: 'id = ?', whereArgs: [matchId]);
+    });
+  }
+
   // 集計用: 期間内の全ログ取得
   Future<List<Map<String, dynamic>>> getLogsInPeriod(String teamId, String startDate, String endDate) async {
     final db = await _dbHelper.database;
@@ -67,7 +77,7 @@ class MatchDao {
         m.date as match_date, 
         m.opponent 
       FROM match_logs l
-      LEFT JOIN matches m ON l.match_id = m.id  -- ★修正: LEFT JOIN に変更 (ログを確実に取りこぼさないように)
+      LEFT JOIN matches m ON l.match_id = m.id
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
     ''';
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
