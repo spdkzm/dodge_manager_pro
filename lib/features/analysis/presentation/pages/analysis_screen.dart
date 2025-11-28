@@ -1,7 +1,6 @@
 // lib/features/analysis/presentation/pages/analysis_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../application/analysis_controller.dart';
 import '../../domain/player_stats.dart';
@@ -10,31 +9,29 @@ import '../../../settings/domain/action_definition.dart';
 import '../../../settings/data/action_dao.dart';
 import '../../../team_mgmt/application/team_store.dart';
 
-enum AnalysisPeriod { total, year, month, range }
-
-// 集計項目の種類
+// 集計項目の種類 (totalCountを復活)
 enum StatColumnType {
   number,       // 背番号
-  name,         // 名前
+  name,         // コートネーム
   matches,      // 試合数
   successCount, // 成功数
   failureCount, // 失敗数
-  totalCount,   // 総数
   successRate,  // 成功率
-  perGame,      // 1試合平均
-  subActions,   // 詳細内訳
+  totalCount,   // ★復活: 合計回数
 }
 
-// 列設定モデル (色や太字の設定を削除)
+// 列設定モデル
 class _ColumnSpec {
   final String label;
   final StatColumnType type;
   final String? actionName;
+  final bool isFixed; // 固定列か否か
 
   _ColumnSpec({
     required this.label,
     required this.type,
     this.actionName,
+    this.isFixed = false,
   });
 }
 
@@ -45,17 +42,7 @@ class AnalysisScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
-  AnalysisPeriod _selectedPeriod = AnalysisPeriod.total;
-  DateTime _startDate = DateTime(DateTime.now().year, 1, 1);
-  DateTime _endDate = DateTime.now();
 
-  int _sortColumnIndex = 0;
-  bool _sortAscending = true;
-
-  // 表示設定
-  final AnalysisDisplaySettings _displaySettings = AnalysisDisplaySettings();
-
-  // 表示順序用のアクションリスト
   List<String> _sortedActionNames = [];
 
   @override
@@ -82,55 +69,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
   }
 
   void _runAnalysis() {
-    ref.read(analysisControllerProvider.notifier).analyze(_selectedPeriod, _startDate, _endDate);
-  }
-
-  void _showSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(builder: (context, setStateDialog) {
-          return AlertDialog(
-            title: const Text("表示項目の設定"),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CheckboxListTile(
-                  title: const Text("成功率を表示"),
-                  value: _displaySettings.showSuccessRate,
-                  onChanged: (v) => setStateDialog(() => _displaySettings.showSuccessRate = v!),
-                ),
-                CheckboxListTile(
-                  title: const Text("1試合平均を表示"),
-                  value: _displaySettings.showPerGame,
-                  onChanged: (v) => setStateDialog(() => _displaySettings.showPerGame = v!),
-                ),
-                CheckboxListTile(
-                  title: const Text("詳細項目(内訳)を表示"),
-                  value: _displaySettings.showSubActions,
-                  onChanged: (v) => setStateDialog(() => _displaySettings.showSubActions = v!),
-                ),
-                const Divider(),
-                CheckboxListTile(
-                  title: const Text("トップ成績を色付け"),
-                  value: _displaySettings.highlightTop,
-                  onChanged: (v) => setStateDialog(() => _displaySettings.highlightTop = v!),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  setState(() {});
-                },
-                child: const Text("閉じる"),
-              ),
-            ],
-          );
-        });
-      },
-    );
+    ref.read(analysisControllerProvider.notifier).analyze();
   }
 
   @override
@@ -139,14 +78,13 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("データ分析"),
+        title: const Text("データ分析 (累計)"),
         actions: [
-          IconButton(icon: const Icon(Icons.settings), onPressed: _showSettingsDialog),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _runAnalysis),
         ],
       ),
       body: Column(
         children: [
-          _buildControlBar(),
           const Divider(height: 1),
           Expanded(
             child: asyncStats.when(
@@ -163,269 +101,253 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     );
   }
 
-  Widget _buildControlBar() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: Colors.grey[100],
-      child: Row(
-        children: [
-          DropdownButton<AnalysisPeriod>(
-            value: _selectedPeriod,
-            underline: Container(),
-            items: const [
-              DropdownMenuItem(value: AnalysisPeriod.total, child: Text("累計")),
-              DropdownMenuItem(value: AnalysisPeriod.year, child: Text("年間")),
-              DropdownMenuItem(value: AnalysisPeriod.month, child: Text("月間")),
-              DropdownMenuItem(value: AnalysisPeriod.range, child: Text("期間指定")),
-            ],
-            onChanged: (val) {
-              if (val != null) {
-                setState(() => _selectedPeriod = val);
-                _runAnalysis();
-              }
-            },
-          ),
-          const SizedBox(width: 16),
-          if (_selectedPeriod != AnalysisPeriod.total) _buildDateSelector(),
-          const Spacer(),
-          ElevatedButton.icon(onPressed: _runAnalysis, icon: const Icon(Icons.refresh), label: const Text("更新")),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDateSelector() {
-    final dateFormat = DateFormat('yyyy/MM/dd');
-    return OutlinedButton(
-      onPressed: () async {
-        final picked = await showDateRangePicker(
-          context: context,
-          firstDate: DateTime(2020),
-          lastDate: DateTime(2030),
-          initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
-        );
-        if (picked != null) {
-          setState(() {
-            _startDate = picked.start;
-            _endDate = picked.end;
-          });
-          _runAnalysis();
-        }
-      },
-      child: Text("${dateFormat.format(_startDate)} 〜 ${dateFormat.format(_endDate)}"),
-    );
-  }
-
   // --- テーブル構築 ---
   Widget _buildDataTable(List<PlayerStats> originalStats) {
     final controller = ref.read(analysisControllerProvider.notifier);
 
-    // 1. カラム決定
+    // 1. カラム決定と 2. カラム構造の定義
+    final List<_ColumnSpec> columnSpecs = [];
     final definitions = controller.actionDefinitions;
 
+    // ★固定列 (ヘッダー結合) - ラベルを修正
+    columnSpecs.add(_ColumnSpec(label: "背番号", type: StatColumnType.number, isFixed: true));
+    columnSpecs.add(_ColumnSpec(label: "コートネーム", type: StatColumnType.name, isFixed: true));
+    columnSpecs.add(_ColumnSpec(label: "試合数", type: StatColumnType.matches, isFixed: true));
+
+    // 動的列: 定義されたアクションとデータに含まれるアクションを結合
     final dataActionNames = <String>{};
     for (var p in originalStats) dataActionNames.addAll(p.actions.keys);
 
-    // 表示順序のリストを作成
     final displayDefinitions = List<ActionDefinition>.from(definitions);
     final definedNames = definitions.map((d) => d.name).toSet();
-
-    // 未定義のアクション（削除済みなど）を末尾に追加
     for (var name in dataActionNames) {
       if (!definedNames.contains(name)) {
         displayDefinitions.add(ActionDefinition(name: name, hasSuccess: false, hasFailure: false));
       }
     }
 
-    // 2. カラム構造の定義 (Specリストを作成)
-    final List<_ColumnSpec> columnSpecs = [];
-
-    // 固定列
-    columnSpecs.add(_ColumnSpec(label: "No.", type: StatColumnType.number));
-    columnSpecs.add(_ColumnSpec(label: "名前", type: StatColumnType.name));
-    columnSpecs.add(_ColumnSpec(label: "試合数", type: StatColumnType.matches));
-
-    // 動的列
+    // ★動的列生成ロジック (成功/失敗フラグに依存)
     for (var action in displayDefinitions) {
+      // 成功と失敗の両方がある場合: 成功, 失敗, 成功率 (3列)
       if (action.hasSuccess && action.hasFailure) {
-        // 両方あり
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\n成功", type: StatColumnType.successCount, actionName: action.name));
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\n失敗", type: StatColumnType.failureCount, actionName: action.name));
-        if (_displaySettings.showSuccessRate) {
-          columnSpecs.add(_ColumnSpec(label: "${action.name}\n率", type: StatColumnType.successRate, actionName: action.name));
-        }
-      } else if (action.hasSuccess) {
-        // 成功のみ -> 「成功」と表示
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\n成功", type: StatColumnType.successCount, actionName: action.name));
-      } else if (action.hasFailure) {
-        // 失敗のみ -> 「失敗」と表示
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\n失敗", type: StatColumnType.failureCount, actionName: action.name));
-      } else {
-        // どちらもなし -> 「数」と表示
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\n数", type: StatColumnType.totalCount, actionName: action.name));
+        columnSpecs.add(_ColumnSpec(label: "成功", type: StatColumnType.successCount, actionName: action.name));
+        columnSpecs.add(_ColumnSpec(label: "失敗", type: StatColumnType.failureCount, actionName: action.name));
+        columnSpecs.add(_ColumnSpec(label: "成功率", type: StatColumnType.successRate, actionName: action.name));
       }
-
-      // 共通オプション
-      if (_displaySettings.showPerGame) {
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\nAv", type: StatColumnType.perGame, actionName: action.name));
+      // 成功のみの場合: 成功数 (1列)
+      else if (action.hasSuccess) {
+        columnSpecs.add(_ColumnSpec(label: "成功数", type: StatColumnType.successCount, actionName: action.name));
       }
-      if (_displaySettings.showSubActions) {
-        columnSpecs.add(_ColumnSpec(label: "${action.name}\n詳細", type: StatColumnType.subActions, actionName: action.name));
+      // 失敗のみの場合: 失敗数 (1列)
+      else if (action.hasFailure) {
+        columnSpecs.add(_ColumnSpec(label: "失敗数", type: StatColumnType.failureCount, actionName: action.name));
+      }
+      // ★修正: どちらもなしの場合: 合計回数(数)を表示する
+      else {
+        columnSpecs.add(_ColumnSpec(label: "数", type: StatColumnType.totalCount, actionName: action.name));
       }
     }
 
-    // 3. ソート処理
+    // 3. ソート処理: 背番号順に固定
     final sortedStats = List<PlayerStats>.from(originalStats);
-    sortedStats.sort((a, b) {
-      int cmp = 0;
-      if (_sortColumnIndex < columnSpecs.length) {
-        final spec = columnSpecs[_sortColumnIndex];
+    sortedStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 99999).compareTo(int.tryParse(b.playerNumber) ?? 99999));
 
-        switch (spec.type) {
-          case StatColumnType.number:
-            cmp = (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999); break;
-          case StatColumnType.name:
-            cmp = a.playerName.compareTo(b.playerName); break;
-          case StatColumnType.matches:
-            cmp = a.matchesPlayed.compareTo(b.matchesPlayed); break;
-
-          default:
-            if (spec.actionName != null) {
-              final statA = a.actions[spec.actionName];
-              final statB = b.actions[spec.actionName];
-
-              double valA = 0, valB = 0;
-              switch (spec.type) {
-                case StatColumnType.successCount: valA = (statA?.successCount ?? 0).toDouble(); break;
-                case StatColumnType.failureCount: valA = (statA?.failureCount ?? 0).toDouble(); break;
-                case StatColumnType.totalCount:   valA = (statA?.totalCount ?? 0).toDouble(); break;
-                case StatColumnType.successRate:  valA = statA?.successRate ?? -1.0; break;
-                case StatColumnType.perGame:      valA = statA?.getPerGame(a.matchesPlayed) ?? 0.0; break;
-                default: break;
-              }
-              cmp = valA.compareTo(valB);
-            }
-        }
-      }
-      return _sortAscending ? cmp : -cmp;
-    });
-
-    // 4. ハイライト計算
+    // 4. ハイライト計算: 削除済み
     final maxValues = <String, Map<StatColumnType, double>>{};
-    if (_displaySettings.highlightTop) {
-      for (var action in displayDefinitions) {
-        maxValues[action.name] = {};
-        for (var type in [StatColumnType.successCount, StatColumnType.failureCount, StatColumnType.totalCount, StatColumnType.successRate, StatColumnType.perGame]) {
-          double max = -1.0;
-          for (var p in originalStats) {
-            final stat = p.actions[action.name];
-            double val = 0.0;
-            if (stat != null) {
-              if (type == StatColumnType.successCount) val = stat.successCount.toDouble();
-              if (type == StatColumnType.failureCount) val = stat.failureCount.toDouble();
-              if (type == StatColumnType.totalCount) val = stat.totalCount.toDouble();
-              if (type == StatColumnType.successRate) val = stat.successRate;
-              if (type == StatColumnType.perGame) val = stat.getPerGame(p.matchesPlayed);
-            }
-            if (val > max) max = val;
-          }
-          maxValues[action.name]![type] = max;
-        }
-      }
-    }
 
-    // 5. Widget生成 (DataTable)
+
+    // 5. Widget生成 (カスタムTable構造)
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: DataTable(
-          sortColumnIndex: _sortColumnIndex,
-          sortAscending: _sortAscending,
-          headingRowColor: WidgetStateProperty.all(Colors.grey[200]), // シンプルなグレー
-          columnSpacing: 20,
-          dataRowMinHeight: 40,
-          border: TableBorder.all(color: Colors.grey.shade300),
-
-          columns: columnSpecs.asMap().entries.map((entry) {
-            final index = entry.key;
-            final spec = entry.value;
-            return DataColumn(
-              label: Text(
-                spec.label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11), // 色指定削除
-              ),
-              numeric: spec.type != StatColumnType.number && spec.type != StatColumnType.name,
-              onSort: (colIdx, asc) => setState(() {
-                _sortColumnIndex = index;
-                _sortAscending = asc;
-              }),
-            );
-          }).toList(),
-
-          rows: sortedStats.map((player) {
-            return DataRow(
-              cells: columnSpecs.map((spec) {
-                // 固定列
-                if (spec.type == StatColumnType.number) return DataCell(Text(player.playerNumber));
-                if (spec.type == StatColumnType.name) return DataCell(Text(player.playerName));
-                if (spec.type == StatColumnType.matches) return DataCell(Text(player.matchesPlayed.toString()));
-
-                // アクション列
-                final stat = player.actions[spec.actionName];
-                String text = "-";
-                bool isTop = false;
-
-                if (stat != null && (stat.totalCount > 0 || spec.type == StatColumnType.subActions)) {
-                  switch (spec.type) {
-                    case StatColumnType.successCount:
-                      text = stat.successCount.toString();
-                      isTop = stat.successCount >= (maxValues[spec.actionName]![spec.type] ?? 9999);
-                      break;
-                    case StatColumnType.failureCount:
-                      text = stat.failureCount.toString();
-                      isTop = stat.failureCount >= (maxValues[spec.actionName]![spec.type] ?? 9999);
-                      break;
-                    case StatColumnType.totalCount:
-                      text = stat.totalCount.toString();
-                      isTop = stat.totalCount >= (maxValues[spec.actionName]![spec.type] ?? 9999);
-                      break;
-                    case StatColumnType.successRate:
-                      text = stat.totalCount > 0 ? "${stat.successRate.toStringAsFixed(0)}%" : "-";
-                      isTop = stat.successRate >= (maxValues[spec.actionName]![spec.type] ?? 100);
-                      break;
-                    case StatColumnType.perGame:
-                      final av = stat.getPerGame(player.matchesPlayed);
-                      text = av.toStringAsFixed(2);
-                      isTop = av >= (maxValues[spec.actionName]![spec.type] ?? 9999);
-                      break;
-                    case StatColumnType.subActions:
-                      if (stat.subActionCounts.isNotEmpty) {
-                        text = stat.subActionCounts.entries.map((e) => "${e.key}:${e.value}").join(",");
-                      }
-                      break;
-                    default: break;
-                  }
-                }
-
-                if (_displaySettings.highlightTop && isTop && text != "-" && text != "0") {
-                  return DataCell(Text(text, style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold)));
-                }
-
-                return DataCell(Text(text, style: spec.type == StatColumnType.subActions ? const TextStyle(fontSize: 10, color: Colors.black54) : null));
-              }).toList(),
-            );
-          }).toList(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTableHeader(columnSpecs),
+            const Divider(height: 1, thickness: 1),
+            _buildTableBody(sortedStats, columnSpecs, maxValues),
+          ],
         ),
       ),
     );
   }
-}
 
-class AnalysisDisplaySettings {
-  bool showSuccessRate = true;
-  bool showPerGame = false;
-  bool showSubActions = false;
-  bool highlightTop = true;
+  // --- カスタムヘッダー描画 (二段組と結合) ---
+  Widget _buildTableHeader(List<_ColumnSpec> columnSpecs) {
+    const headerStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.black87);
+    const headerHeight = 40.0;
+    const fixedWidth = 90.0;
+    const dynamicWidth = 60.0;
+
+    // 固定列と動的列を分ける
+    final fixedSpecs = columnSpecs.where((s) => s.isFixed).toList();
+    final dynamicSpecs = columnSpecs.where((s) => !s.isFixed).toList();
+
+    // 1. 上段ヘッダー (アクション名): 固定列部分は空白
+    final List<Widget> topRowCells = [];
+
+    // 固定列の空白セル
+    topRowCells.addAll(fixedSpecs.map((_) => SizedBox(width: fixedWidth, height: headerHeight)));
+
+    // 動的列の上段 (アクション名)
+    String? currentActionName;
+    int currentActionColumnCount = 0;
+
+    for (int i = 0; i < dynamicSpecs.length; i++) {
+      final spec = dynamicSpecs[i];
+
+      // アクション名が変わった、または最初のカラムの場合
+      if (spec.actionName != currentActionName) {
+        // 前のアクションが完了していたら、そのウィジェットを確定させる
+        if (currentActionName != null) {
+          topRowCells.add(
+            Container(
+              width: dynamicWidth * currentActionColumnCount,
+              height: headerHeight,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), color: Colors.grey[200]),
+              child: Text(currentActionName!, style: headerStyle, textAlign: TextAlign.center),
+            ),
+          );
+        }
+        currentActionName = spec.actionName;
+        currentActionColumnCount = 1;
+      } else {
+        currentActionColumnCount++;
+      }
+
+      // 最後の要素の場合、または次の要素のアクション名が異なる場合
+      if (i == dynamicSpecs.length - 1 || (i + 1 < dynamicSpecs.length && dynamicSpecs[i + 1].actionName != currentActionName)) {
+        topRowCells.add(
+          Container(
+            width: dynamicWidth * currentActionColumnCount,
+            height: headerHeight,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), color: Colors.grey[200]),
+            child: Text(currentActionName!, style: headerStyle, textAlign: TextAlign.center),
+          ),
+        );
+        currentActionName = null; // リセット
+        currentActionColumnCount = 0;
+      }
+    }
+
+    // 2. 下段ヘッダー (項目名: 成功/失敗/成功率)
+    final List<Widget> bottomRowCells = [];
+
+    // 固定列の結合セル (Rowspan=2)
+    for (final spec in fixedSpecs) {
+      bottomRowCells.add(
+        Container(
+          width: fixedWidth,
+          height: headerHeight,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), color: Colors.grey[200]),
+          child: Text(spec.label, style: headerStyle, textAlign: TextAlign.center),
+        ),
+      );
+    }
+
+    // 動的列の下段 (項目名)
+    for (final spec in dynamicSpecs) {
+      bottomRowCells.add(
+        Container(
+          width: dynamicWidth,
+          height: headerHeight,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            color: Colors.grey[100],
+          ),
+          child: Text(spec.label, style: headerStyle, textAlign: TextAlign.center, maxLines: 1),
+        ),
+      );
+    }
+
+    // 描画: Row1 (Action Title)と Row2 (Sub Title/Fixed Title)を縦に並べる
+    return Column(
+      children: [
+        // Row 1: 上段 (固定列は空白、動的列は結合タイトル)
+        Row(children: topRowCells),
+        // Row 2: 下段 (固定列はタイトル、動的列はサブタイトル)
+        Row(children: bottomRowCells),
+      ],
+    );
+  }
+
+  // --- カスタムボディ描画 ---
+  Widget _buildTableBody(
+      List<PlayerStats> sortedStats,
+      List<_ColumnSpec> columnSpecs,
+      Map<String, Map<StatColumnType, double>> maxValues
+      ) {
+    const cellStyle = TextStyle(fontSize: 13, color: Colors.black87);
+    const fixedWidth = 90.0;
+    const dynamicWidth = 60.0;
+
+    return Column(
+      children: sortedStats.asMap().entries.map((entry) {
+        final playerRowIndex = entry.key;
+        final player = entry.value;
+        final List<Widget> cells = [];
+
+        for (final spec in columnSpecs) {
+          final isFixed = spec.isFixed;
+          final stat = player.actions[spec.actionName];
+          String text = isFixed ? '-' : '';
+
+          // 固定列のデータをセット
+          if (spec.type == StatColumnType.number) text = player.playerNumber;
+          if (spec.type == StatColumnType.name) text = player.playerName;
+          if (spec.type == StatColumnType.matches) text = player.matchesPlayed.toString();
+
+          // 動的列のデータをセット
+          if (!isFixed && stat != null && stat.totalCount > 0) {
+            switch (spec.type) {
+              case StatColumnType.successCount:
+                text = stat.successCount.toString();
+                break;
+              case StatColumnType.failureCount:
+                text = stat.failureCount.toString();
+                break;
+              case StatColumnType.successRate:
+                text = stat.totalCount > 0 ? "${stat.successRate.toStringAsFixed(0)}%" : "-";
+                break;
+            // ★追加: totalCount の表示ロジック
+              case StatColumnType.totalCount:
+                text = stat.totalCount.toString();
+                break;
+              default:
+                break;
+            }
+          }
+
+          // 色付け機能の削除: シンプルな行ストライプのみ残す
+          Color? bgColor = playerRowIndex.isOdd ? Colors.grey.shade100 : Colors.white;
+
+          TextStyle finalStyle = cellStyle.copyWith(
+            fontWeight: FontWeight.normal,
+            color: Colors.black87,
+          );
+
+
+          cells.add(
+            Container(
+              width: isFixed ? fixedWidth : dynamicWidth,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300, width: 0.5),
+                color: bgColor,
+              ),
+              child: Text(text, style: finalStyle),
+            ),
+          );
+        }
+
+        return Row(children: cells);
+      }).toList(),
+    );
+  }
 }

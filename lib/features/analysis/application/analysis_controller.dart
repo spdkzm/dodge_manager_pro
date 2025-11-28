@@ -1,6 +1,6 @@
 // lib/features/analysis/application/analysis_controller.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+// import 'package:intl/intl.dart'; // <--- 削除
 
 import '../../game_record/data/match_dao.dart';
 import '../../team_mgmt/application/team_store.dart';
@@ -9,7 +9,7 @@ import '../../game_record/domain/models.dart';
 import '../../settings/data/action_dao.dart';
 import '../../settings/domain/action_definition.dart';
 import '../domain/player_stats.dart';
-import '../presentation/pages/analysis_screen.dart';
+// import '../presentation/pages/analysis_screen.dart'; // <--- 削除
 
 final analysisControllerProvider = StateNotifierProvider<AnalysisController, AsyncValue<List<PlayerStats>>>((ref) {
   return AnalysisController(ref);
@@ -24,7 +24,8 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
   AnalysisController(this.ref) : super(const AsyncValue.loading());
 
-  Future<void> analyze(AnalysisPeriod period, DateTime start, DateTime end) async {
+  // ★修正: 引数（期間指定）を削除し、常に累計データを取得する
+  Future<void> analyze() async {
     try {
       state = const AsyncValue.loading();
 
@@ -37,18 +38,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         return;
       }
 
-      // 1. 期間設定
-      String startDateStr;
-      String endDateStr;
-      final dateFormat = DateFormat('yyyy-MM-dd');
-
-      if (period == AnalysisPeriod.total) {
-        startDateStr = "2000-01-01";
-        endDateStr = "2099-12-31";
-      } else {
-        startDateStr = dateFormat.format(start);
-        endDateStr = dateFormat.format(end);
-      }
+      // 1. 期間設定 (常に累計とするため固定値を使用)
+      String startDateStr = "2000-01-01";
+      String endDateStr = "2099-12-31";
+      // final dateFormat = DateFormat('yyyy-MM-dd'); // <--- 削除
 
       // 2. アクション定義 (並び順用)
       final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
@@ -87,7 +80,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
 
       // 4. 出場記録 (match_participations) による試合数カウント
-      // ★修正: ここが重要。ログがなくてもコートにいただけでカウントする。
       final participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
 
       // 選手ごとの参加試合IDセット
