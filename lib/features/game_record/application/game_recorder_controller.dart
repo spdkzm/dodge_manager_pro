@@ -10,6 +10,7 @@ import '../../settings/data/action_dao.dart';
 import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
+import 'package:flutter/foundation.dart'; // debugPrintのために追加
 
 final gameRecorderProvider = ChangeNotifierProvider.autoDispose<GameRecorderController>((ref) {
   return GameRecorderController(ref);
@@ -32,7 +33,6 @@ class GameRecorderController extends ChangeNotifier {
   List<String> absentPlayers = [];
   List<LogEntry> logs = [];
 
-  // String _opponentName = ""; // ★削除
   DateTime _matchDate = DateTime.now();
   Timer? _gameTimer;
   int _remainingSeconds = 300;
@@ -45,7 +45,6 @@ class GameRecorderController extends ChangeNotifier {
   String? selectedSubAction;
   ActionResult selectedResult = ActionResult.none;
 
-  // String get opponentName => _opponentName; // ★削除
   DateTime get matchDate => _matchDate;
   int get remainingSeconds => _remainingSeconds;
   bool get isRunning => _isRunning;
@@ -163,14 +162,12 @@ class GameRecorderController extends ChangeNotifier {
     settings = loadedSettings;
     logs = currentLogs;
     uiActions = finalList;
-    // _opponentName = settings.lastOpponent; // ★削除
     _remainingSeconds = settings.matchDurationMinutes * 60;
     playerNames = nameMap;
 
-    // ★修正: _matchDateを初期化
     _matchDate = DateTime.now();
 
-    // ★修正: 既に配置済みならリセットしない（試合連続実施のため）
+    // 既に配置済みならリセットしない（試合連続実施のため）
     if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
       if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
     }
@@ -178,10 +175,8 @@ class GameRecorderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ★変更: updateMatchInfo から updateMatchDate に変更
   void updateMatchDate(DateTime date) {
     _matchDate = date;
-    // settings.lastOpponent の保存も削除
     notifyListeners();
   }
 
@@ -248,7 +243,6 @@ class GameRecorderController extends ChangeNotifier {
   }
 
   void _recordSystemLog(String action) {
-    // ★修正: opponent は placeholder '記録中' を使用
     logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: '', action: action, type: LogType.system, result: ActionResult.none));
     DataManager.saveCurrentLogs(logs);
     notifyListeners();
@@ -261,7 +255,6 @@ class GameRecorderController extends ChangeNotifier {
       return "詳細項目の選択が必須です";
     }
 
-    // ★修正: opponent は placeholder '記録中' を使用
     logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: selectedPlayer!, action: selectedUIAction!.parentName, subAction: selectedSubAction, type: LogType.action, result: selectedUIAction!.fixedResult));
     selectedUIAction = null;
     selectedSubAction = null;
@@ -283,7 +276,7 @@ class GameRecorderController extends ChangeNotifier {
     // 1. 同日試合数をカウントし、連番を決定するロジック
     final dateStr = DateFormat('yyyy-MM-dd').format(_matchDate);
 
-    // ★追加: その日の試合数を取得 (この時点ではlogsに残っているのは未保存のログのみ)
+    // ★追加: その日の試合数を取得 (この時点でlogsに残っているのは未保存のログのみ)
     final existingMatches = await _matchDao.getMatches(currentTeam.id);
     final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
     final sequentialId = matchesToday + 1;
@@ -300,10 +293,18 @@ class GameRecorderController extends ChangeNotifier {
     // ★修正: ログ内のplaceholder '記録中' を実際の連番に置換
     final logMaps = logs.reversed.map((log) {
       final map = log.toJson();
-      map['opponent'] = generatedOpponentName; // LogEntryのtoJsonはopponentを含まないが、LogEntryオブジェクトは変更が必要
-      // Note: LogEntryオブジェクト自体はtoJson時にopponentを使用しないが、MapとしてDBに渡す際にopponentが必要なため、この処理でOK
+      map['opponent'] = generatedOpponentName; // LogEntryのtoJsonはopponentを使用しないが、MapとしてDBに渡す際にopponentが必要
       return map;
     }).toList();
+
+    // ★★★ デバッグログの追加 ★★★
+    if (kDebugMode) {
+      debugPrint("★★★ Saving Log Count: ${logMaps.length} ★★★");
+      if (logMaps.isNotEmpty) {
+        debugPrint("★★★ First Log Entry: ${logMaps.first} ★★★");
+      }
+    }
+    // ★★★ デバッグログの追加 ★★★
 
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
     await DataManager.clearCurrentLogs();
@@ -319,7 +320,6 @@ class GameRecorderController extends ChangeNotifier {
     _isRunning = false;
     _remainingSeconds = settings.matchDurationMinutes * 60;
 
-    // ★修正: loadDataを呼ぶと_matchDateが今日にリセットされるため、ここはOK
     loadData();
 
     selectedForMove.clear();

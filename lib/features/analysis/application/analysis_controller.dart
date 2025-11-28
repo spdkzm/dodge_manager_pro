@@ -22,7 +22,8 @@ final availableMatchesProvider = StateProvider<Map<String, String>>((ref) => {})
 // 選択された試合のMatchRecordを保持するプロバイダー
 final selectedMatchRecordProvider = StateProvider<MatchRecord?>((ref) => null);
 
-final analysisControllerProvider = StateNotifierProvider<AnalysisController, AsyncValue<List<PlayerStats>>>((ref) {
+// ★修正: StateNotifierProvider.autoDispose に変更
+final analysisControllerProvider = StateNotifierProvider.autoDispose<AnalysisController, AsyncValue<List<PlayerStats>>>((ref) {
   return AnalysisController(ref);
 });
 
@@ -39,6 +40,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
   Future<void> analyze({int? year, int? month, int? day, String? matchId}) async {
     try {
       state = const AsyncValue.loading();
+
+      // ★修正: 読み込み処理の前に意図的な遅延を追加 (データ競合回避)
+      await Future.delayed(const Duration(milliseconds: 50));
+
       ref.read(selectedMatchRecordProvider.notifier).state = null; // 毎回リセット
 
       final teamStore = ref.read(teamStoreProvider);
@@ -174,7 +179,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           }
           rosterMap[num] = name;
 
-          // ★修正: ローカル変数としてNonNullのStringを確定させる (Line 109対応)
+          // ★修正: ローカル変数としてNonNullのStringを確定させる
           final definiteNum = num;
 
           statsMap[num] = PlayerStats(

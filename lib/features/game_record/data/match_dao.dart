@@ -28,7 +28,7 @@ class MatchDao {
         await txn.insert('match_logs', {
           'id': log['id'],
           'match_id': matchData['id'],
-          'game_time': log['gameTime'],
+          'game_time': log['game_time'],
           'player_number': log['player_number'],
           // ★修正: NULLの場合は空文字列を保存 (データ永続性)
           'action': log['action'] ?? '',
@@ -67,7 +67,7 @@ class MatchDao {
         m.date as match_date, 
         m.opponent 
       FROM match_logs l
-      INNER JOIN matches m ON l.match_id = m.id
+      LEFT JOIN matches m ON l.match_id = m.id  -- ★修正: LEFT JOIN に変更 (ログを確実に取りこぼさないように)
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
     ''';
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
