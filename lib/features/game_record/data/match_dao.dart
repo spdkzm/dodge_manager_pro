@@ -24,21 +24,22 @@ class MatchDao {
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       // 2. ログ保存
+      // ★修正: LogEntry.toJson() が生成するキャメルケースのキーを使って値を取り出す
       for (var log in logs) {
         await txn.insert('match_logs', {
           'id': log['id'],
           'match_id': matchData['id'],
-          'game_time': log['game_time'],
-          'player_number': log['player_number'],
-          // ★修正: NULLの場合は空文字列を保存 (データ永続性)
+          'game_time': log['gameTime'],       // 修正: game_time -> gameTime
+          'player_number': log['playerNumber'], // 修正: player_number -> playerNumber
+          // NULLの場合は空文字列を保存 (データ永続性)
           'action': log['action'] ?? '',
-          'sub_action': log['sub_action'],
-          'log_type': log['log_type'],
-          'result': log['result'],
+          'sub_action': log['subAction'],     // 修正: sub_action -> subAction
+          'log_type': log['type'],            // 修正: log_type -> type (models.g.dartの定義に合わせる)
+          'result': log['result'],            // resultはそのまま
         });
       }
 
-      // 3. ★追加: 出場記録保存
+      // 3. 出場記録保存
       for (var playerNum in participations) {
         await txn.insert('match_participations', {
           'match_id': matchData['id'],
@@ -58,7 +59,7 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
   }
 
-  // ★追加: 試合の完全削除メソッド
+  // 試合の完全削除メソッド
   Future<void> deleteMatch(String matchId) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -83,7 +84,7 @@ class MatchDao {
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
-  // ★追加: 集計用: 期間内の出場記録取得 (試合数カウントの基準)
+  // 集計用: 期間内の出場記録取得 (試合数カウントの基準)
   Future<List<Map<String, dynamic>>> getParticipationsInPeriod(String teamId, String startDate, String endDate) async {
     final db = await _dbHelper.database;
     final sql = '''

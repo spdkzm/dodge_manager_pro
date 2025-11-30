@@ -22,7 +22,6 @@ final availableMatchesProvider = StateProvider<Map<String, String>>((ref) => {})
 // 選択された試合のMatchRecordを保持するプロバイダー
 final selectedMatchRecordProvider = StateProvider<MatchRecord?>((ref) => null);
 
-// ★修正: StateNotifierProvider.autoDispose に変更
 final analysisControllerProvider = StateNotifierProvider.autoDispose<AnalysisController, AsyncValue<List<PlayerStats>>>((ref) {
   return AnalysisController(ref);
 });
@@ -36,12 +35,11 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
   AnalysisController(this.ref) : super(const AsyncValue.loading());
 
-  // ★修正: analyze メソッドに String? matchId を追加
   Future<void> analyze({int? year, int? month, int? day, String? matchId}) async {
     try {
       state = const AsyncValue.loading();
 
-      // ★追加: 読み込み処理の前に意図的な遅延を追加 (データ競合回避)
+      // 読み込み処理の前に意図的な遅延を追加 (データ競合回避)
       await Future.delayed(const Duration(milliseconds: 50));
 
       ref.read(selectedMatchRecordProvider.notifier).state = null; // 毎回リセット
@@ -71,27 +69,22 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       } else if (month == null) {
         // 年累計
         startDateStr = dateFormat.format(DateTime(year, 1, 1));
-        endDateStr = dateFormat.format(DateTime(year, 12, 31)); // Line 74: year! の ! を削除
+        endDateStr = dateFormat.format(DateTime(year, 12, 31));
       } else if (day == null) {
         // 月累計
         startDateStr = dateFormat.format(DateTime(year, month, 1));
-
-        // 翌月1日の前日を endDateStr とする
-        // Line 79: year と month! の ! を削除
         final nextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
         endDateStr = dateFormat.format(nextMonth.subtract(const Duration(days: 1)));
       } else {
         // 日累計
-        // Line 83: year!, month!, day! の ! を削除
         startDateStr = dateFormat.format(DateTime(year, month, day));
         endDateStr = dateFormat.format(DateTime(year, month, day));
       }
 
-      // ★追加: 存在する年、月、日、試合を抽出 (フィルタリングの最上位階層でのみ実行)
+      // 存在する年、月、日、試合を抽出
       final allMatches = await _matchDao.getMatches(currentTeam.id);
 
       if (year == null) {
-        // 年リスト抽出 (累計タブ選択時のみ実行)
         final years = allMatches
             .map((m) {
           final dateStr = m['date'] as String?;
@@ -106,12 +99,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         ref.read(availableDaysProvider.notifier).state = [];
         ref.read(availableMatchesProvider.notifier).state = {};
       } else if (month == null) {
-        // 月リスト抽出 (特定の年が選択され、かつ月が未選択/年累計の時のみ実行)
         final months = allMatches
             .where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-          // Line 104: date.year の ! を削除
           return date != null && date.year == year;
         })
             .map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.month)
@@ -123,12 +114,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         ref.read(availableDaysProvider.notifier).state = [];
         ref.read(availableMatchesProvider.notifier).state = {};
       } else if (day == null) {
-        // 日リスト抽出 (特定の月が選択され、かつ日が未選択/月累計の時のみ実行)
         final days = allMatches
             .where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-          // Line 118: date.year, date.month の ! を削除
           return date != null && date.year == year && date.month == month;
         })
             .map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.day)
@@ -139,12 +128,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         ref.read(availableDaysProvider.notifier).state = days;
         ref.read(availableMatchesProvider.notifier).state = {};
       } else if (matchId == null) {
-        // 試合リスト抽出 (特定の日が選択され、かつ試合が未選択/日累計の時のみ実行)
         final matches = allMatches
             .where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-          // Line 132: date.year, date.month, date.day の ! を削除
           return date != null && date.year == year && date.month == month && date.day == day;
         });
 
@@ -155,7 +142,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         ref.read(availableMatchesProvider.notifier).state = matchMap;
       }
 
-      // 2. アクション定義 (並び順用)
+      // 2. アクション定義
       final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
       actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
@@ -178,13 +165,11 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           if (name.isEmpty && nameFieldId != null) {
             final n = item.data[nameFieldId];
             if (n is Map) {
-              // ★修正: name['last']とname['first']がnullの場合に備えて?? ''を追加 (エラー回避)
               name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim();
             }
           }
           rosterMap[num] = name;
 
-          // ローカル変数としてNonNullのStringを確定させる (Line 109対応)
           final definiteNum = num;
 
           statsMap[num] = PlayerStats(
@@ -197,7 +182,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         }
       }
 
-      // ★追加: 特定の試合が選択されている場合、MatchRecordを構築する
+      // 特定の試合が選択されている場合、MatchRecordを構築する
       if (matchId != null) {
         final matchRow = allMatches.firstWhere((m) => m['id'] == matchId);
         final logRows = await _matchDao.getMatchLogs(matchId);
@@ -205,7 +190,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         final logs = logRows.map((logRow) {
           return LogEntry(
             id: logRow['id'] as String,
-            // ★修正: matchRowから取得した日付と対戦相手がnullの場合に備えて?? ''を追加 (エラー回避)
             matchDate: matchRow['date'] as String? ?? '',
             opponent: matchRow['opponent'] as String? ?? '',
             gameTime: logRow['game_time'] as String,
@@ -219,7 +203,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
         final record = MatchRecord(
           id: matchId,
-          // ★修正: MatchRecord構築時にもnullチェックを追加 (エラー回避)
           date: matchRow['date'] as String? ?? '',
           opponent: matchRow['opponent'] as String? ?? '',
           logs: logs,
@@ -230,7 +213,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       // 4. 出場記録 (match_participations) による試合数カウント
       final List<Map<String, dynamic>> participations;
       if (matchId != null) {
-        // 特定試合のParticipationsを抽出 (MatchRecord構築時に使用したログから抽出)
         final logs = ref.read(selectedMatchRecordProvider.notifier).state?.logs;
         if (logs != null) {
           final playerNumbers = logs.map((e) => e.playerNumber).toSet();
@@ -239,12 +221,9 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           participations = [];
         }
       } else {
-        // 期間内のParticipationsを抽出
         participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
       }
 
-
-      // 選手ごとの参加試合IDセット
       final Map<String, Set<String>> playerMatches = {};
 
       for (var p in participations) {
@@ -252,13 +231,11 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         final matchIdKey = p['match_id'] as String? ?? "";
 
         if (pNum.isNotEmpty && matchIdKey.isNotEmpty) {
-          // ローカル変数としてNonNullのStringを確定させる (Line 125/130対応)
-          final definitePNum = pNum as String; // String? -> String に明示的にキャスト
+          final definitePNum = pNum as String;
 
           if (!playerMatches.containsKey(definitePNum)) playerMatches[definitePNum] = {};
           playerMatches[definitePNum]!.add(matchIdKey);
 
-          // 名簿になくても出場記録にある場合のケア
           if (!statsMap.containsKey(definitePNum)) {
             statsMap[definitePNum] = PlayerStats(
                 playerId: definitePNum,
@@ -273,17 +250,18 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       // 5. ログ集計
       final List<Map<String, dynamic>> rawLogs;
       if (matchId != null) {
-        // MatchRecord構築時に使用したログを再利用
-        rawLogs = ref.read(selectedMatchRecordProvider.notifier).state?.logs.map((e) => e.toJson()).toList() ?? [];
+        // ★修正: JSON変換ではなく、DAOから直接「生のDBデータ（スネークケース）」を取得する
+        // これにより、累積集計と同じロジック（スネークケースのキー参照）で処理できるようになる
+        rawLogs = await _matchDao.getMatchLogs(matchId);
       } else {
         rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
       }
 
       for (var log in rawLogs) {
+        // ★スネークケースのキー (player_number) で取得するため、matchId指定時も正しく動くようになる
         final pNum = log['player_number'] as String? ?? "";
         if (pNum.isEmpty) continue;
 
-        // ... (ログ集計ロジックは変更なし) ...
         if (!statsMap.containsKey(pNum)) {
           statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: "(未登録)", actions: {});
         }
