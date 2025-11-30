@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/analysis_controller.dart';
 import '../../domain/player_stats.dart';
+import '../../../game_record/domain/models.dart'; // LogEntry, ActionResult等
 
 import '../../../settings/domain/action_definition.dart';
 import '../../../settings/data/action_dao.dart';
@@ -41,36 +42,41 @@ class AnalysisScreen extends ConsumerStatefulWidget {
   ConsumerState<AnalysisScreen> createState() => _AnalysisScreenState();
 }
 
-class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
+class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProviderStateMixin {
 
   List<String> _sortedActionNames = [];
 
   int? _selectedYear;
   int? _selectedMonth;
   int? _selectedDay;
-  // ★追加: 選択された試合ID (null = 日累計)
   String? _selectedMatchId;
 
   bool _isInitialLoadComplete = false;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadActionOrder();
     });
   }
 
-  // Providerの状態変更エラー回避のため、didChangeDependenciesをFuture.microtaskでラップ
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
 
     if (!_isInitialLoadComplete) {
-      // Future.microtaskで、現在のビルドフェーズが完了した直後にanalyzeを実行する
       Future.microtask(() {
         _runAnalysis();
-        if (mounted) { // ウィジェットがマウントされているか確認
+        if (mounted) {
           setState(() {
             _isInitialLoadComplete = true;
           });
@@ -78,7 +84,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
       });
     }
   }
-
 
   Future<void> _loadActionOrder() async {
     final store = ref.read(teamStoreProvider);
@@ -94,134 +99,49 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     }
   }
 
-  // ★修正: analyze メソッドに選択された年、月、日、試合IDを渡す
   void _runAnalysis() {
     ref.read(analysisControllerProvider.notifier).analyze(year: _selectedYear, month: _selectedMonth, day: _selectedDay, matchId: _selectedMatchId);
   }
 
-  // 月タブの描画ウィジェット (既存)
-  Widget _buildMonthTabs(List<int> months, int selectedIndex) {
-    // 累計 (null) + 存在する月
-    final List<int?> tabs = [null, ...months];
-
+  // --- タブ構築ヘルパー ---
+  Widget _buildVerticalTabs<T>({
+    required List<T?> items,
+    required T? selectedItem,
+    required String Function(T?) labelBuilder,
+    required Function(T?) onSelect,
+    required double width,
+    required Color color,
+  }) {
     return Container(
-      width: 80,
-      color: Colors.grey[100],
+      width: width,
+      color: color,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: tabs.length,
+        itemCount: items.length,
         itemBuilder: (context, index) {
-          final month = tabs[index];
-          final isSelected = index == selectedIndex;
-          final label = month == null ? '年累計' : '${month}月';
-
+          final item = items[index];
+          final isSelected = item == selectedItem;
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: TextButton(
-              style: TextButton.styleFrom(
-                backgroundColor: isSelected ? Colors.indigo.shade100 : Colors.transparent,
-                foregroundColor: isSelected ? Colors.indigo : Colors.black87,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                textStyle: const TextStyle(fontSize: 12),
-              ),
-              onPressed: () {
-                setState(() {
-                  _selectedMonth = month;
-                  _selectedDay = null; // 月が変わったら日を月累計(null)にリセット
-                  _selectedMatchId = null; // 試合もリセット
-                });
-                _runAnalysis();
-              },
-              child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // 日タブの描画ウィジェット (既存)
-  Widget _buildDayTabs(List<int> days, int selectedIndex) {
-    // 累計 (null) + 存在する日
-    final List<int?> tabs = [null, ...days];
-
-    return Container(
-      width: 80,
-      color: Colors.grey[200],
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: tabs.length,
-        itemBuilder: (context, index) {
-          final day = tabs[index];
-          final isSelected = index == selectedIndex;
-          final label = day == null ? '月累計' : '${day}日';
-
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: TextButton(
-              style: TextButton.styleFrom(
-                backgroundColor: isSelected ? Colors.indigo.shade100 : Colors.transparent,
-                foregroundColor: isSelected ? Colors.indigo : Colors.black87,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                textStyle: const TextStyle(fontSize: 12),
-              ),
-              onPressed: () {
-                setState(() {
-                  _selectedDay = day;
-                  _selectedMatchId = null; // 日が変わったら試合を日累計(null)にリセット
-                });
-                _runAnalysis();
-              },
-              child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // ★追加: 試合タブの描画ウィジェット
-  Widget _buildMatchTabs(Map<String, String> matches, int selectedIndex) {
-    // 累計 (null) + 存在する試合ID
-    final List<String?> matchIds = [null, ...matches.keys];
-
-    return Container(
-      width: 150, // 試合名表示のため幅を広げる
-      color: Colors.grey[300],
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: matchIds.length,
-        itemBuilder: (context, index) {
-          final matchId = matchIds[index];
-          final isSelected = index == selectedIndex;
-          final label = matchId == null ? '日累計' : matches[matchId] ?? '(不明な試合)';
-
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: TextButton(
               style: TextButton.styleFrom(
                 backgroundColor: isSelected ? Colors.indigo.shade100 : Colors.transparent,
                 foregroundColor: isSelected ? Colors.indigo : Colors.black87,
                 alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                textStyle: const TextStyle(fontSize: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
               ),
-              onPressed: () {
-                setState(() {
-                  _selectedMatchId = matchId;
-                });
-                _runAnalysis();
-              },
-              child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+              onPressed: () => onSelect(item),
+              child: Text(
+                labelBuilder(item),
+                style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           );
         },
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -229,28 +149,13 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     final availableYears = ref.watch(availableYearsProvider);
     final availableMonths = ref.watch(availableMonthsProvider);
     final availableDays = ref.watch(availableDaysProvider);
-    final availableMatches = ref.watch(availableMatchesProvider); // ★追加
+    final availableMatches = ref.watch(availableMatchesProvider);
 
-    // 1. 年タブ設定
-    final List<int?> yearTabs = [null, ...availableYears];
-    int selectedYearIndex = yearTabs.indexOf(_selectedYear);
-    if (selectedYearIndex == -1) selectedYearIndex = 0;
-
-    // 2. 月タブ設定
-    final List<int?> monthTabs = [null, ...availableMonths];
-    int selectedMonthIndex = monthTabs.indexOf(_selectedMonth);
-    if (selectedMonthIndex == -1) selectedMonthIndex = 0;
-
-    // 3. 日タブ設定
-    final List<int?> dayTabs = [null, ...availableDays];
-    int selectedDayIndex = dayTabs.indexOf(_selectedDay);
-    if (selectedDayIndex == -1) selectedDayIndex = 0;
-
-    // 4. 試合タブ設定
-    final List<String?> matchIdTabs = [null, ...availableMatches.keys]; // ★追加
-    int selectedMatchIndex = matchIdTabs.indexOf(_selectedMatchId);
-    if (selectedMatchIndex == -1) selectedMatchIndex = 0;
-
+    // 各リストの先頭に null (累計/すべて) を追加
+    final yearTabs = [null, ...availableYears];
+    final monthTabs = [null, ...availableMonths];
+    final dayTabs = [null, ...availableDays];
+    final matchTabs = [null, ...availableMatches.keys];
 
     return Scaffold(
       appBar: AppBar(
@@ -259,74 +164,81 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _runAnalysis),
         ],
       ),
-      // ★修正: 最大5ペイン構成
       body: Row(
         children: [
-          // ペイン 1: 年/累計タブ (120px)
-          Container(
-            width: 120,
-            color: Colors.grey[50],
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: yearTabs.length,
-              itemBuilder: (context, index) {
-                final year = yearTabs[index];
-                final isSelected = index == selectedYearIndex;
-                final label = year == null ? '累計' : '${year}年';
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: isSelected ? Colors.indigo.shade100 : Colors.transparent,
-                      foregroundColor: isSelected ? Colors.indigo : Colors.black87,
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _selectedYear = year;
-                        _selectedMonth = null;
-                        _selectedDay = null;
-                        _selectedMatchId = null; // 全てリセット
-                      });
-                      _runAnalysis();
-                    },
-                    child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                );
-              },
-            ),
+          // 1. 年タブ
+          _buildVerticalTabs<int>(
+            items: yearTabs,
+            selectedItem: _selectedYear,
+            labelBuilder: (y) => y == null ? '全期間' : '$y年',
+            onSelect: (y) { setState(() { _selectedYear = y; _selectedMonth = null; _selectedDay = null; _selectedMatchId = null; }); _runAnalysis(); },
+            width: 90, color: Colors.grey[50]!,
           ),
 
-          // ペイン 2: 月タブ (80px) - 年が選択されている場合のみ表示
+          // 2. 月タブ
           if (_selectedYear != null)
-            _buildMonthTabs(availableMonths, selectedMonthIndex),
+            _buildVerticalTabs<int>(
+              items: monthTabs,
+              selectedItem: _selectedMonth,
+              labelBuilder: (m) => m == null ? '年計' : '$m月',
+              onSelect: (m) { setState(() { _selectedMonth = m; _selectedDay = null; _selectedMatchId = null; }); _runAnalysis(); },
+              width: 60, color: Colors.grey[100]!,
+            ),
 
-          // ペイン 3: 日タブ (80px) - 月が選択されている場合のみ表示
+          // 3. 日タブ
           if (_selectedMonth != null)
-            _buildDayTabs(availableDays, selectedDayIndex),
+            _buildVerticalTabs<int>(
+              items: dayTabs,
+              selectedItem: _selectedDay,
+              labelBuilder: (d) => d == null ? '月計' : '$d日',
+              onSelect: (d) { setState(() { _selectedDay = d; _selectedMatchId = null; }); _runAnalysis(); },
+              width: 60, color: Colors.grey[200]!,
+            ),
 
-          // ★追加: ペイン 4: 試合タブ (150px) - 日が選択されている場合のみ表示
+          // 4. 試合タブ
           if (_selectedDay != null)
-            _buildMatchTabs(availableMatches, selectedMatchIndex),
+            _buildVerticalTabs<String>(
+              items: matchTabs,
+              selectedItem: _selectedMatchId,
+              labelBuilder: (id) => id == null ? '日計' : (availableMatches[id] ?? '試合'),
+              onSelect: (id) { setState(() { _selectedMatchId = id; }); _runAnalysis(); },
+              width: 140, color: Colors.grey[300]!,
+            ),
 
           const VerticalDivider(width: 1, thickness: 1),
 
-          // ペイン 5: 分析テーブル
+          // 5. 分析結果エリア
           Expanded(
             child: Column(
               children: [
-                const Divider(height: 1),
-                Expanded(
-                  child: asyncStats.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (err, stack) => Center(child: Text("エラー: $err")),
-                    data: (stats) {
-                      if (stats.isEmpty) return const Center(child: Text("データがありません"));
-                      return _buildDataTable(stats);
-                    },
+                // 試合が選択されている時だけタブを表示
+                if (_selectedMatchId != null)
+                  Container(
+                    color: Colors.grey[50],
+                    child: TabBar(
+                      controller: _tabController,
+                      labelColor: Colors.indigo,
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: Colors.indigo,
+                      tabs: const [
+                        Tab(icon: Icon(Icons.analytics, size: 18), text: "集計"),
+                        Tab(icon: Icon(Icons.list, size: 18), text: "ログ"),
+                      ],
+                    ),
                   ),
+
+                const Divider(height: 1),
+
+                Expanded(
+                  child: _selectedMatchId != null
+                      ? TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildStatsContent(asyncStats),
+                      _buildLogContent(asyncStats),
+                    ],
+                  )
+                      : _buildStatsContent(asyncStats),
                 ),
               ],
             ),
@@ -336,20 +248,132 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     );
   }
 
-  // --- テーブル構築 ---
+  // --- コンテンツ描画: 集計テーブル ---
+  Widget _buildStatsContent(AsyncValue<List<PlayerStats>> asyncStats) {
+    return asyncStats.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => Center(child: Text("エラー: $err")),
+      data: (stats) {
+        if (stats.isEmpty) return const Center(child: Text("データがありません"));
+        return _buildDataTable(stats);
+      },
+    );
+  }
+
+  // --- コンテンツ描画: ログリスト (★修正: システムログも左寄せ) ---
+  Widget _buildLogContent(AsyncValue<List<PlayerStats>> asyncStats) {
+    final matchRecord = ref.watch(selectedMatchRecordProvider);
+
+    if (matchRecord == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (matchRecord.logs.isEmpty) {
+      return const Center(child: Text("ログがありません"));
+    }
+
+    // 選手名マップを作成 (背番号 -> 名前)
+    final Map<String, String> nameMap = {};
+    asyncStats.whenData((stats) {
+      for (var p in stats) {
+        nameMap[p.playerNumber] = p.playerName;
+      }
+    });
+
+    final logs = matchRecord.logs;
+
+    return ListView.separated(
+      itemCount: logs.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final log = logs[index];
+        final name = nameMap[log.playerNumber] ?? ""; // 名前を取得
+
+        // システムログ
+        if (log.type == LogType.system) {
+          return Container(
+            color: Colors.grey[50],
+            // ★修正: アクションログと同じパディング
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: Row(
+              children: [
+                // 時間 (アクションログと同じ幅で揃える)
+                SizedBox(width: 45, child: Text(log.gameTime, style: const TextStyle(color: Colors.grey, fontSize: 11))),
+
+                // 背番号エリアの分だけスペースを空ける (ここを埋めるとズレるため)
+                const SizedBox(width: 90),
+
+                // 内容を左寄せで表示
+                Expanded(
+                  child: Text(
+                    log.action,
+                    style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // アクションログ
+        String resultText = "";
+        Color? bgColor = Colors.white;
+        if (log.result == ActionResult.success) {
+          resultText = "(成功)";
+          bgColor = Colors.red.shade50;
+        } else if (log.result == ActionResult.failure) {
+          resultText = "(失敗)";
+          bgColor = Colors.blue.shade50;
+        }
+
+        return Container(
+          color: bgColor,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: Row(
+            children: [
+              // 時間
+              SizedBox(width: 45, child: Text(log.gameTime, style: const TextStyle(color: Colors.grey, fontSize: 11))),
+
+              // 背番号と名前
+              SizedBox(
+                width: 90,
+                child: RichText(
+                  overflow: TextOverflow.ellipsis,
+                  text: TextSpan(
+                    style: const TextStyle(color: Colors.black87, fontSize: 12),
+                    children: [
+                      TextSpan(text: "#${log.playerNumber} ", style: const TextStyle(fontWeight: FontWeight.bold)),
+                      TextSpan(text: name, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                    ],
+                  ),
+                ),
+              ),
+
+              // アクション
+              Expanded(
+                child: Text("${log.action} $resultText", style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+              ),
+
+              // 詳細
+              if (log.subAction != null)
+                Text(log.subAction!, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // --- テーブル構築 (既存ロジック) ---
   Widget _buildDataTable(List<PlayerStats> originalStats) {
     final controller = ref.read(analysisControllerProvider.notifier);
-
-    // 1. カラム決定と 2. カラム構造の定義
-    final List<_ColumnSpec> columnSpecs = [];
     final definitions = controller.actionDefinitions;
 
-    // ★固定列 (ヘッダー結合) - ラベルを修正
+    final List<_ColumnSpec> columnSpecs = [];
     columnSpecs.add(_ColumnSpec(label: "背番号", type: StatColumnType.number, isFixed: true));
     columnSpecs.add(_ColumnSpec(label: "コートネーム", type: StatColumnType.name, isFixed: true));
     columnSpecs.add(_ColumnSpec(label: "試合数", type: StatColumnType.matches, isFixed: true));
 
-    // 動的列: 定義されたアクションとデータに含まれるアクションを結合
     final dataActionNames = <String>{};
     for (var p in originalStats) dataActionNames.addAll(p.actions.keys);
 
@@ -361,37 +385,25 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
       }
     }
 
-    // ★動的列生成ロジック (成功/失敗フラグに依存)
     for (var action in displayDefinitions) {
-      // 成功と失敗の両方がある場合: 成功, 失敗, 成功率 (3列)
       if (action.hasSuccess && action.hasFailure) {
         columnSpecs.add(_ColumnSpec(label: "成功", type: StatColumnType.successCount, actionName: action.name));
         columnSpecs.add(_ColumnSpec(label: "失敗", type: StatColumnType.failureCount, actionName: action.name));
         columnSpecs.add(_ColumnSpec(label: "成功率", type: StatColumnType.successRate, actionName: action.name));
-      }
-      // 成功のみの場合: 成功数 (1列)
-      else if (action.hasSuccess) {
+      } else if (action.hasSuccess) {
         columnSpecs.add(_ColumnSpec(label: "成功数", type: StatColumnType.successCount, actionName: action.name));
-      }
-      // 失敗のみの場合: 失敗数 (1列)
-      else if (action.hasFailure) {
+      } else if (action.hasFailure) {
         columnSpecs.add(_ColumnSpec(label: "失敗数", type: StatColumnType.failureCount, actionName: action.name));
-      }
-      // どちらもなしの場合: 合計回数(数)を表示する
-      else {
+      } else {
         columnSpecs.add(_ColumnSpec(label: "数", type: StatColumnType.totalCount, actionName: action.name));
       }
     }
 
-    // 3. ソート処理: 背番号順に固定
     final sortedStats = List<PlayerStats>.from(originalStats);
-    sortedStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 99999).compareTo(int.tryParse(b.playerNumber) ?? 99999));
+    sortedStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
 
-    // 4. ハイライト計算: 削除済み
     final maxValues = <String, Map<StatColumnType, double>>{};
 
-
-    // 5. Widget生成 (カスタムTable構造)
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
@@ -408,33 +420,24 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     );
   }
 
-  // --- カスタムヘッダー描画 (二段組と結合) ---
   Widget _buildTableHeader(List<_ColumnSpec> columnSpecs) {
     const headerStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.black87);
     const headerHeight = 40.0;
     const fixedWidth = 90.0;
     const dynamicWidth = 60.0;
 
-    // 固定列と動的列を分ける
     final fixedSpecs = columnSpecs.where((s) => s.isFixed).toList();
     final dynamicSpecs = columnSpecs.where((s) => !s.isFixed).toList();
 
-    // 1. 上段ヘッダー (アクション名): 固定列部分は空白
     final List<Widget> topRowCells = [];
-
-    // 固定列の空白セル
     topRowCells.addAll(fixedSpecs.map((_) => SizedBox(width: fixedWidth, height: headerHeight)));
 
-    // 動的列の上段 (アクション名)
     String? currentActionName;
     int currentActionColumnCount = 0;
 
     for (int i = 0; i < dynamicSpecs.length; i++) {
       final spec = dynamicSpecs[i];
-
-      // アクション名が変わった、または最初のカラムの場合
       if (spec.actionName != currentActionName) {
-        // 前のアクションが完了していたら、そのウィジェットを確定させる
         if (currentActionName != null) {
           topRowCells.add(
             Container(
@@ -452,7 +455,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
         currentActionColumnCount++;
       }
 
-      // 最後の要素の場合、または次の要素のアクション名が異なる場合
       if (i == dynamicSpecs.length - 1 || (i + 1 < dynamicSpecs.length && dynamicSpecs[i + 1].actionName != currentActionName)) {
         topRowCells.add(
           Container(
@@ -463,15 +465,12 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
             child: Text(currentActionName!, style: headerStyle, textAlign: TextAlign.center),
           ),
         );
-        currentActionName = null; // リセット
+        currentActionName = null;
         currentActionColumnCount = 0;
       }
     }
 
-    // 2. 下段ヘッダー (項目名: 成功/失敗/成功率)
     final List<Widget> bottomRowCells = [];
-
-    // 固定列の結合セル (Rowspan=2)
     for (final spec in fixedSpecs) {
       bottomRowCells.add(
         Container(
@@ -483,8 +482,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
         ),
       );
     }
-
-    // 動的列の下段 (項目名)
     for (final spec in dynamicSpecs) {
       bottomRowCells.add(
         Container(
@@ -500,23 +497,10 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
       );
     }
 
-    // 描画: Row1 (Action Title)と Row2 (Sub Title/Fixed Title)を縦に並べる
-    return Column(
-      children: [
-        // Row 1: 上段 (固定列は空白、動的列は結合タイトル)
-        Row(children: topRowCells),
-        // Row 2: 下段 (固定列はタイトル、動的列はサブタイトル)
-        Row(children: bottomRowCells),
-      ],
-    );
+    return Column(children: [Row(children: topRowCells), Row(children: bottomRowCells)]);
   }
 
-  // --- カスタムボディ描画 ---
-  Widget _buildTableBody(
-      List<PlayerStats> sortedStats,
-      List<_ColumnSpec> columnSpecs,
-      Map<String, Map<StatColumnType, double>> maxValues
-      ) {
+  Widget _buildTableBody(List<PlayerStats> sortedStats, List<_ColumnSpec> columnSpecs, Map<String, Map<StatColumnType, double>> maxValues) {
     const cellStyle = TextStyle(fontSize: 13, color: Colors.black87);
     const fixedWidth = 90.0;
     const dynamicWidth = 60.0;
@@ -530,54 +514,31 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
         for (final spec in columnSpecs) {
           final isFixed = spec.isFixed;
           final stat = player.actions[spec.actionName];
-
-          // ★修正: デフォルト値を '-' に設定
           String text = '-';
 
-          // 1. 固定列のデータ設定
           if (spec.type == StatColumnType.number) text = player.playerNumber;
           if (spec.type == StatColumnType.name) text = player.playerName;
           if (spec.type == StatColumnType.matches) text = player.matchesPlayed.toString();
 
-          // 2. 動的列のデータ設定
           if (!isFixed) {
             if (stat != null) {
-              // Statが存在する場合
               switch (spec.type) {
                 case StatColumnType.successCount:
                 case StatColumnType.failureCount:
                 case StatColumnType.totalCount:
-                  text = (spec.type == StatColumnType.totalCount
-                      ? stat.totalCount
-                      : (spec.type == StatColumnType.successCount ? stat.successCount : stat.failureCount))
-                      .toString();
+                  text = (spec.type == StatColumnType.totalCount ? stat.totalCount : (spec.type == StatColumnType.successCount ? stat.successCount : stat.failureCount)).toString();
                   break;
                 case StatColumnType.successRate:
-                // 成功率: totalCountが0の場合は "-" を表示
                   text = stat.totalCount > 0 ? "${stat.successRate.toStringAsFixed(0)}%" : "-";
                   break;
-                default:
-                  text = '0'; // 未定義のカウント系は 0
-                  break;
+                default: text = '0'; break;
               }
             } else {
-              // Statが null (データなし) の場合
-              if (spec.type == StatColumnType.successRate) {
-                text = '-'; // 成功率の場合は '-'
-              } else {
-                text = '0'; // カウント系の場合は '0'
-              }
+              if (spec.type == StatColumnType.successRate) text = '-'; else text = '0';
             }
           }
 
-          // 色付け機能の削除: シンプルな行ストライプのみ残す
           Color? bgColor = playerRowIndex.isOdd ? Colors.grey.shade100 : Colors.white;
-
-          TextStyle finalStyle = cellStyle.copyWith(
-            fontWeight: FontWeight.normal,
-            color: Colors.black87,
-          );
-
 
           cells.add(
             Container(
@@ -588,11 +549,10 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
                 border: Border.all(color: Colors.grey.shade300, width: 0.5),
                 color: bgColor,
               ),
-              child: Text(text, style: finalStyle),
+              child: Text(text, style: cellStyle),
             ),
           );
         }
-
         return Row(children: cells);
       }).toList(),
     );

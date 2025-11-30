@@ -10,7 +10,6 @@ import '../../settings/data/action_dao.dart';
 import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
-import 'package:flutter/foundation.dart'; // debugPrintのために追加
 
 final gameRecorderProvider = ChangeNotifierProvider.autoDispose<GameRecorderController>((ref) {
   return GameRecorderController(ref);
@@ -112,7 +111,7 @@ class GameRecorderController extends ChangeNotifier {
         final subMap = map['subActionsMap'] as Map<String, dynamic>? ?? {};
         List<String> getSubs(String key) => (subMap[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
-// 1. 成功ボタン
+        // 1. 成功ボタン
         if (hasSuccess) {
           final item = UIActionItem(
               name: "${name}成功", // カッコなし
@@ -268,7 +267,7 @@ class GameRecorderController extends ChangeNotifier {
   void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
 
-  // --- 保存処理 (★修正) ---
+  // --- 保存処理 ---
   Future<bool> saveMatchToDb() async {
     final currentTeam = _teamStore.currentTeam;
     if (currentTeam == null) return false;
@@ -276,11 +275,11 @@ class GameRecorderController extends ChangeNotifier {
     // 1. 同日試合数をカウントし、連番を決定するロジック
     final dateStr = DateFormat('yyyy-MM-dd').format(_matchDate);
 
-    // ★追加: その日の試合数を取得 (この時点でlogsに残っているのは未保存のログのみ)
+    // その日の試合数を取得
     final existingMatches = await _matchDao.getMatches(currentTeam.id);
     final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
     final sequentialId = matchesToday + 1;
-    // ★自動生成した連番をopponentとして使用
+    // 自動生成した連番をopponentとして使用
     final generatedOpponentName = "試合-${dateStr} #${sequentialId}";
 
     final matchId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -290,21 +289,14 @@ class GameRecorderController extends ChangeNotifier {
       'date': dateStr,
     };
 
-    // ★修正: ログ内のplaceholder '記録中' を実際の連番に置換
+    // ログ内のplaceholder '記録中' を実際の連番に置換
     final logMaps = logs.reversed.map((log) {
       final map = log.toJson();
       map['opponent'] = generatedOpponentName; // LogEntryのtoJsonはopponentを使用しないが、MapとしてDBに渡す際にopponentが必要
       return map;
     }).toList();
 
-    // ★★★ デバッグログの追加 ★★★
-    if (kDebugMode) {
-      debugPrint("★★★ Saving Log Count: ${logMaps.length} ★★★");
-      if (logMaps.isNotEmpty) {
-        debugPrint("★★★ First Log Entry: ${logMaps.first} ★★★");
-      }
-    }
-    // ★★★ デバッグログの追加 ★★★
+    // ★削除: デバッグログ
 
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
     await DataManager.clearCurrentLogs();
