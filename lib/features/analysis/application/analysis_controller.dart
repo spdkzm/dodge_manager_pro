@@ -9,8 +9,8 @@ import '../../game_record/domain/models.dart';
 import '../../settings/data/action_dao.dart';
 import '../../settings/domain/action_definition.dart';
 import '../domain/player_stats.dart';
+import '../../team_mgmt/domain/team.dart'; // Teamクラスのために追加
 
-// プロバイダー定義 (変更なし)
 final availableYearsProvider = StateProvider<List<int>>((ref) => []);
 final availableMonthsProvider = StateProvider<List<int>>((ref) => []);
 final availableDaysProvider = StateProvider<List<int>>((ref) => []);
@@ -30,7 +30,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
   AnalysisController(this.ref) : super(const AsyncValue.loading());
 
-  // ★追加: ログ操作メソッド
   Future<void> addLog(String matchId, LogEntry log) async {
     final logMap = log.toJson();
     await _matchDao.insertMatchLog(matchId, logMap);
@@ -38,7 +37,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
   Future<void> updateLog(String matchId, LogEntry log) async {
     final logMap = log.toJson();
-    logMap['match_id'] = matchId; // 更新時の整合性チェック用
+    logMap['match_id'] = matchId;
     await _matchDao.updateMatchLog(logMap);
   }
 
@@ -46,7 +45,21 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchDao.deleteMatchLog(logId);
   }
 
-  // analyzeメソッド (変更なし)
+  Future<void> updateMatchDate(String matchId, DateTime newDate) async {
+    final teamStore = ref.read(teamStoreProvider);
+    final currentTeamId = teamStore.currentTeam?.id;
+    if (currentTeamId == null) return;
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(newDate);
+    final allMatches = await _matchDao.getMatches(currentTeamId);
+    final matchesOnTargetDate = allMatches.where((m) => m['date'] == dateStr && m['id'] != matchId).toList();
+    final newSequentialId = matchesOnTargetDate.length + 1;
+    final newOpponentName = "試合-$dateStr #$newSequentialId";
+
+    await _matchDao.updateMatchDateAndOpponent(matchId, dateStr, newOpponentName);
+  }
+
+  // --- 集計実行 (画面更新あり) ---
   Future<void> analyze({int? year, int? month, int? day, String? matchId}) async {
     try {
       state = const AsyncValue.loading();
@@ -63,193 +76,263 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         return;
       }
 
-      String startDateStr;
-      String endDateStr;
-      final dateFormat = DateFormat('yyyy-MM-dd');
+      // 1. 期間文字列の決定
+      final period = _determinePeriod(year, month, day, matchId);
 
-      if (matchId != null) {
-        startDateStr = "2000-01-01";
-        endDateStr = "2099-12-31";
-      } else if (year == null) {
-        startDateStr = "2000-01-01";
-        endDateStr = "2099-12-31";
-      } else if (month == null) {
-        startDateStr = dateFormat.format(DateTime(year, 1, 1));
-        endDateStr = dateFormat.format(DateTime(year, 12, 31));
-      } else if (day == null) {
-        startDateStr = dateFormat.format(DateTime(year, month, 1));
-        final nextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
-        endDateStr = dateFormat.format(nextMonth.subtract(const Duration(days: 1)));
-      } else {
-        startDateStr = dateFormat.format(DateTime(year, month, day));
-        endDateStr = dateFormat.format(DateTime(year, month, day));
-      }
+      // 2. フィルタ用リストの更新 (analyze特有の処理)
+      await _updateAvailableFilters(currentTeam.id, year, month, day, matchId);
 
-      final allMatches = await _matchDao.getMatches(currentTeam.id);
-
-      if (year == null) {
-        final years = allMatches.map((m) {
-          final dateStr = m['date'] as String?;
-          return dateStr != null ? DateTime.tryParse(dateStr)?.year : null;
-        }).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
-        ref.read(availableYearsProvider.notifier).state = years;
-        ref.read(availableMonthsProvider.notifier).state = [];
-        ref.read(availableDaysProvider.notifier).state = [];
-        ref.read(availableMatchesProvider.notifier).state = {};
-      } else if (month == null) {
-        final months = allMatches.where((m) {
-          final dateStr = m['date'] as String?;
-          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-          return date != null && date.year == year;
-        }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.month).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
-        ref.read(availableMonthsProvider.notifier).state = months;
-        ref.read(availableDaysProvider.notifier).state = [];
-        ref.read(availableMatchesProvider.notifier).state = {};
-      } else if (day == null) {
-        final days = allMatches.where((m) {
-          final dateStr = m['date'] as String?;
-          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-          return date != null && date.year == year && date.month == month;
-        }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.day).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
-        ref.read(availableDaysProvider.notifier).state = days;
-        ref.read(availableMatchesProvider.notifier).state = {};
-      } else if (matchId == null) {
-        final matches = allMatches.where((m) {
-          final dateStr = m['date'] as String?;
-          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-          return date != null && date.year == year && date.month == month && date.day == day;
-        });
-        final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
-        ref.read(availableMatchesProvider.notifier).state = matchMap;
-      }
-
+      // 3. アクション定義のロード
       final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
       actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
-      final Map<String, PlayerStats> statsMap = {};
-      final rosterMap = <String, String>{};
-
-      String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
-      for(var f in currentTeam.schema) {
-        if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
-        if(f.type == FieldType.courtName) courtNameFieldId = f.id;
-        if(f.type == FieldType.personName) nameFieldId = f.id;
-      }
-
-      for (var item in currentTeam.items) {
-        final num = item.data[numberFieldId]?.toString() ?? "";
-        if (num.isNotEmpty) {
-          String name = "";
-          if (courtNameFieldId != null) name = item.data[courtNameFieldId]?.toString() ?? "";
-          if (name.isEmpty && nameFieldId != null) {
-            final n = item.data[nameFieldId];
-            if (n is Map) name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim();
-          }
-          rosterMap[num] = name;
-          statsMap[num] = PlayerStats(playerId: num, playerNumber: num, playerName: name, matchesPlayed: 0, actions: {});
-        }
-      }
-
+      // 4. マッチレコードのセット (analyze特有の処理)
       if (matchId != null) {
-        final matchRow = allMatches.firstWhere((m) => m['id'] == matchId);
-        final logRows = await _matchDao.getMatchLogs(matchId); // 修正済みのgetMatchLogs
-
-        final logs = logRows.map((logRow) {
-          return LogEntry(
-            id: logRow['id'] as String,
-            matchDate: matchRow['date'] as String? ?? '',
-            opponent: matchRow['opponent'] as String? ?? '',
-            gameTime: logRow['game_time'] as String,
-            playerNumber: logRow['player_number'] as String,
-            action: logRow['action'] as String,
-            subAction: logRow['sub_action'] as String?,
-            type: LogType.values[logRow['log_type'] as int],
-            result: ActionResult.values[logRow['result'] ?? 0],
-          );
-        }).toList();
-
-        final record = MatchRecord(id: matchId, date: matchRow['date'] as String? ?? '', opponent: matchRow['opponent'] as String? ?? '', logs: logs);
-        ref.read(selectedMatchRecordProvider.notifier).state = record;
+        await _loadSelectedMatchRecord(matchId);
       }
 
-      final List<Map<String, dynamic>> participations;
-      if (matchId != null) {
-        final logs = ref.read(selectedMatchRecordProvider.notifier).state?.logs;
-        if (logs != null) {
-          final playerNumbers = logs.map((e) => e.playerNumber).toSet();
-          participations = playerNumbers.map((pNum) => {'player_number': pNum, 'match_id': matchId}).toList();
-        } else {
-          participations = [];
-        }
-      } else {
-        participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
-      }
+      // 5. 共通集計ロジックの実行
+      final resultList = await _calculateStats(
+          currentTeam: currentTeam,
+          startDateStr: period['start']!,
+          endDateStr: period['end']!,
+          matchId: matchId
+      );
 
-      final Map<String, Set<String>> playerMatches = {};
-      for (var p in participations) {
-        final pNum = p['player_number'] as String? ?? "";
-        final matchIdKey = p['match_id'] as String? ?? "";
-        if (pNum.isNotEmpty && matchIdKey.isNotEmpty) {
-          if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
-          playerMatches[pNum]!.add(matchIdKey);
-          if (!statsMap.containsKey(pNum)) {
-            statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: rosterMap[pNum] ?? "(不明)", matchesPlayed: 0, actions: {});
-          }
-        }
-      }
-
-      final List<Map<String, dynamic>> rawLogs;
-      if (matchId != null) {
-        rawLogs = await _matchDao.getMatchLogs(matchId);
-      } else {
-        rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
-      }
-
-      for (var log in rawLogs) {
-        final pNum = log['player_number'] as String? ?? "";
-        if (pNum.isEmpty) continue;
-
-        if (!statsMap.containsKey(pNum)) statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: "(未登録)", actions: {});
-
-        final matchIdKey = log['match_id'] as String? ?? "";
-        if (matchIdKey.isNotEmpty) {
-          if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
-          playerMatches[pNum]!.add(matchIdKey);
-        }
-
-        final action = log['action'] as String? ?? "";
-        final subAction = log['sub_action'] as String?;
-        final resultVal = log['result'] as int? ?? 0;
-        final result = ActionResult.values[resultVal];
-
-        final currentStats = statsMap[pNum]!;
-        final actStats = currentStats.actions[action] ?? ActionStats(actionName: action);
-
-        int success = actStats.successCount;
-        int failure = actStats.failureCount;
-        int total = actStats.totalCount;
-        final Map<String, int> subs = Map.from(actStats.subActionCounts);
-        if (subAction != null && subAction.isNotEmpty) subs[subAction] = (subs[subAction] ?? 0) + 1;
-
-        if (result == ActionResult.success) success++;
-        if (result == ActionResult.failure) failure++;
-        total++;
-
-        final newActStats = actStats.copyWith(successCount: success, failureCount: failure, totalCount: total, subActionCounts: subs);
-        final newActions = Map<String, ActionStats>.from(currentStats.actions);
-        newActions[action] = newActStats;
-        statsMap[pNum] = currentStats.copyWith(actions: newActions);
-      }
-
-      final List<PlayerStats> resultList = statsMap.values.map((p) {
-        return p.copyWith(matchesPlayed: playerMatches[p.playerNumber]?.length ?? 0);
-      }).toList();
-
-      resultList.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
       state = AsyncValue.data(resultList);
 
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
+  }
+
+  // --- ★追加: エクスポート用データ取得 (画面更新なし) ---
+  Future<List<PlayerStats>> fetchStatsForExport({int? year, int? month, int? day, String? matchId}) async {
+    final teamStore = ref.read(teamStoreProvider);
+    final currentTeam = teamStore.currentTeam;
+    if (currentTeam == null) return [];
+
+    // 1. 期間決定
+    final period = _determinePeriod(year, month, day, matchId);
+
+    // 2. アクション定義のロード (念のため最新を取得)
+    final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
+    actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
+
+    // 3. 共通集計ロジックを実行して返す
+    return await _calculateStats(
+        currentTeam: currentTeam,
+        startDateStr: period['start']!,
+        endDateStr: period['end']!,
+        matchId: matchId
+    );
+  }
+
+  // --- 内部ヘルパー: 期間決定 ---
+  Map<String, String> _determinePeriod(int? year, int? month, int? day, String? matchId) {
+    String startDateStr;
+    String endDateStr;
+    final dateFormat = DateFormat('yyyy-MM-dd');
+
+    if (matchId != null) {
+      startDateStr = "2000-01-01";
+      endDateStr = "2099-12-31";
+    } else if (year == null) {
+      startDateStr = "2000-01-01";
+      endDateStr = "2099-12-31";
+    } else if (month == null) {
+      startDateStr = dateFormat.format(DateTime(year, 1, 1));
+      endDateStr = dateFormat.format(DateTime(year, 12, 31));
+    } else if (day == null) {
+      startDateStr = dateFormat.format(DateTime(year, month, 1));
+      final nextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
+      endDateStr = dateFormat.format(nextMonth.subtract(const Duration(days: 1)));
+    } else {
+      startDateStr = dateFormat.format(DateTime(year, month, day));
+      endDateStr = dateFormat.format(DateTime(year, month, day));
+    }
+    return {'start': startDateStr, 'end': endDateStr};
+  }
+
+  // --- 内部ヘルパー: フィルタ更新 ---
+  Future<void> _updateAvailableFilters(String teamId, int? year, int? month, int? day, String? matchId) async {
+    final allMatches = await _matchDao.getMatches(teamId);
+
+    if (year == null) {
+      final years = allMatches.map((m) {
+        final dateStr = m['date'] as String?;
+        return dateStr != null ? DateTime.tryParse(dateStr)?.year : null;
+      }).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
+      ref.read(availableYearsProvider.notifier).state = years;
+      ref.read(availableMonthsProvider.notifier).state = [];
+      ref.read(availableDaysProvider.notifier).state = [];
+      ref.read(availableMatchesProvider.notifier).state = {};
+    } else if (month == null) {
+      final months = allMatches.where((m) {
+        final dateStr = m['date'] as String?;
+        final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
+        return date != null && date.year == year;
+      }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.month).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
+      ref.read(availableMonthsProvider.notifier).state = months;
+      ref.read(availableDaysProvider.notifier).state = [];
+      ref.read(availableMatchesProvider.notifier).state = {};
+    } else if (day == null) {
+      final days = allMatches.where((m) {
+        final dateStr = m['date'] as String?;
+        final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
+        return date != null && date.year == year && date.month == month;
+      }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.day).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
+      ref.read(availableDaysProvider.notifier).state = days;
+      ref.read(availableMatchesProvider.notifier).state = {};
+    } else if (matchId == null) {
+      final matches = allMatches.where((m) {
+        final dateStr = m['date'] as String?;
+        final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
+        return date != null && date.year == year && date.month == month && date.day == day;
+      });
+      final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
+      ref.read(availableMatchesProvider.notifier).state = matchMap;
+    }
+  }
+
+  // --- 内部ヘルパー: 選択試合のロード ---
+  Future<void> _loadSelectedMatchRecord(String matchId) async {
+    final matches = await _matchDao.getMatches(ref.read(teamStoreProvider).currentTeam!.id);
+    final matchRow = matches.firstWhere((m) => m['id'] == matchId, orElse: () => {});
+    if (matchRow.isEmpty) return;
+
+    final logRows = await _matchDao.getMatchLogs(matchId);
+    final logs = logRows.map((logRow) {
+      return LogEntry(
+        id: logRow['id'] as String,
+        matchDate: matchRow['date'] as String? ?? '',
+        opponent: matchRow['opponent'] as String? ?? '',
+        gameTime: logRow['game_time'] as String,
+        playerNumber: logRow['player_number'] as String,
+        action: logRow['action'] as String,
+        subAction: logRow['sub_action'] as String?,
+        type: LogType.values[logRow['log_type'] as int],
+        result: ActionResult.values[logRow['result'] ?? 0],
+      );
+    }).toList();
+
+    final record = MatchRecord(
+      id: matchId,
+      date: matchRow['date'] as String? ?? '',
+      opponent: matchRow['opponent'] as String? ?? '',
+      logs: logs,
+    );
+    ref.read(selectedMatchRecordProvider.notifier).state = record;
+  }
+
+  // --- 共通集計ロジック (切り出し) ---
+  Future<List<PlayerStats>> _calculateStats({
+    required Team currentTeam,
+    required String startDateStr,
+    required String endDateStr,
+    String? matchId
+  }) async {
+    // 3. 全選手データの初期化
+    final Map<String, PlayerStats> statsMap = {};
+    final rosterMap = <String, String>{};
+
+    String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
+    for(var f in currentTeam.schema) {
+      if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
+      if(f.type == FieldType.courtName) courtNameFieldId = f.id;
+      if(f.type == FieldType.personName) nameFieldId = f.id;
+    }
+
+    for (var item in currentTeam.items) {
+      final num = item.data[numberFieldId]?.toString() ?? "";
+      if (num.isNotEmpty) {
+        String name = "";
+        if (courtNameFieldId != null) name = item.data[courtNameFieldId]?.toString() ?? "";
+        if (name.isEmpty && nameFieldId != null) {
+          final n = item.data[nameFieldId];
+          if (n is Map) name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim();
+        }
+        rosterMap[num] = name;
+        statsMap[num] = PlayerStats(playerId: num, playerNumber: num, playerName: name, matchesPlayed: 0, actions: {});
+      }
+    }
+
+    // 4. 出場記録
+    final List<Map<String, dynamic>> participations;
+    if (matchId != null) {
+      // 特定試合の場合は、その試合のログから逆算するのではなくDBから取る方が確実
+      // getParticipationsInPeriod は期間指定だが、matchId指定の場合は専用ロジックでも良いが
+      // ここでは既存ロジックを踏襲し、ログから取得する方式を維持する（整合性のため）
+      final logRows = await _matchDao.getMatchLogs(matchId);
+      final playerNumbers = logRows.map((e) => e['player_number'] as String).toSet();
+      participations = playerNumbers.map((pNum) => {'player_number': pNum, 'match_id': matchId}).toList();
+    } else {
+      participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
+    }
+
+    final Map<String, Set<String>> playerMatches = {};
+    for (var p in participations) {
+      final pNum = p['player_number'] as String? ?? "";
+      final matchIdKey = p['match_id'] as String? ?? "";
+      if (pNum.isNotEmpty && matchIdKey.isNotEmpty) {
+        if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
+        playerMatches[pNum]!.add(matchIdKey);
+        if (!statsMap.containsKey(pNum)) {
+          statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: rosterMap[pNum] ?? "(不明)", matchesPlayed: 0, actions: {});
+        }
+      }
+    }
+
+    // 5. ログ集計
+    final List<Map<String, dynamic>> rawLogs;
+    if (matchId != null) {
+      rawLogs = await _matchDao.getMatchLogs(matchId);
+    } else {
+      rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
+    }
+
+    for (var log in rawLogs) {
+      final pNum = log['player_number'] as String? ?? "";
+      if (pNum.isEmpty) continue;
+
+      if (!statsMap.containsKey(pNum)) statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: "(未登録)", actions: {});
+
+      final matchIdKey = log['match_id'] as String? ?? "";
+      if (matchIdKey.isNotEmpty) {
+        if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
+        playerMatches[pNum]!.add(matchIdKey);
+      }
+
+      final action = log['action'] as String? ?? "";
+      final subAction = log['sub_action'] as String?;
+      final resultVal = log['result'] as int? ?? 0;
+      final result = ActionResult.values[resultVal];
+
+      final currentStats = statsMap[pNum]!;
+      final actStats = currentStats.actions[action] ?? ActionStats(actionName: action);
+
+      int success = actStats.successCount;
+      int failure = actStats.failureCount;
+      int total = actStats.totalCount;
+      final Map<String, int> subs = Map.from(actStats.subActionCounts);
+      if (subAction != null && subAction.isNotEmpty) subs[subAction] = (subs[subAction] ?? 0) + 1;
+
+      if (result == ActionResult.success) success++;
+      if (result == ActionResult.failure) failure++;
+      total++;
+
+      final newActStats = actStats.copyWith(successCount: success, failureCount: failure, totalCount: total, subActionCounts: subs);
+      final newActions = Map<String, ActionStats>.from(currentStats.actions);
+      newActions[action] = newActStats;
+      statsMap[pNum] = currentStats.copyWith(actions: newActions);
+    }
+
+    // 6. 最終整形
+    final List<PlayerStats> resultList = statsMap.values.map((p) {
+      return p.copyWith(matchesPlayed: playerMatches[p.playerNumber]?.length ?? 0);
+    }).toList();
+
+    resultList.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
+    return resultList;
   }
 }

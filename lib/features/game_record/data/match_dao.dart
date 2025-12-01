@@ -5,12 +5,11 @@ import '../../../../core/database/database_helper.dart';
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
-  // 試合作成 (一括保存)
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
       List<Map<String, dynamic>> logs,
-      List<String> participations // 背番号リスト
+      List<String> participations
       ) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -44,7 +43,6 @@ class MatchDao {
     });
   }
 
-  // ★追加: 単一ログの挿入
   Future<void> insertMatchLog(String matchId, Map<String, dynamic> logMap) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -59,7 +57,6 @@ class MatchDao {
         'result': logMap['result'],
       });
 
-      // 出場記録になければ追加しておく (整合性維持)
       final existing = await txn.query('match_participations',
           where: 'match_id = ? AND player_number = ?',
           whereArgs: [matchId, logMap['playerNumber']]);
@@ -72,7 +69,6 @@ class MatchDao {
     });
   }
 
-  // ★追加: 単一ログの更新
   Future<void> updateMatchLog(Map<String, dynamic> logMap) async {
     final db = await _dbHelper.database;
     await db.update('match_logs', {
@@ -84,8 +80,6 @@ class MatchDao {
       'result': logMap['result'],
     }, where: 'id = ?', whereArgs: [logMap['id']]);
 
-    // ※更新で選手が変わった場合の出場記録メンテは複雑なため、
-    // ここでは「変更後の選手を出場リストに追加する」のみ行い、変更前の選手の削除は行わない安全策をとる
     if (logMap['match_id'] != null) {
       final existing = await db.query('match_participations',
           where: 'match_id = ? AND player_number = ?',
@@ -99,10 +93,20 @@ class MatchDao {
     }
   }
 
-  // ★追加: 単一ログの削除
   Future<void> deleteMatchLog(String logId) async {
     final db = await _dbHelper.database;
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
+  }
+
+  // ★変更: 日付と対戦相手名（試合名）を同時に更新
+  Future<void> updateMatchDateAndOpponent(String matchId, String newDate, String newOpponent) async {
+    final db = await _dbHelper.database;
+    await db.update(
+        'matches',
+        {'date': newDate, 'opponent': newOpponent},
+        where: 'id = ?',
+        whereArgs: [matchId]
+    );
   }
 
   Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
@@ -112,8 +116,6 @@ class MatchDao {
 
   Future<List<Map<String, dynamic>>> getMatchLogs(String matchId) async {
     final db = await _dbHelper.database;
-    // ★修正: game_time の降順（新しい順）で取得するように変更
-    // これにより、時間を書き換えると自動的に表示順序が変わるようになる
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
