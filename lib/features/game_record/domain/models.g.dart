@@ -46,6 +46,11 @@ _$MatchRecordImpl _$$MatchRecordImplFromJson(Map<String, dynamic> json) =>
       logs: (json['logs'] as List<dynamic>)
           .map((e) => LogEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
+      matchType: json['matchType'] == null
+          ? MatchType.practiceMatch
+          : const MatchTypeConverter().fromJson(
+              (json['matchType'] as num).toInt(),
+            ),
     );
 
 Map<String, dynamic> _$$MatchRecordImplToJson(_$MatchRecordImpl instance) =>
@@ -54,6 +59,7 @@ Map<String, dynamic> _$$MatchRecordImplToJson(_$MatchRecordImpl instance) =>
       'date': instance.date,
       'opponent': instance.opponent,
       'logs': instance.logs,
+      'matchType': const MatchTypeConverter().toJson(instance.matchType),
     };
 
 _$ActionItemImpl _$$ActionItemImplFromJson(Map<String, dynamic> json) =>

@@ -1,9 +1,6 @@
 // lib/core/database/database_helper.dart
-
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-
-
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -18,16 +15,16 @@ class DatabaseHelper {
     return _database!;
   }
 
-
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    // ★バージョン変更 (v7)
+    // バージョンは変えずに、起動時にカラムチェックを行う方式で安全に移行します
     final path = join(dbPath, 'dodge_manager_v7.db');
 
     return await openDatabase(
       path,
       version: 1,
       onCreate: _onCreate,
+      onOpen: _onOpen, // ★追加: DBを開いた時にマイグレーションチェック
     );
   }
 
@@ -95,6 +92,7 @@ class DatabaseHelper {
         team_id TEXT,
         opponent TEXT,
         date TEXT,
+        match_type INTEGER DEFAULT 0, -- ★追加: 試合種別 (0=練習試合)
         created_at TEXT,
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
@@ -115,7 +113,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 7. ★追加: 試合出場記録 (ログがなくても試合数をカウントするため)
+    // 7. 試合出場記録
     await db.execute('''
       CREATE TABLE match_participations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,5 +122,17 @@ class DatabaseHelper {
         FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
       )
     ''');
+  }
+
+  // ★追加: 既存DBへのカラム追加処理
+  Future<void> _onOpen(Database db) async {
+    // matchesテーブルに match_type カラムがあるか確認
+    final result = await db.rawQuery("PRAGMA table_info(matches)");
+    final hasMatchType = result.any((col) => col['name'] == 'match_type');
+
+    if (!hasMatchType) {
+      // カラムがなければ追加 (デフォルト0 = 練習試合)
+      await db.execute("ALTER TABLE matches ADD COLUMN match_type INTEGER DEFAULT 0");
+    }
   }
 }

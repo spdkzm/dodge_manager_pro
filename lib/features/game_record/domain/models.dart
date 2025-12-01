@@ -1,6 +1,6 @@
+// lib/features/game_record/domain/models.dart
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-// 生成ファイルのパスはファイル名と一致させる
 part 'models.freezed.dart';
 part 'models.g.dart';
 
@@ -17,8 +17,15 @@ enum LogType {
   system, // 1
 }
 
-// --- コンバーター (Enum <-> int 変換用) ---
-// 既存のデータが index (0, 1...) で保存されているため、互換性維持に必要
+// ★追加: 試合種別
+enum MatchType {
+  practiceMatch, // 0: 練習試合 (デフォルト)
+  official,      // 1: 大会/公式戦
+  practice,      // 2: 練習
+}
+
+// --- コンバーター ---
+
 class ActionResultConverter implements JsonConverter<ActionResult, int> {
   const ActionResultConverter();
   @override
@@ -35,7 +42,16 @@ class LogTypeConverter implements JsonConverter<LogType, int> {
   int toJson(LogType object) => object.index;
 }
 
-// --- モデル定義 (Freezed) ---
+// ★追加: MatchTypeコンバーター
+class MatchTypeConverter implements JsonConverter<MatchType, int> {
+  const MatchTypeConverter();
+  @override
+  MatchType fromJson(int json) => MatchType.values.length > json ? MatchType.values[json] : MatchType.practiceMatch;
+  @override
+  int toJson(MatchType object) => object.index;
+}
+
+// --- モデル定義 ---
 
 @freezed
 class UIActionItem with _$UIActionItem {
@@ -45,7 +61,6 @@ class UIActionItem with _$UIActionItem {
     required ActionResult fixedResult,
     required List<String> subActions,
     required bool isSubRequired,
-    // ★追加
     @Default(false) bool hasSuccess,
     @Default(false) bool hasFailure,
   }) = _UIActionItem;
@@ -75,6 +90,8 @@ class MatchRecord with _$MatchRecord {
     required String date,
     required String opponent,
     required List<LogEntry> logs,
+    // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
+    @MatchTypeConverter() @Default(MatchType.practiceMatch) MatchType matchType,
   }) = _MatchRecord;
 
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);
@@ -103,18 +120,14 @@ class AppSettings with _$AppSettings {
     @Default("練習試合") String lastOpponent,
   }) = _AppSettings;
 
-  // ★修正: ロジックを直接書かず、変換メソッドを通してから渡す形にする
   factory AppSettings.fromJson(Map<String, dynamic> json) =>
       _$AppSettingsFromJson(_migrateOldData(json));
 
-  // 旧データ形式からの変換ロジックをstaticメソッドに分離
   static Map<String, dynamic> _migrateOldData(Map<String, dynamic> json) {
     if (json['actions'] is List && (json['actions'] as List).isNotEmpty) {
       final list = json['actions'] as List;
       if (list[0] is String) {
-        // 文字列リストをActionItemリスト形式に変換
         final convertedActions = list.map((e) => {'name': e}).toList();
-        // jsonは変更できない場合があるためコピーして返す
         final newJson = Map<String, dynamic>.from(json);
         newJson['actions'] = convertedActions;
         return newJson;

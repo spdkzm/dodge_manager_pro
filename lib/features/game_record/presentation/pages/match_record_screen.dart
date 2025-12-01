@@ -99,6 +99,22 @@ class MatchRecordScreen extends HookConsumerWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    // 種別表示用ヘルパー
+    String getMatchTypeName(MatchType type) {
+      switch (type) {
+        case MatchType.official: return "大会";
+        case MatchType.practiceMatch: return "練習試合";
+        case MatchType.practice: return "練習";
+      }
+    }
+    IconData getMatchTypeIcon(MatchType type) {
+      switch (type) {
+        case MatchType.official: return Icons.emoji_events;
+        case MatchType.practiceMatch: return Icons.handshake;
+        case MatchType.practice: return Icons.sports_handball;
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(
         elevation: 1,
@@ -107,94 +123,52 @@ class MatchRecordScreen extends HookConsumerWidget {
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: Row(
-                children: [
-                  // ★修正: チーム名表示に戻す
-                  Text(
-                    currentTeam?.name ?? "未選択",
-                    style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    DateFormat('yyyy/MM/dd').format(controller.matchDate),
-                    style: const TextStyle(color: Colors.black87, fontSize: 14),
-                  ),
-                  IconButton(
-                    onPressed: showDateSelectDialog,
-                    icon: const Icon(Icons.calendar_today, size: 20, color: Colors.black54),
-                  ),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    Text(currentTeam?.name ?? "未選択", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 8),
+
+                    // ★追加: 試合種別ドロップダウン
+                    DropdownButton<MatchType>(
+                      value: controller.matchType,
+                      underline: const SizedBox(),
+                      icon: const Icon(Icons.arrow_drop_down, size: 20),
+                      items: MatchType.values.map((type) => DropdownMenuItem(
+                        value: type,
+                        child: Row(
+                          children: [
+                            Icon(getMatchTypeIcon(type), size: 16, color: Colors.indigo),
+                            const SizedBox(width: 4),
+                            Text(getMatchTypeName(type), style: const TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                      )).toList(),
+                      onChanged: (newType) {
+                        if (newType != null) controller.updateMatchType(newType);
+                      },
+                    ),
+
+                    const SizedBox(width: 8),
+                    Text(DateFormat('MM/dd').format(controller.matchDate), style: const TextStyle(color: Colors.black87, fontSize: 14)),
+                    IconButton(onPressed: showDateSelectDialog, icon: const Icon(Icons.calendar_today, size: 18, color: Colors.black54), padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  ],
+                ),
               ),
             ),
             Align(
-              alignment: Alignment.center,
-              child: Text(
-                controller.formattedTime,
-                style: TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87,
-                  fontFamily: 'monospace',
-                ),
-              ),
+              alignment: Alignment.centerRight,
+              child: Text(controller.formattedTime, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87, fontFamily: 'monospace')),
             ),
           ],
         ),
       ),
       body: Row(children: [
-        Expanded(
-          flex: 2,
-          child: PlayerSelectionPanel(
-            tabController: tabController,
-            courtPlayers: controller.courtPlayers,
-            benchPlayers: controller.benchPlayers,
-            absentPlayers: controller.absentPlayers,
-            playerNames: controller.playerNames,
-            selectedPlayer: controller.selectedPlayer,
-            selectedForMove: controller.selectedForMove,
-            isMultiSelectMode: controller.isMultiSelectMode,
-            onPlayerTap: controller.selectPlayer,
-            onPlayerLongPress: controller.startMultiSelect,
-            onMoveSelected: controller.moveSelectedPlayers,
-            onClearMultiSelect: controller.clearMultiSelect,
-          ),
-        ),
+        Expanded(flex: 2, child: PlayerSelectionPanel(tabController: tabController, courtPlayers: controller.courtPlayers, benchPlayers: controller.benchPlayers, absentPlayers: controller.absentPlayers, playerNames: controller.playerNames, selectedPlayer: controller.selectedPlayer, selectedForMove: controller.selectedForMove, isMultiSelectMode: controller.isMultiSelectMode, onPlayerTap: controller.selectPlayer, onPlayerLongPress: controller.startMultiSelect, onMoveSelected: controller.moveSelectedPlayers, onClearMultiSelect: controller.clearMultiSelect)),
         const VerticalDivider(width: 1),
-        Expanded(
-          flex: 6,
-          child: Column(children: [
-            GameTimerBar(
-              isRunning: controller.isRunning,
-              hasMatchStarted: controller.hasMatchStarted,
-              onStart: controller.startTimer,
-              onStop: controller.stopTimer,
-              onEnd: handleEndMatch,
-            ),
-            Expanded(
-              child: GameOperationPanel(
-                uiActions: controller.uiActions,
-                gridColumns: controller.settings.gridColumns,
-                hasMatchStarted: controller.hasMatchStarted,
-                selectedPlayer: controller.selectedPlayer,
-                playerNames: controller.playerNames,
-                selectedUIAction: controller.selectedUIAction,
-                selectedSubAction: controller.selectedSubAction,
-                selectedResult: controller.selectedResult,
-                onActionSelected: controller.selectAction,
-                onResultSelected: controller.selectResult,
-                onSubActionSelected: controller.selectSubAction,
-                onConfirm: handleLogConfirm,
-              ),
-            ),
-          ]),
-        ),
-        Expanded(
-          flex: 2,
-          child: GameLogPanel(
-            logs: controller.logs,
-            onLogTap: showEditLogDialog,
-          ),
-        ),
+        Expanded(flex: 6, child: Column(children: [GameTimerBar(isRunning: controller.isRunning, hasMatchStarted: controller.hasMatchStarted, onStart: controller.startTimer, onStop: controller.stopTimer, onEnd: handleEndMatch), Expanded(child: GameOperationPanel(uiActions: controller.uiActions, gridColumns: controller.settings.gridColumns, hasMatchStarted: controller.hasMatchStarted, selectedPlayer: controller.selectedPlayer, playerNames: controller.playerNames, selectedUIAction: controller.selectedUIAction, selectedSubAction: controller.selectedSubAction, selectedResult: controller.selectedResult, onActionSelected: controller.selectAction, onResultSelected: controller.selectResult, onSubActionSelected: controller.selectSubAction, onConfirm: handleLogConfirm))])),
+        Expanded(flex: 2, child: GameLogPanel(logs: controller.logs, onLogTap: showEditLogDialog)),
       ]),
     );
   }

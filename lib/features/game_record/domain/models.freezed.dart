@@ -21,7 +21,7 @@ mixin _$UIActionItem {
   String get parentName => throw _privateConstructorUsedError;
   ActionResult get fixedResult => throw _privateConstructorUsedError;
   List<String> get subActions => throw _privateConstructorUsedError;
-  bool get isSubRequired => throw _privateConstructorUsedError; // ★追加
+  bool get isSubRequired => throw _privateConstructorUsedError;
   bool get hasSuccess => throw _privateConstructorUsedError;
   bool get hasFailure => throw _privateConstructorUsedError;
 
@@ -215,7 +215,6 @@ class _$UIActionItemImpl implements _UIActionItem {
 
   @override
   final bool isSubRequired;
-  // ★追加
   @override
   @JsonKey()
   final bool hasSuccess;
@@ -291,7 +290,7 @@ abstract class _UIActionItem implements UIActionItem {
   @override
   List<String> get subActions;
   @override
-  bool get isSubRequired; // ★追加
+  bool get isSubRequired;
   @override
   bool get hasSuccess;
   @override
@@ -645,7 +644,10 @@ mixin _$MatchRecord {
   String get id => throw _privateConstructorUsedError;
   String get date => throw _privateConstructorUsedError;
   String get opponent => throw _privateConstructorUsedError;
-  List<LogEntry> get logs => throw _privateConstructorUsedError;
+  List<LogEntry> get logs =>
+      throw _privateConstructorUsedError; // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
+  @MatchTypeConverter()
+  MatchType get matchType => throw _privateConstructorUsedError;
 
   /// Serializes this MatchRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -664,7 +666,13 @@ abstract class $MatchRecordCopyWith<$Res> {
     $Res Function(MatchRecord) then,
   ) = _$MatchRecordCopyWithImpl<$Res, MatchRecord>;
   @useResult
-  $Res call({String id, String date, String opponent, List<LogEntry> logs});
+  $Res call({
+    String id,
+    String date,
+    String opponent,
+    List<LogEntry> logs,
+    @MatchTypeConverter() MatchType matchType,
+  });
 }
 
 /// @nodoc
@@ -686,6 +694,7 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
     Object? date = null,
     Object? opponent = null,
     Object? logs = null,
+    Object? matchType = null,
   }) {
     return _then(
       _value.copyWith(
@@ -705,6 +714,10 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
                 ? _value.logs
                 : logs // ignore: cast_nullable_to_non_nullable
                       as List<LogEntry>,
+            matchType: null == matchType
+                ? _value.matchType
+                : matchType // ignore: cast_nullable_to_non_nullable
+                      as MatchType,
           )
           as $Val,
     );
@@ -720,7 +733,13 @@ abstract class _$$MatchRecordImplCopyWith<$Res>
   ) = __$$MatchRecordImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String id, String date, String opponent, List<LogEntry> logs});
+  $Res call({
+    String id,
+    String date,
+    String opponent,
+    List<LogEntry> logs,
+    @MatchTypeConverter() MatchType matchType,
+  });
 }
 
 /// @nodoc
@@ -741,6 +760,7 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
     Object? date = null,
     Object? opponent = null,
     Object? logs = null,
+    Object? matchType = null,
   }) {
     return _then(
       _$MatchRecordImpl(
@@ -760,6 +780,10 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
             ? _value._logs
             : logs // ignore: cast_nullable_to_non_nullable
                   as List<LogEntry>,
+        matchType: null == matchType
+            ? _value.matchType
+            : matchType // ignore: cast_nullable_to_non_nullable
+                  as MatchType,
       ),
     );
   }
@@ -773,6 +797,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     required this.date,
     required this.opponent,
     required final List<LogEntry> logs,
+    @MatchTypeConverter() this.matchType = MatchType.practiceMatch,
   }) : _logs = logs;
 
   factory _$MatchRecordImpl.fromJson(Map<String, dynamic> json) =>
@@ -792,9 +817,15 @@ class _$MatchRecordImpl implements _MatchRecord {
     return EqualUnmodifiableListView(_logs);
   }
 
+  // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
+  @override
+  @JsonKey()
+  @MatchTypeConverter()
+  final MatchType matchType;
+
   @override
   String toString() {
-    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, logs: $logs)';
+    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, logs: $logs, matchType: $matchType)';
   }
 
   @override
@@ -806,7 +837,9 @@ class _$MatchRecordImpl implements _MatchRecord {
             (identical(other.date, date) || other.date == date) &&
             (identical(other.opponent, opponent) ||
                 other.opponent == opponent) &&
-            const DeepCollectionEquality().equals(other._logs, _logs));
+            const DeepCollectionEquality().equals(other._logs, _logs) &&
+            (identical(other.matchType, matchType) ||
+                other.matchType == matchType));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -817,6 +850,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     date,
     opponent,
     const DeepCollectionEquality().hash(_logs),
+    matchType,
   );
 
   /// Create a copy of MatchRecord
@@ -839,6 +873,7 @@ abstract class _MatchRecord implements MatchRecord {
     required final String date,
     required final String opponent,
     required final List<LogEntry> logs,
+    @MatchTypeConverter() final MatchType matchType,
   }) = _$MatchRecordImpl;
 
   factory _MatchRecord.fromJson(Map<String, dynamic> json) =
@@ -851,7 +886,10 @@ abstract class _MatchRecord implements MatchRecord {
   @override
   String get opponent;
   @override
-  List<LogEntry> get logs;
+  List<LogEntry> get logs; // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
+  @override
+  @MatchTypeConverter()
+  MatchType get matchType;
 
   /// Create a copy of MatchRecord
   /// with the given fields replaced by the non-null parameter values.

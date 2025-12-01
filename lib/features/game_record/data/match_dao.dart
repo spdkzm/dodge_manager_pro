@@ -18,6 +18,7 @@ class MatchDao {
         'team_id': teamId,
         'opponent': matchData['opponent'],
         'date': matchData['date'],
+        'match_type': matchData['match_type'] ?? 0,
         'created_at': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -56,15 +57,9 @@ class MatchDao {
         'log_type': logMap['type'],
         'result': logMap['result'],
       });
-
-      final existing = await txn.query('match_participations',
-          where: 'match_id = ? AND player_number = ?',
-          whereArgs: [matchId, logMap['playerNumber']]);
+      final existing = await txn.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, logMap['playerNumber']]);
       if (existing.isEmpty) {
-        await txn.insert('match_participations', {
-          'match_id': matchId,
-          'player_number': logMap['playerNumber'],
-        });
+        await txn.insert('match_participations', {'match_id': matchId, 'player_number': logMap['playerNumber']});
       }
     });
   }
@@ -81,14 +76,9 @@ class MatchDao {
     }, where: 'id = ?', whereArgs: [logMap['id']]);
 
     if (logMap['match_id'] != null) {
-      final existing = await db.query('match_participations',
-          where: 'match_id = ? AND player_number = ?',
-          whereArgs: [logMap['match_id'], logMap['playerNumber']]);
+      final existing = await db.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [logMap['match_id'], logMap['playerNumber']]);
       if (existing.isEmpty) {
-        await db.insert('match_participations', {
-          'match_id': logMap['match_id'],
-          'player_number': logMap['playerNumber'],
-        });
+        await db.insert('match_participations', {'match_id': logMap['match_id'], 'player_number': logMap['playerNumber']});
       }
     }
   }
@@ -98,12 +88,12 @@ class MatchDao {
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
   }
 
-  // ★変更: 日付と対戦相手名（試合名）を同時に更新
-  Future<void> updateMatchDateAndOpponent(String matchId, String newDate, String newOpponent) async {
+  // ★変更: 日付・対戦相手・種別をまとめて更新
+  Future<void> updateMatchInfo(String matchId, String newDate, String newOpponent, int newMatchType) async {
     final db = await _dbHelper.database;
     await db.update(
         'matches',
-        {'date': newDate, 'opponent': newOpponent},
+        {'date': newDate, 'opponent': newOpponent, 'match_type': newMatchType},
         where: 'id = ?',
         whereArgs: [matchId]
     );
@@ -128,29 +118,45 @@ class MatchDao {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getLogsInPeriod(String teamId, String startDate, String endDate) async {
+  Future<List<Map<String, dynamic>>> getLogsInPeriod(
+      String teamId, String startDate, String endDate,
+      [List<int>? matchTypes]) async {
     final db = await _dbHelper.database;
+    String typeCondition = "";
+    if (matchTypes != null && matchTypes.isNotEmpty) {
+      typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
+    }
     final sql = '''
       SELECT 
         l.*, 
         m.date as match_date, 
-        m.opponent 
+        m.opponent,
+        m.match_type
       FROM match_logs l
       LEFT JOIN matches m ON l.match_id = m.id
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
+      $typeCondition
     ''';
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
-  Future<List<Map<String, dynamic>>> getParticipationsInPeriod(String teamId, String startDate, String endDate) async {
+  Future<List<Map<String, dynamic>>> getParticipationsInPeriod(
+      String teamId, String startDate, String endDate,
+      [List<int>? matchTypes]) async {
     final db = await _dbHelper.database;
+    String typeCondition = "";
+    if (matchTypes != null && matchTypes.isNotEmpty) {
+      typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
+    }
     final sql = '''
       SELECT 
         p.player_number,
-        p.match_id
+        p.match_id,
+        m.match_type
       FROM match_participations p
       INNER JOIN matches m ON p.match_id = m.id
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
+      $typeCondition
     ''';
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }

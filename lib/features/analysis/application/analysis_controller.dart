@@ -9,7 +9,7 @@ import '../../game_record/domain/models.dart';
 import '../../settings/data/action_dao.dart';
 import '../../settings/domain/action_definition.dart';
 import '../domain/player_stats.dart';
-import '../../team_mgmt/domain/team.dart'; // Teamクラスのために追加
+import '../../team_mgmt/domain/team.dart';
 
 final availableYearsProvider = StateProvider<List<int>>((ref) => []);
 final availableMonthsProvider = StateProvider<List<int>>((ref) => []);
@@ -45,22 +45,28 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchDao.deleteMatchLog(logId);
   }
 
-  Future<void> updateMatchDate(String matchId, DateTime newDate) async {
+  // ★変更: 試合情報（日付・種別）の更新
+  Future<void> updateMatchInfo(String matchId, DateTime newDate, MatchType newType) async {
     final teamStore = ref.read(teamStoreProvider);
     final currentTeamId = teamStore.currentTeam?.id;
     if (currentTeamId == null) return;
 
     final dateStr = DateFormat('yyyy-MM-dd').format(newDate);
+
+    // 日付変更に伴う連番の再計算
     final allMatches = await _matchDao.getMatches(currentTeamId);
     final matchesOnTargetDate = allMatches.where((m) => m['date'] == dateStr && m['id'] != matchId).toList();
     final newSequentialId = matchesOnTargetDate.length + 1;
     final newOpponentName = "試合-$dateStr #$newSequentialId";
 
-    await _matchDao.updateMatchDateAndOpponent(matchId, dateStr, newOpponentName);
+    // DAO呼び出し
+    await _matchDao.updateMatchInfo(matchId, dateStr, newOpponentName, newType.index);
   }
 
-  // --- 集計実行 (画面更新あり) ---
-  Future<void> analyze({int? year, int? month, int? day, String? matchId}) async {
+  Future<void> analyze({
+    int? year, int? month, int? day, String? matchId,
+    List<MatchType>? targetTypes,
+  }) async {
     try {
       state = const AsyncValue.loading();
       await Future.delayed(const Duration(milliseconds: 50));
@@ -76,27 +82,22 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         return;
       }
 
-      // 1. 期間文字列の決定
       final period = _determinePeriod(year, month, day, matchId);
-
-      // 2. フィルタ用リストの更新 (analyze特有の処理)
       await _updateAvailableFilters(currentTeam.id, year, month, day, matchId);
 
-      // 3. アクション定義のロード
       final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
       actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
-      // 4. マッチレコードのセット (analyze特有の処理)
       if (matchId != null) {
         await _loadSelectedMatchRecord(matchId);
       }
 
-      // 5. 共通集計ロジックの実行
       final resultList = await _calculateStats(
-          currentTeam: currentTeam,
-          startDateStr: period['start']!,
-          endDateStr: period['end']!,
-          matchId: matchId
+        currentTeam: currentTeam,
+        startDateStr: period['start']!,
+        endDateStr: period['end']!,
+        matchId: matchId,
+        targetTypes: targetTypes,
       );
 
       state = AsyncValue.data(resultList);
@@ -106,29 +107,27 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     }
   }
 
-  // --- ★追加: エクスポート用データ取得 (画面更新なし) ---
-  Future<List<PlayerStats>> fetchStatsForExport({int? year, int? month, int? day, String? matchId}) async {
+  Future<List<PlayerStats>> fetchStatsForExport({
+    int? year, int? month, int? day, String? matchId,
+    List<MatchType>? targetTypes,
+  }) async {
     final teamStore = ref.read(teamStoreProvider);
     final currentTeam = teamStore.currentTeam;
     if (currentTeam == null) return [];
 
-    // 1. 期間決定
     final period = _determinePeriod(year, month, day, matchId);
-
-    // 2. アクション定義のロード (念のため最新を取得)
     final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
     actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
-    // 3. 共通集計ロジックを実行して返す
     return await _calculateStats(
-        currentTeam: currentTeam,
-        startDateStr: period['start']!,
-        endDateStr: period['end']!,
-        matchId: matchId
+      currentTeam: currentTeam,
+      startDateStr: period['start']!,
+      endDateStr: period['end']!,
+      matchId: matchId,
+      targetTypes: targetTypes,
     );
   }
 
-  // --- 内部ヘルパー: 期間決定 ---
   Map<String, String> _determinePeriod(int? year, int? month, int? day, String? matchId) {
     String startDateStr;
     String endDateStr;
@@ -154,7 +153,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     return {'start': startDateStr, 'end': endDateStr};
   }
 
-  // --- 内部ヘルパー: フィルタ更新 ---
   Future<void> _updateAvailableFilters(String teamId, int? year, int? month, int? day, String? matchId) async {
     final allMatches = await _matchDao.getMatches(teamId);
 
@@ -195,7 +193,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     }
   }
 
-  // --- 内部ヘルパー: 選択試合のロード ---
   Future<void> _loadSelectedMatchRecord(String matchId) async {
     final matches = await _matchDao.getMatches(ref.read(teamStoreProvider).currentTeam!.id);
     final matchRow = matches.firstWhere((m) => m['id'] == matchId, orElse: () => {});
@@ -221,18 +218,18 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       date: matchRow['date'] as String? ?? '',
       opponent: matchRow['opponent'] as String? ?? '',
       logs: logs,
+      matchType: MatchType.values[matchRow['match_type'] as int? ?? 0], // ★追加: 種別取得
     );
     ref.read(selectedMatchRecordProvider.notifier).state = record;
   }
 
-  // --- 共通集計ロジック (切り出し) ---
   Future<List<PlayerStats>> _calculateStats({
     required Team currentTeam,
     required String startDateStr,
     required String endDateStr,
-    String? matchId
+    String? matchId,
+    List<MatchType>? targetTypes,
   }) async {
-    // 3. 全選手データの初期化
     final Map<String, PlayerStats> statsMap = {};
     final rosterMap = <String, String>{};
 
@@ -257,17 +254,16 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
     }
 
-    // 4. 出場記録
+    final typeIndices = targetTypes?.map((t) => t.index).toList();
+
     final List<Map<String, dynamic>> participations;
     if (matchId != null) {
-      // 特定試合の場合は、その試合のログから逆算するのではなくDBから取る方が確実
-      // getParticipationsInPeriod は期間指定だが、matchId指定の場合は専用ロジックでも良いが
-      // ここでは既存ロジックを踏襲し、ログから取得する方式を維持する（整合性のため）
       final logRows = await _matchDao.getMatchLogs(matchId);
       final playerNumbers = logRows.map((e) => e['player_number'] as String).toSet();
       participations = playerNumbers.map((pNum) => {'player_number': pNum, 'match_id': matchId}).toList();
     } else {
-      participations = await _matchDao.getParticipationsInPeriod(currentTeam.id, startDateStr, endDateStr);
+      participations = await _matchDao.getParticipationsInPeriod(
+          currentTeam.id, startDateStr, endDateStr, typeIndices);
     }
 
     final Map<String, Set<String>> playerMatches = {};
@@ -283,12 +279,12 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
     }
 
-    // 5. ログ集計
     final List<Map<String, dynamic>> rawLogs;
     if (matchId != null) {
       rawLogs = await _matchDao.getMatchLogs(matchId);
     } else {
-      rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
+      rawLogs = await _matchDao.getLogsInPeriod(
+          currentTeam.id, startDateStr, endDateStr, typeIndices);
     }
 
     for (var log in rawLogs) {
@@ -327,7 +323,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       statsMap[pNum] = currentStats.copyWith(actions: newActions);
     }
 
-    // 6. 最終整形
     final List<PlayerStats> resultList = statsMap.values.map((p) {
       return p.copyWith(matchesPlayed: playerMatches[p.playerNumber]?.length ?? 0);
     }).toList();

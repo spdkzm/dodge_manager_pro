@@ -11,7 +11,6 @@ import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
 
-// ★修正: .autoDispose を削除 (画面を離れてもデータを保持するため)
 final gameRecorderProvider = ChangeNotifierProvider<GameRecorderController>((ref) {
   return GameRecorderController(ref);
 });
@@ -34,6 +33,9 @@ class GameRecorderController extends ChangeNotifier {
   List<LogEntry> logs = [];
 
   DateTime _matchDate = DateTime.now();
+  // ★追加: 試合種別の状態管理 (デフォルトは練習試合)
+  MatchType _matchType = MatchType.practiceMatch;
+
   Timer? _gameTimer;
   int _remainingSeconds = 300;
   bool _isRunning = false;
@@ -46,6 +48,7 @@ class GameRecorderController extends ChangeNotifier {
   ActionResult selectedResult = ActionResult.none;
 
   DateTime get matchDate => _matchDate;
+  MatchType get matchType => _matchType; // getter
   int get remainingSeconds => _remainingSeconds;
   bool get isRunning => _isRunning;
   bool get hasMatchStarted => _hasMatchStarted;
@@ -133,18 +136,19 @@ class GameRecorderController extends ChangeNotifier {
     _remainingSeconds = settings.matchDurationMinutes * 60;
     playerNames = nameMap;
 
-    // ★修正: リセット時の初期化ロジック
-    // データが空（初回起動時）のみ、メンバーや日付を初期化する
-    // 画面遷移で戻ってきた場合は、既存のデータを維持する
     if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
       if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
-      _matchDate = DateTime.now(); // 初回のみ現在日時
+      _matchDate = DateTime.now();
+      _matchType = MatchType.practiceMatch; // 初回リセット
     }
 
     notifyListeners();
   }
 
   void updateMatchDate(DateTime date) { _matchDate = date; notifyListeners(); }
+  // ★追加: 種別更新
+  void updateMatchType(MatchType type) { _matchType = type; notifyListeners(); }
+
   void selectPlayer(String number) { if (isMultiSelectMode) { _toggleMultiSelect(number); } else { selectedPlayer = number; notifyListeners(); } }
   void startMultiSelect(String number) { _toggleMultiSelect(number); }
   void _toggleMultiSelect(String number) { if (selectedForMove.contains(number)) { selectedForMove.remove(number); if (selectedForMove.isEmpty) isMultiSelectMode = false; } else { selectedForMove.add(number); isMultiSelectMode = true; selectedPlayer = null; } notifyListeners(); }
@@ -177,9 +181,16 @@ class GameRecorderController extends ChangeNotifier {
     final existingMatches = await _matchDao.getMatches(currentTeam.id);
     final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
     final sequentialId = matchesToday + 1;
+    // 連番名の生成ロジックは既存通り
     final generatedOpponentName = "試合-${dateStr} #${sequentialId}";
+
     final matchId = DateTime.now().millisecondsSinceEpoch.toString();
-    final matchData = {'id': matchId, 'opponent': generatedOpponentName, 'date': dateStr};
+    final matchData = {
+      'id': matchId,
+      'opponent': generatedOpponentName,
+      'date': dateStr,
+      'match_type': _matchType.index, // ★追加: 種別IDを保存
+    };
     final logMaps = logs.reversed.map((log) { final map = log.toJson(); map['opponent'] = generatedOpponentName; return map; }).toList();
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
     await DataManager.clearCurrentLogs();
@@ -194,7 +205,7 @@ class GameRecorderController extends ChangeNotifier {
     _isRunning = false;
     _remainingSeconds = settings.matchDurationMinutes * 60;
 
-    // loadData() は呼ばない（メンバー配置と日付を維持するため）
+    // matchType はリセットせず維持する (連続で同じ種類の試合を行うことが多いため)
 
     selectedForMove.clear();
     selectedPlayer = null;
@@ -217,7 +228,7 @@ class GameRecorderController extends ChangeNotifier {
     benchPlayers.clear();
     absentPlayers.clear();
 
-    await loadData(); // チーム変更時は強制リセット
+    await loadData();
 
     selectedForMove.clear();
     selectedPlayer = null;
