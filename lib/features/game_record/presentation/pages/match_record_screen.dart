@@ -11,17 +11,17 @@ import '../widgets/game_log_panel.dart';
 
 import '../../domain/models.dart';
 import '../../application/game_recorder_controller.dart';
+import '../../../team_mgmt/application/team_store.dart';
 
-// ★修正: HookConsumerWidget に build メソッドを再定義
 class MatchRecordScreen extends HookConsumerWidget {
   const MatchRecordScreen({super.key});
 
-  // ★修正: 全てのロジックを build メソッド内へ移動
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.watch(gameRecorderProvider);
+    final teamStore = ref.watch(teamStoreProvider);
+    final currentTeam = teamStore.currentTeam;
 
-    // Hooksの呼び出しはbuildメソッドの先頭で行う
     useEffect(() {
       Future.microtask(() => controller.loadData());
       return null;
@@ -30,12 +30,8 @@ class MatchRecordScreen extends HookConsumerWidget {
     final tabController = useTabController(initialLength: 3);
     useListenable(tabController);
 
-    // --- UIイベントハンドラ ---
-
-    // showDateSelectDialog は build 内で定義
     void showDateSelectDialog() {
       DateTime tempDate = controller.matchDate;
-
       showDialog(context: context, builder: (context) {
         return StatefulBuilder(builder: (context, setStateDialog) {
           return AlertDialog(
@@ -80,14 +76,9 @@ class MatchRecordScreen extends HookConsumerWidget {
           title: const Text("試合記録の保存"),
           content: const Text("記録をデータベースに保存しますか？\n保存すると現在のログはクリアされます。"),
           actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("キャンセル")
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
             ElevatedButton(onPressed: () async {
-              // 保存処理
               final success = await controller.saveMatchToDb();
-
               if (context.mounted) {
                 Navigator.pop(context);
                 if (success) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("保存しました")));
@@ -104,10 +95,6 @@ class MatchRecordScreen extends HookConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text("ログを削除しました"), action: SnackBarAction(label: "復元", onPressed: () => controller.restoreLog(index, log))));
     }
 
-    // ==========================================
-    // UI構築
-    // ==========================================
-
     if (controller.settings.squadNumbers.isEmpty && controller.benchPlayers.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -118,18 +105,19 @@ class MatchRecordScreen extends HookConsumerWidget {
         title: Stack(
           alignment: Alignment.center,
           children: [
-            // 左寄せ: 日付表示と選択ボタン
             Align(
               alignment: Alignment.centerLeft,
               child: Row(
                 children: [
+                  // ★修正: チーム名表示に戻す
+                  Text(
+                    currentTeam?.name ?? "未選択",
+                    style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 12),
                   Text(
                     DateFormat('yyyy/MM/dd').format(controller.matchDate),
-                    style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold
-                    ),
+                    style: const TextStyle(color: Colors.black87, fontSize: 14),
                   ),
                   IconButton(
                     onPressed: showDateSelectDialog,
@@ -138,8 +126,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                 ],
               ),
             ),
-
-            // 中央: タイマー
             Align(
               alignment: Alignment.center,
               child: Text(
@@ -148,13 +134,12 @@ class MatchRecordScreen extends HookConsumerWidget {
                   fontSize: 36,
                   fontWeight: FontWeight.bold,
                   color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87,
-                  fontFamily: 'monospace', // 等幅フォントで見やすく
+                  fontFamily: 'monospace',
                 ),
               ),
             ),
           ],
         ),
-        actions: const [],
       ),
       body: Row(children: [
         Expanded(
@@ -174,9 +159,7 @@ class MatchRecordScreen extends HookConsumerWidget {
             onClearMultiSelect: controller.clearMultiSelect,
           ),
         ),
-
         const VerticalDivider(width: 1),
-
         Expanded(
           flex: 6,
           child: Column(children: [
@@ -205,7 +188,6 @@ class MatchRecordScreen extends HookConsumerWidget {
             ),
           ]),
         ),
-
         Expanded(
           flex: 2,
           child: GameLogPanel(

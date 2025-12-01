@@ -5,7 +5,7 @@ import '../../../../core/database/database_helper.dart';
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
-  // ★変更: participations (出場選手リスト) を受け取る
+  // 試合作成 (一括保存)
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
@@ -14,7 +14,6 @@ class MatchDao {
       ) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      // 1. 試合ヘッダ保存
       await txn.insert('matches', {
         'id': matchData['id'],
         'team_id': teamId,
@@ -23,23 +22,19 @@ class MatchDao {
         'created_at': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
-      // 2. ログ保存
-      // ★修正: LogEntry.toJson() が生成するキャメルケースのキーを使って値を取り出す
       for (var log in logs) {
         await txn.insert('match_logs', {
           'id': log['id'],
           'match_id': matchData['id'],
-          'game_time': log['gameTime'],       // 修正: game_time -> gameTime
-          'player_number': log['playerNumber'], // 修正: player_number -> playerNumber
-          // NULLの場合は空文字列を保存 (データ永続性)
+          'game_time': log['gameTime'],
+          'player_number': log['playerNumber'],
           'action': log['action'] ?? '',
-          'sub_action': log['subAction'],     // 修正: sub_action -> subAction
-          'log_type': log['type'],            // 修正: log_type -> type (models.g.dartの定義に合わせる)
-          'result': log['result'],            // resultはそのまま
+          'sub_action': log['subAction'],
+          'log_type': log['type'],
+          'result': log['result'],
         });
       }
 
-      // 3. 出場記録保存
       for (var playerNum in participations) {
         await txn.insert('match_participations', {
           'match_id': matchData['id'],
@@ -49,6 +44,67 @@ class MatchDao {
     });
   }
 
+  // ★追加: 単一ログの挿入
+  Future<void> insertMatchLog(String matchId, Map<String, dynamic> logMap) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      await txn.insert('match_logs', {
+        'id': logMap['id'],
+        'match_id': matchId,
+        'game_time': logMap['gameTime'],
+        'player_number': logMap['playerNumber'],
+        'action': logMap['action'],
+        'sub_action': logMap['subAction'],
+        'log_type': logMap['type'],
+        'result': logMap['result'],
+      });
+
+      // 出場記録になければ追加しておく (整合性維持)
+      final existing = await txn.query('match_participations',
+          where: 'match_id = ? AND player_number = ?',
+          whereArgs: [matchId, logMap['playerNumber']]);
+      if (existing.isEmpty) {
+        await txn.insert('match_participations', {
+          'match_id': matchId,
+          'player_number': logMap['playerNumber'],
+        });
+      }
+    });
+  }
+
+  // ★追加: 単一ログの更新
+  Future<void> updateMatchLog(Map<String, dynamic> logMap) async {
+    final db = await _dbHelper.database;
+    await db.update('match_logs', {
+      'game_time': logMap['gameTime'],
+      'player_number': logMap['playerNumber'],
+      'action': logMap['action'],
+      'sub_action': logMap['subAction'],
+      'log_type': logMap['type'],
+      'result': logMap['result'],
+    }, where: 'id = ?', whereArgs: [logMap['id']]);
+
+    // ※更新で選手が変わった場合の出場記録メンテは複雑なため、
+    // ここでは「変更後の選手を出場リストに追加する」のみ行い、変更前の選手の削除は行わない安全策をとる
+    if (logMap['match_id'] != null) {
+      final existing = await db.query('match_participations',
+          where: 'match_id = ? AND player_number = ?',
+          whereArgs: [logMap['match_id'], logMap['playerNumber']]);
+      if (existing.isEmpty) {
+        await db.insert('match_participations', {
+          'match_id': logMap['match_id'],
+          'player_number': logMap['playerNumber'],
+        });
+      }
+    }
+  }
+
+  // ★追加: 単一ログの削除
+  Future<void> deleteMatchLog(String logId) async {
+    final db = await _dbHelper.database;
+    await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
+  }
+
   Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
     final db = await _dbHelper.database;
     return await db.query('matches', where: 'team_id = ?', orderBy: 'date DESC, created_at DESC', whereArgs: [teamId]);
@@ -56,10 +112,11 @@ class MatchDao {
 
   Future<List<Map<String, dynamic>>> getMatchLogs(String matchId) async {
     final db = await _dbHelper.database;
-    return await db.query('match_logs', where: 'match_id = ?', whereArgs: [matchId]);
+    // ★修正: game_time の降順（新しい順）で取得するように変更
+    // これにより、時間を書き換えると自動的に表示順序が変わるようになる
+    return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
-  // 試合の完全削除メソッド
   Future<void> deleteMatch(String matchId) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -69,7 +126,6 @@ class MatchDao {
     });
   }
 
-  // 集計用: 期間内の全ログ取得
   Future<List<Map<String, dynamic>>> getLogsInPeriod(String teamId, String startDate, String endDate) async {
     final db = await _dbHelper.database;
     final sql = '''
@@ -84,7 +140,6 @@ class MatchDao {
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
-  // 集計用: 期間内の出場記録取得 (試合数カウントの基準)
   Future<List<Map<String, dynamic>>> getParticipationsInPeriod(String teamId, String startDate, String endDate) async {
     final db = await _dbHelper.database;
     final sql = '''

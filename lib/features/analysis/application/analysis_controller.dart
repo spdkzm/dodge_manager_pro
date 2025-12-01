@@ -10,16 +10,11 @@ import '../../settings/data/action_dao.dart';
 import '../../settings/domain/action_definition.dart';
 import '../domain/player_stats.dart';
 
-// 存在する年リストを保持するプロバイダー
+// プロバイダー定義 (変更なし)
 final availableYearsProvider = StateProvider<List<int>>((ref) => []);
-// 存在する月リストを保持するプロバイダー (1〜12)
 final availableMonthsProvider = StateProvider<List<int>>((ref) => []);
-// 存在する日リストを保持するプロバイダー (1〜31)
 final availableDaysProvider = StateProvider<List<int>>((ref) => []);
-// 存在する試合IDと対戦相手名のマップを保持するプロバイダー (ID -> Name)
 final availableMatchesProvider = StateProvider<Map<String, String>>((ref) => {});
-
-// 選択された試合のMatchRecordを保持するプロバイダー
 final selectedMatchRecordProvider = StateProvider<MatchRecord?>((ref) => null);
 
 final analysisControllerProvider = StateNotifierProvider.autoDispose<AnalysisController, AsyncValue<List<PlayerStats>>>((ref) {
@@ -35,14 +30,29 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
   AnalysisController(this.ref) : super(const AsyncValue.loading());
 
+  // ★追加: ログ操作メソッド
+  Future<void> addLog(String matchId, LogEntry log) async {
+    final logMap = log.toJson();
+    await _matchDao.insertMatchLog(matchId, logMap);
+  }
+
+  Future<void> updateLog(String matchId, LogEntry log) async {
+    final logMap = log.toJson();
+    logMap['match_id'] = matchId; // 更新時の整合性チェック用
+    await _matchDao.updateMatchLog(logMap);
+  }
+
+  Future<void> deleteLog(String logId) async {
+    await _matchDao.deleteMatchLog(logId);
+  }
+
+  // analyzeメソッド (変更なし)
   Future<void> analyze({int? year, int? month, int? day, String? matchId}) async {
     try {
       state = const AsyncValue.loading();
-
-      // 読み込み処理の前に意図的な遅延を追加 (データ競合回避)
       await Future.delayed(const Duration(milliseconds: 50));
 
-      ref.read(selectedMatchRecordProvider.notifier).state = null; // 毎回リセット
+      ref.read(selectedMatchRecordProvider.notifier).state = null;
 
       final teamStore = ref.read(teamStoreProvider);
       if (!teamStore.isLoaded) await teamStore.loadFromDb();
@@ -53,100 +63,69 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         return;
       }
 
-      // 1. 期間設定 (年/月/日フィルタに対応)
       String startDateStr;
       String endDateStr;
       final dateFormat = DateFormat('yyyy-MM-dd');
 
-      // matchIdが指定されている場合は日付フィルタは使用しない
       if (matchId != null) {
         startDateStr = "2000-01-01";
         endDateStr = "2099-12-31";
       } else if (year == null) {
-        // 累計
         startDateStr = "2000-01-01";
         endDateStr = "2099-12-31";
       } else if (month == null) {
-        // 年累計
         startDateStr = dateFormat.format(DateTime(year, 1, 1));
         endDateStr = dateFormat.format(DateTime(year, 12, 31));
       } else if (day == null) {
-        // 月累計
         startDateStr = dateFormat.format(DateTime(year, month, 1));
         final nextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
         endDateStr = dateFormat.format(nextMonth.subtract(const Duration(days: 1)));
       } else {
-        // 日累計
         startDateStr = dateFormat.format(DateTime(year, month, day));
         endDateStr = dateFormat.format(DateTime(year, month, day));
       }
 
-      // 存在する年、月、日、試合を抽出
       final allMatches = await _matchDao.getMatches(currentTeam.id);
 
       if (year == null) {
-        final years = allMatches
-            .map((m) {
+        final years = allMatches.map((m) {
           final dateStr = m['date'] as String?;
           return dateStr != null ? DateTime.tryParse(dateStr)?.year : null;
-        })
-            .whereType<int>()
-            .toSet()
-            .toList()
-          ..sort((a, b) => b.compareTo(a));
+        }).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
         ref.read(availableYearsProvider.notifier).state = years;
         ref.read(availableMonthsProvider.notifier).state = [];
         ref.read(availableDaysProvider.notifier).state = [];
         ref.read(availableMatchesProvider.notifier).state = {};
       } else if (month == null) {
-        final months = allMatches
-            .where((m) {
+        final months = allMatches.where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
           return date != null && date.year == year;
-        })
-            .map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.month)
-            .whereType<int>()
-            .toSet()
-            .toList()
-          ..sort((a, b) => b.compareTo(a));
+        }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.month).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
         ref.read(availableMonthsProvider.notifier).state = months;
         ref.read(availableDaysProvider.notifier).state = [];
         ref.read(availableMatchesProvider.notifier).state = {};
       } else if (day == null) {
-        final days = allMatches
-            .where((m) {
+        final days = allMatches.where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
           return date != null && date.year == year && date.month == month;
-        })
-            .map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.day)
-            .whereType<int>()
-            .toSet()
-            .toList()
-          ..sort((a, b) => b.compareTo(a));
+        }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.day).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
         ref.read(availableDaysProvider.notifier).state = days;
         ref.read(availableMatchesProvider.notifier).state = {};
       } else if (matchId == null) {
-        final matches = allMatches
-            .where((m) {
+        final matches = allMatches.where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
           return date != null && date.year == year && date.month == month && date.day == day;
         });
-
-        final matchMap = {
-          for (var m in matches)
-            m['id'] as String: m['opponent'] as String? ?? '(相手なし)',
-        };
+        final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
         ref.read(availableMatchesProvider.notifier).state = matchMap;
       }
 
-      // 2. アクション定義
       final rawActions = await _actionDao.getActionDefinitions(currentTeam.id);
       actionDefinitions = rawActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
-      // 3. 全選手データの初期化
       final Map<String, PlayerStats> statsMap = {};
       final rosterMap = <String, String>{};
 
@@ -164,28 +143,16 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           if (courtNameFieldId != null) name = item.data[courtNameFieldId]?.toString() ?? "";
           if (name.isEmpty && nameFieldId != null) {
             final n = item.data[nameFieldId];
-            if (n is Map) {
-              name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim();
-            }
+            if (n is Map) name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim();
           }
           rosterMap[num] = name;
-
-          final definiteNum = num;
-
-          statsMap[num] = PlayerStats(
-            playerId: definiteNum,
-            playerNumber: definiteNum,
-            playerName: name,
-            matchesPlayed: 0,
-            actions: {},
-          );
+          statsMap[num] = PlayerStats(playerId: num, playerNumber: num, playerName: name, matchesPlayed: 0, actions: {});
         }
       }
 
-      // 特定の試合が選択されている場合、MatchRecordを構築する
       if (matchId != null) {
         final matchRow = allMatches.firstWhere((m) => m['id'] == matchId);
-        final logRows = await _matchDao.getMatchLogs(matchId);
+        final logRows = await _matchDao.getMatchLogs(matchId); // 修正済みのgetMatchLogs
 
         final logs = logRows.map((logRow) {
           return LogEntry(
@@ -201,16 +168,10 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           );
         }).toList();
 
-        final record = MatchRecord(
-          id: matchId,
-          date: matchRow['date'] as String? ?? '',
-          opponent: matchRow['opponent'] as String? ?? '',
-          logs: logs,
-        );
+        final record = MatchRecord(id: matchId, date: matchRow['date'] as String? ?? '', opponent: matchRow['opponent'] as String? ?? '', logs: logs);
         ref.read(selectedMatchRecordProvider.notifier).state = record;
       }
 
-      // 4. 出場記録 (match_participations) による試合数カウント
       final List<Map<String, dynamic>> participations;
       if (matchId != null) {
         final logs = ref.read(selectedMatchRecordProvider.notifier).state?.logs;
@@ -225,46 +186,30 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
 
       final Map<String, Set<String>> playerMatches = {};
-
       for (var p in participations) {
         final pNum = p['player_number'] as String? ?? "";
         final matchIdKey = p['match_id'] as String? ?? "";
-
         if (pNum.isNotEmpty && matchIdKey.isNotEmpty) {
-          final definitePNum = pNum as String;
-
-          if (!playerMatches.containsKey(definitePNum)) playerMatches[definitePNum] = {};
-          playerMatches[definitePNum]!.add(matchIdKey);
-
-          if (!statsMap.containsKey(definitePNum)) {
-            statsMap[definitePNum] = PlayerStats(
-                playerId: definitePNum,
-                playerNumber: definitePNum,
-                playerName: rosterMap[definitePNum] ?? "(不明)",
-                matchesPlayed: 0, actions: {}
-            );
+          if (!playerMatches.containsKey(pNum)) playerMatches[pNum] = {};
+          playerMatches[pNum]!.add(matchIdKey);
+          if (!statsMap.containsKey(pNum)) {
+            statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: rosterMap[pNum] ?? "(不明)", matchesPlayed: 0, actions: {});
           }
         }
       }
 
-      // 5. ログ集計
       final List<Map<String, dynamic>> rawLogs;
       if (matchId != null) {
-        // ★修正: JSON変換ではなく、DAOから直接「生のDBデータ（スネークケース）」を取得する
-        // これにより、累積集計と同じロジック（スネークケースのキー参照）で処理できるようになる
         rawLogs = await _matchDao.getMatchLogs(matchId);
       } else {
         rawLogs = await _matchDao.getLogsInPeriod(currentTeam.id, startDateStr, endDateStr);
       }
 
       for (var log in rawLogs) {
-        // ★スネークケースのキー (player_number) で取得するため、matchId指定時も正しく動くようになる
         final pNum = log['player_number'] as String? ?? "";
         if (pNum.isEmpty) continue;
 
-        if (!statsMap.containsKey(pNum)) {
-          statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: "(未登録)", actions: {});
-        }
+        if (!statsMap.containsKey(pNum)) statsMap[pNum] = PlayerStats(playerId: pNum, playerNumber: pNum, playerName: "(未登録)", actions: {});
 
         final matchIdKey = log['match_id'] as String? ?? "";
         if (matchIdKey.isNotEmpty) {
@@ -283,36 +228,24 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         int success = actStats.successCount;
         int failure = actStats.failureCount;
         int total = actStats.totalCount;
-
         final Map<String, int> subs = Map.from(actStats.subActionCounts);
-        if (subAction != null && subAction.isNotEmpty) {
-          subs[subAction] = (subs[subAction] ?? 0) + 1;
-        }
+        if (subAction != null && subAction.isNotEmpty) subs[subAction] = (subs[subAction] ?? 0) + 1;
 
         if (result == ActionResult.success) success++;
         if (result == ActionResult.failure) failure++;
         total++;
 
-        final newActStats = actStats.copyWith(
-          successCount: success,
-          failureCount: failure,
-          totalCount: total,
-          subActionCounts: subs,
-        );
-
+        final newActStats = actStats.copyWith(successCount: success, failureCount: failure, totalCount: total, subActionCounts: subs);
         final newActions = Map<String, ActionStats>.from(currentStats.actions);
         newActions[action] = newActStats;
-
         statsMap[pNum] = currentStats.copyWith(actions: newActions);
       }
 
-      // 6. 最終整形
       final List<PlayerStats> resultList = statsMap.values.map((p) {
         return p.copyWith(matchesPlayed: playerMatches[p.playerNumber]?.length ?? 0);
       }).toList();
 
       resultList.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
-
       state = AsyncValue.data(resultList);
 
     } catch (e, st) {

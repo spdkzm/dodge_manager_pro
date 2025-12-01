@@ -296,8 +296,6 @@ class GameRecorderController extends ChangeNotifier {
       return map;
     }).toList();
 
-    // ★削除: デバッグログ
-
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
     await DataManager.clearCurrentLogs();
 
@@ -319,6 +317,41 @@ class GameRecorderController extends ChangeNotifier {
     selectedUIAction = null;
     selectedSubAction = null;
     selectedResult = ActionResult.none;
+
+    notifyListeners();
+  }
+
+  // ★追加: チーム変更時などにデータを完全にリセットして再読み込みする
+  Future<void> clearAllDataAndReload() async {
+    // 1. 一時保存されているログを消去 (これが重要: 前のチームのログを残さない)
+    await DataManager.clearCurrentLogs();
+
+    // 2. メモリ上のログも消去
+    logs.clear();
+
+    // 3. タイマー停止とリセット
+    stopTimer();
+    _remainingSeconds = settings.matchDurationMinutes * 60;
+    _hasMatchStarted = false;
+    _isRunning = false;
+
+    // 4. 新しいチーム情報でリロード
+    // 注意: loadData内部で _teamStore.currentTeam を参照するため、
+    // UI側で store.selectTeam() した後にこれを呼べば新しいチームのデータになる
+    await loadData();
+
+    // 5. 選択状態リセット
+    selectedForMove.clear();
+    selectedPlayer = null;
+    selectedUIAction = null;
+    selectedSubAction = null;
+    selectedResult = ActionResult.none;
+
+    // 6. 選手リストのクリア (loadDataで再構築されるが、念のため)
+    courtPlayers.clear();
+    benchPlayers.clear();
+    absentPlayers.clear();
+    // loadData内で再度デフォルト配置が行われる
 
     notifyListeners();
   }
