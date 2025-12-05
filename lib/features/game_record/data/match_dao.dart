@@ -88,15 +88,25 @@ class MatchDao {
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
   }
 
-  // ★変更: 日付・対戦相手・種別をまとめて更新
   Future<void> updateMatchInfo(String matchId, String newDate, String newOpponent, int newMatchType) async {
     final db = await _dbHelper.database;
-    await db.update(
-        'matches',
-        {'date': newDate, 'opponent': newOpponent, 'match_type': newMatchType},
-        where: 'id = ?',
-        whereArgs: [matchId]
-    );
+    await db.update('matches', {'date': newDate, 'opponent': newOpponent, 'match_type': newMatchType}, where: 'id = ?', whereArgs: [matchId]);
+  }
+
+  // ★追加: 出場メンバーの更新 (全削除して挿入)
+  Future<void> updateMatchParticipations(String matchId, List<String> playerNumbers) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      // 既存の参加記録を削除
+      await txn.delete('match_participations', where: 'match_id = ?', whereArgs: [matchId]);
+      // 新しいリストを挿入
+      for (var num in playerNumbers) {
+        await txn.insert('match_participations', {
+          'match_id': matchId,
+          'player_number': num,
+        });
+      }
+    });
   }
 
   Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
@@ -107,6 +117,18 @@ class MatchDao {
   Future<List<Map<String, dynamic>>> getMatchLogs(String matchId) async {
     final db = await _dbHelper.database;
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
+  }
+
+  // ★追加: 特定試合の出場メンバー取得
+  Future<List<String>> getMatchParticipations(String matchId) async {
+    final db = await _dbHelper.database;
+    final result = await db.query(
+        'match_participations',
+        columns: ['player_number'],
+        where: 'match_id = ?',
+        whereArgs: [matchId]
+    );
+    return result.map((row) => row['player_number'] as String).toList();
   }
 
   Future<void> deleteMatch(String matchId) async {

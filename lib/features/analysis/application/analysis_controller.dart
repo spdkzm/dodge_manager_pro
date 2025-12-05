@@ -45,7 +45,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchDao.deleteMatchLog(logId);
   }
 
-  // ★変更: 試合情報（日付・種別）の更新
+  // ★ここが修正ポイント: DAOの新しいメソッド(updateMatchInfo)を呼ぶように変更
   Future<void> updateMatchInfo(String matchId, DateTime newDate, MatchType newType) async {
     final teamStore = ref.read(teamStoreProvider);
     final currentTeamId = teamStore.currentTeam?.id;
@@ -59,8 +59,18 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     final newSequentialId = matchesOnTargetDate.length + 1;
     final newOpponentName = "試合-$dateStr #$newSequentialId";
 
-    // DAO呼び出し
+    // DAO呼び出し (引数が4つになっていることを確認)
     await _matchDao.updateMatchInfo(matchId, dateStr, newOpponentName, newType.index);
+  }
+
+  // ★追加: 出場メンバーの更新
+  Future<void> updateMatchMembers(String matchId, List<String> playerNumbers) async {
+    await _matchDao.updateMatchParticipations(matchId, playerNumbers);
+  }
+
+  // ★追加: 特定試合の出場メンバー取得
+  Future<List<String>> getMatchMembers(String matchId) async {
+    return await _matchDao.getMatchParticipations(matchId);
   }
 
   Future<void> analyze({
@@ -218,7 +228,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       date: matchRow['date'] as String? ?? '',
       opponent: matchRow['opponent'] as String? ?? '',
       logs: logs,
-      matchType: MatchType.values[matchRow['match_type'] as int? ?? 0], // ★追加: 種別取得
+      matchType: MatchType.values[matchRow['match_type'] as int? ?? 0],
     );
     ref.read(selectedMatchRecordProvider.notifier).state = record;
   }
@@ -258,9 +268,8 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
     final List<Map<String, dynamic>> participations;
     if (matchId != null) {
-      final logRows = await _matchDao.getMatchLogs(matchId);
-      final playerNumbers = logRows.map((e) => e['player_number'] as String).toSet();
-      participations = playerNumbers.map((pNum) => {'player_number': pNum, 'match_id': matchId}).toList();
+      final rawParticipations = await _matchDao.getMatchParticipations(matchId);
+      participations = rawParticipations.map((pNum) => {'player_number': pNum, 'match_id': matchId}).toList();
     } else {
       participations = await _matchDao.getParticipationsInPeriod(
           currentTeam.id, startDateStr, endDateStr, typeIndices);

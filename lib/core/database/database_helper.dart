@@ -9,6 +9,9 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
+  // DBファイル名 (定数化しておくと安全ですが、ここでは既存通り文字列で使用)
+  static const String _dbName = 'dodge_manager_v7.db';
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -17,19 +20,32 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    // バージョンは変えずに、起動時にカラムチェックを行う方式で安全に移行します
-    final path = join(dbPath, 'dodge_manager_v7.db');
+    final path = join(dbPath, _dbName);
 
     return await openDatabase(
       path,
       version: 1,
       onCreate: _onCreate,
-      onOpen: _onOpen, // ★追加: DBを開いた時にマイグレーションチェック
+      onOpen: _onOpen,
     );
   }
 
+  // ★追加: データベース接続を閉じる (復元時に使用)
+  Future<void> close() async {
+    final db = _database;
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
+    _database = null;
+  }
+
+  // ★追加: DBファイルのパスを取得 (バックアップ時に使用)
+  Future<String> getDbPath() async {
+    final dbPath = await getDatabasesPath();
+    return join(dbPath, _dbName);
+  }
+
   Future<void> _onCreate(Database db, int version) async {
-    // 1. チーム
     await db.execute('''
       CREATE TABLE teams(
         id TEXT PRIMARY KEY,
@@ -38,7 +54,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. フィールド
     await db.execute('''
       CREATE TABLE fields(
         id TEXT PRIMARY KEY,
@@ -57,7 +72,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // 3. アイテム
     await db.execute('''
       CREATE TABLE items(
         id TEXT PRIMARY KEY,
@@ -67,7 +81,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. アクション定義
     await db.execute('''
       CREATE TABLE action_definitions(
         id TEXT PRIMARY KEY,
@@ -85,20 +98,18 @@ class DatabaseHelper {
       )
     ''');
 
-    // 5. 試合結果
     await db.execute('''
       CREATE TABLE matches(
         id TEXT PRIMARY KEY,
         team_id TEXT,
         opponent TEXT,
         date TEXT,
-        match_type INTEGER DEFAULT 0, -- ★追加: 試合種別 (0=練習試合)
+        match_type INTEGER DEFAULT 0,
         created_at TEXT,
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
     ''');
 
-    // 6. 試合ログ
     await db.execute('''
       CREATE TABLE match_logs(
         id TEXT PRIMARY KEY,
@@ -113,7 +124,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // 7. 試合出場記録
     await db.execute('''
       CREATE TABLE match_participations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,14 +134,11 @@ class DatabaseHelper {
     ''');
   }
 
-  // ★追加: 既存DBへのカラム追加処理
   Future<void> _onOpen(Database db) async {
-    // matchesテーブルに match_type カラムがあるか確認
     final result = await db.rawQuery("PRAGMA table_info(matches)");
     final hasMatchType = result.any((col) => col['name'] == 'match_type');
 
     if (!hasMatchType) {
-      // カラムがなければ追加 (デフォルト0 = 練習試合)
       await db.execute("ALTER TABLE matches ADD COLUMN match_type INTEGER DEFAULT 0");
     }
   }
