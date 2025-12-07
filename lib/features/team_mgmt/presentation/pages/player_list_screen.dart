@@ -10,6 +10,10 @@ import '../../domain/team.dart';
 import '../../data/csv_export_service.dart';
 import '../../data/csv_import_service.dart';
 
+// ★追加: 遷移先画面のインポート
+import 'team_management_screen.dart';
+import 'schema_settings_screen.dart';
+
 class PlayerListScreen extends ConsumerStatefulWidget {
   const PlayerListScreen({super.key});
 
@@ -90,16 +94,28 @@ class _PlayerListScreenState extends ConsumerState<PlayerListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        // ★修正: タイトルをテキスト表示に戻す
         title: Text(currentTeam.name),
         actions: [
           IconButton(icon: const Icon(Icons.filter_list), tooltip: '表示項目', onPressed: () => _showViewFilterDialog(currentTeam)),
           PopupMenuButton<String>(
             onSelected: (val) {
+              if (val == 'team_mgmt') {
+                // ★追加: チーム管理へ遷移
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const TeamManagementScreen()));
+              }
+              if (val == 'schema') {
+                // ★追加: 項目設計へ遷移
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SchemaSettingsScreen()));
+              }
               if (val == 'import') _handleImport();
               if (val == 'export') _handleExport();
             },
             itemBuilder: (context) => [
+              // ★追加: 管理系メニュー
+              const PopupMenuItem(value: 'team_mgmt', child: Row(children: [Icon(Icons.group_work, color: Colors.grey), SizedBox(width: 8), Text('チーム管理')])),
+              const PopupMenuItem(value: 'schema', child: Row(children: [Icon(Icons.build, color: Colors.grey), SizedBox(width: 8), Text('項目の設計')])),
+              const PopupMenuDivider(), // 区切り線
+              // 既存: インポート・エクスポート
               const PopupMenuItem(value: 'import', child: Row(children: [Icon(Icons.file_upload, color: Colors.grey), SizedBox(width: 8), Text('CSVインポート')])),
               const PopupMenuItem(value: 'export', child: Row(children: [Icon(Icons.file_download, color: Colors.grey), SizedBox(width: 8), Text('CSVエクスポート')])),
             ],

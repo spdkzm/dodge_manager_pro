@@ -5,6 +5,8 @@ import '../../../../core/database/database_helper.dart';
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
+  // ... (既存メソッドはそのまま維持)
+
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
@@ -93,13 +95,10 @@ class MatchDao {
     await db.update('matches', {'date': newDate, 'opponent': newOpponent, 'match_type': newMatchType}, where: 'id = ?', whereArgs: [matchId]);
   }
 
-  // ★追加: 出場メンバーの更新 (全削除して挿入)
   Future<void> updateMatchParticipations(String matchId, List<String> playerNumbers) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      // 既存の参加記録を削除
       await txn.delete('match_participations', where: 'match_id = ?', whereArgs: [matchId]);
-      // 新しいリストを挿入
       for (var num in playerNumbers) {
         await txn.insert('match_participations', {
           'match_id': matchId,
@@ -107,6 +106,42 @@ class MatchDao {
         });
       }
     });
+  }
+
+  // アクション名の変更に伴う過去ログの一括更新
+  Future<void> updateActionNameInLogs(String teamId, String oldName, String newName) async {
+    final db = await _dbHelper.database;
+    await db.rawUpdate('''
+      UPDATE match_logs
+      SET action = ?
+      WHERE action = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [newName, oldName, teamId]);
+  }
+
+  // ★追加: 特定の詳細項目(サブアクション)が何回使われているかカウント
+  Future<int> countSubActionUsage(String teamId, String actionName, String subActionName) async {
+    final db = await _dbHelper.database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM match_logs
+      WHERE action = ? AND sub_action = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [actionName, subActionName, teamId]);
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  // ★追加: 詳細項目名の変更に伴う過去ログの一括更新
+  Future<void> updateSubActionNameInLogs(String teamId, String actionName, String oldSubName, String newSubName) async {
+    final db = await _dbHelper.database;
+    await db.rawUpdate('''
+      UPDATE match_logs
+      SET sub_action = ?
+      WHERE action = ? AND sub_action = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [newSubName, actionName, oldSubName, teamId]);
   }
 
   Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
@@ -119,7 +154,6 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
-  // ★追加: 特定試合の出場メンバー取得
   Future<List<String>> getMatchParticipations(String matchId) async {
     final db = await _dbHelper.database;
     final result = await db.query(

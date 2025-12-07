@@ -13,6 +13,11 @@ import '../../domain/models.dart';
 import '../../application/game_recorder_controller.dart';
 import '../../../team_mgmt/application/team_store.dart';
 
+// ★追加: 設定画面への遷移用
+import '../../../settings/presentation/pages/button_layout_settings_screen.dart';
+import '../../../settings/presentation/pages/action_settings_screen.dart';
+import '../../../settings/presentation/pages/match_environment_screen.dart';
+
 class MatchRecordScreen extends HookConsumerWidget {
   const MatchRecordScreen({super.key});
 
@@ -130,7 +135,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                     Text(currentTeam?.name ?? "未選択", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(width: 8),
 
-                    // ★追加: 試合種別ドロップダウン
                     DropdownButton<MatchType>(
                       value: controller.matchType,
                       underline: const SizedBox(),
@@ -159,10 +163,34 @@ class MatchRecordScreen extends HookConsumerWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: Text(controller.formattedTime, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87, fontFamily: 'monospace')),
+              child: Padding(
+                padding: const EdgeInsets.only(right: 32.0), // メニューボタンと被らないように少し右余白
+                child: Text(controller.formattedTime, style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: controller.remainingSeconds <= 30 ? Colors.red : Colors.black87, fontFamily: 'monospace')),
+              ),
             ),
           ],
         ),
+        // ★追加: 設定メニュー
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (val) async {
+              if (val == 'layout') {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const ButtonLayoutSettingsScreen()));
+              } else if (val == 'action') {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const ActionSettingsScreen()));
+              } else if (val == 'env') {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const MatchEnvironmentScreen()));
+              }
+              // 設定から戻ってきたらデータを再ロードして反映させる
+              controller.loadData();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'layout', child: Row(children: [Icon(Icons.grid_view, color: Colors.grey), SizedBox(width: 8), Text('ボタン配置と列数')])),
+              const PopupMenuItem(value: 'action', child: Row(children: [Icon(Icons.touch_app, color: Colors.grey), SizedBox(width: 8), Text('アクションの定義')])),
+              const PopupMenuItem(value: 'env', child: Row(children: [Icon(Icons.timer, color: Colors.grey), SizedBox(width: 8), Text('試合環境設定')])),
+            ],
+          ),
+        ],
       ),
       body: Row(children: [
         Expanded(flex: 2, child: PlayerSelectionPanel(tabController: tabController, courtPlayers: controller.courtPlayers, benchPlayers: controller.benchPlayers, absentPlayers: controller.absentPlayers, playerNames: controller.playerNames, selectedPlayer: controller.selectedPlayer, selectedForMove: controller.selectedForMove, isMultiSelectMode: controller.isMultiSelectMode, onPlayerTap: controller.selectPlayer, onPlayerLongPress: controller.startMultiSelect, onMoveSelected: controller.moveSelectedPlayers, onClearMultiSelect: controller.clearMultiSelect)),
