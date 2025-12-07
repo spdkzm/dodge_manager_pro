@@ -12,7 +12,7 @@ import '../../../settings/domain/action_definition.dart';
 import '../../../settings/data/action_dao.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../../team_mgmt/data/csv_export_service.dart';
-import '../../../team_mgmt/domain/schema.dart'; // 追加
+import '../../../team_mgmt/domain/schema.dart';
 
 enum StatColumnType { number, name, matches, successCount, failureCount, successRate, totalCount }
 class _ColumnSpec {
@@ -36,15 +36,13 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   late TabController _tabController;
   List<MatchType> _selectedMatchTypes = [];
 
-  // ★追加: メンバー編集用の一時データ
   List<String> _editingCourtMembers = [];
-  List<String> _editingBenchMembers = []; // 未出場の選手
-  bool _isMemberEditing = false; // 編集モードか否か
+  List<String> _editingBenchMembers = [];
+  bool _isMemberEditing = false;
 
   @override
   void initState() {
     super.initState();
-    // ★変更: タブ数を3に (集計, ログ, メンバー)
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) { _loadActionOrder(); });
   }
@@ -73,7 +71,14 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   }
 
   void _runAnalysis() {
-    ref.read(analysisControllerProvider.notifier).analyze(year: _selectedYear, month: _selectedMonth, day: _selectedDay, matchId: _selectedMatchId, targetTypes: _selectedMatchTypes.isEmpty ? null : _selectedMatchTypes);
+    ref.read(analysisControllerProvider.notifier).analyze(
+        year: _selectedYear, month: _selectedMonth, day: _selectedDay, matchId: _selectedMatchId,
+        targetTypes: _selectedMatchTypes.isEmpty ? null : _selectedMatchTypes
+    );
+
+    if (_selectedMatchId != null && _tabController.index == 2) {
+      _loadMemberEditorData();
+    }
   }
 
   Future<void> _showMatchInfoDialog(String matchId, String currentDateStr, MatchType currentType) async {
@@ -106,7 +111,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   }
 
   void _showEditLogDialog({LogEntry? log}) {
-    // ... (前回のコードと同じ)
+    // ... (前回のコードと同じ、省略なし)
     final controller = ref.read(analysisControllerProvider.notifier); final definitions = controller.actionDefinitions; final isNew = log == null; final stats = ref.read(analysisControllerProvider).valueOrNull ?? [];
     final players = stats.map((p) => {'number': p.playerNumber, 'name': p.playerName}).toList(); final actionNames = definitions.map((d) => d.name).toList();
     String timeVal = log?.gameTime ?? "00:00"; String? playerNumVal = log?.playerNumber; String? actionNameVal = log?.action; String? subActionVal = log?.subAction; ActionResult resultVal = log?.result ?? ActionResult.none;
@@ -121,15 +126,13 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
   Widget _buildVerticalTabs<T>({ required List<T?> items, required T? selectedItem, required String Function(T?) labelBuilder, required Function(T?) onSelect, required double width, required Color color, }) { return Container(width: width, color: color, child: ListView.builder(padding: const EdgeInsets.symmetric(vertical: 8), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; final isSelected = item == selectedItem; return Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: TextButton(style: TextButton.styleFrom(backgroundColor: isSelected ? Colors.indigo.shade100 : Colors.transparent, foregroundColor: isSelected ? Colors.indigo : Colors.black87, alignment: Alignment.centerLeft, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12)), onPressed: () => onSelect(item), child: Text(labelBuilder(item), style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 12), overflow: TextOverflow.ellipsis))); })); }
 
-  // ★追加: メンバー編集データのロード
   Future<void> _loadMemberEditorData() async {
     final store = ref.read(teamStoreProvider);
     if (!store.isLoaded) await store.loadFromDb();
     final currentTeam = store.currentTeam;
     if (currentTeam == null || _selectedMatchId == null) return;
 
-    // 1. 全メンバーのリスト
-    final allMembers = <String, String>{}; // number -> name
+    final allMembers = <String, String>{};
     String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
     for(var f in currentTeam.schema) {
       if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
@@ -146,13 +149,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       }
     }
 
-    // 2. この試合の出場メンバー
     final courtMembers = await ref.read(analysisControllerProvider.notifier).getMatchMembers(_selectedMatchId!);
-
-    // 3. 分類
     final benchMembers = allMembers.keys.where((n) => !courtMembers.contains(n)).toList();
 
-    // ソート (背番号順)
     int sortFunc(String a, String b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999);
     courtMembers.sort(sortFunc);
     benchMembers.sort(sortFunc);
@@ -160,16 +159,15 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     setState(() {
       _editingCourtMembers = courtMembers;
       _editingBenchMembers = benchMembers;
-      _isMemberEditing = false; // ロード完了直後は閲覧モード
+      _isMemberEditing = false;
     });
   }
 
-  // ★追加: メンバー保存
   Future<void> _saveMembers() async {
     if (_selectedMatchId == null) return;
     await ref.read(analysisControllerProvider.notifier).updateMatchMembers(_selectedMatchId!, _editingCourtMembers);
     setState(() => _isMemberEditing = false);
-    _runAnalysis(); // 再集計
+    _runAnalysis();
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("出場メンバーを更新しました")));
   }
 
@@ -194,7 +192,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
               labelColor: Colors.indigo, unselectedLabelColor: Colors.grey, indicatorColor: Colors.indigo,
               onTap: (idx) {
                 setState((){});
-                if (idx == 2) _loadMemberEditorData(); // メンバータブを開いた時にデータロード
+                if (idx == 2) _loadMemberEditorData();
               },
               tabs: const [Tab(icon: Icon(Icons.analytics, size: 18), text: "集計"), Tab(icon: Icon(Icons.list, size: 18), text: "ログ"), Tab(icon: Icon(Icons.people, size: 18), text: "メンバー")]
           )),
@@ -205,14 +203,18 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     );
   }
 
-  // --- ★追加: メンバー編集タブのコンテンツ ---
+  // --- ★修正: メンバー編集タブのコンテンツ (ログチェック追加) ---
   Widget _buildMemberContent() {
     if (_selectedMatchId == null) return const SizedBox();
 
-    // 名簿データ取得 (名前表示用)
     final store = ref.watch(teamStoreProvider);
     final team = store.currentTeam;
+    final matchRecord = ref.watch(selectedMatchRecordProvider); // ログ確認用
+
     if (team == null) return const Center(child: CircularProgressIndicator());
+
+    // ログを持っている選手のセットを作成
+    final Set<String> playersWithLogs = matchRecord?.logs.map((l) => l.playerNumber).toSet() ?? {};
 
     final Map<String, String> nameMap = {};
     String? numberFieldId; String? courtNameFieldId;
@@ -230,7 +232,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
     return Column(
       children: [
-        // 保存ボタンエリア
         Container(
           padding: const EdgeInsets.all(8),
           color: Colors.grey.shade100,
@@ -251,7 +252,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         Expanded(
           child: Row(
             children: [
-              // 出場メンバー (Court)
+              // 出場メンバー
               Expanded(
                 child: Column(
                   children: [
@@ -261,12 +262,23 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                         itemCount: _editingCourtMembers.length,
                         itemBuilder: (context, index) {
                           final num = _editingCourtMembers[index];
+                          final hasLog = playersWithLogs.contains(num); // ログ有無チェック
+
                           return Card(
                             color: Colors.white,
                             child: ListTile(
                               leading: CircleAvatar(backgroundColor: Colors.orange, child: Text(num, style: const TextStyle(color: Colors.white, fontSize: 12))),
                               title: Text(nameMap[num] ?? ""),
+                              // ログがある場合はアイコン表示
+                              trailing: hasLog ? const Icon(Icons.assignment, color: Colors.grey, size: 16) : null,
                               onTap: () {
+                                // ★修正: ログがある場合は移動禁止
+                                if (hasLog) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text("背番号$numは記録があるため外せません"), backgroundColor: Colors.red),
+                                  );
+                                  return;
+                                }
                                 setState(() {
                                   _editingCourtMembers.removeAt(index);
                                   _editingBenchMembers.add(num);
@@ -282,7 +294,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                 ),
               ),
               const VerticalDivider(width: 1),
-              // 未出場メンバー (Bench)
+              // 未出場メンバー
               Expanded(
                 child: Column(
                   children: [
@@ -319,7 +331,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     );
   }
 
-  // (Stats & Log content builders - 変更なし)
+  // (Stats, Log, Table content builders - 変更なし)
   Widget _buildStatsContent(AsyncValue<List<PlayerStats>> asyncStats) { return asyncStats.when(loading: () => const Center(child: CircularProgressIndicator()), error: (err, stack) => Center(child: Text("エラー: $err")), data: (stats) { if (stats.isEmpty) return const Center(child: Text("データがありません")); return _buildDataTable(stats); }); }
   Widget _buildLogContent(AsyncValue<List<PlayerStats>> asyncStats) { final matchRecord = ref.watch(selectedMatchRecordProvider); if (matchRecord == null) return const Center(child: CircularProgressIndicator()); if (matchRecord.logs.isEmpty) return const Center(child: Text("ログがありません")); final Map<String, String> nameMap = {}; asyncStats.whenData((stats) { for (var p in stats) { nameMap[p.playerNumber] = p.playerName; } }); final logs = matchRecord.logs; return ListView.separated(itemCount: logs.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (context, index) { final log = logs[index]; final name = nameMap[log.playerNumber] ?? ""; if (log.type == LogType.system) { return Container(color: Colors.grey[50], padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Row(children: [SizedBox(width: 45, child: Text(log.gameTime, style: const TextStyle(color: Colors.grey, fontSize: 11))), const SizedBox(width: 90), Expanded(child: Text(log.action, style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis))])); } String resultText = ""; Color? bgColor = Colors.white; if (log.result == ActionResult.success) { resultText = "(成功)"; bgColor = Colors.red.shade50; } else if (log.result == ActionResult.failure) { resultText = "(失敗)"; bgColor = Colors.blue.shade50; } return InkWell(onTap: () => _showEditLogDialog(log: log), child: Container(color: bgColor, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Row(children: [SizedBox(width: 45, child: Text(log.gameTime, style: const TextStyle(color: Colors.grey, fontSize: 11))), SizedBox(width: 90, child: RichText(overflow: TextOverflow.ellipsis, text: TextSpan(style: const TextStyle(color: Colors.black87, fontSize: 12), children: [TextSpan(text: "#${log.playerNumber} ", style: const TextStyle(fontWeight: FontWeight.bold)), TextSpan(text: name, style: const TextStyle(fontSize: 11, color: Colors.black54))]))), Expanded(child: Text("${log.action} $resultText", style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)), if (log.subAction != null) Text(log.subAction!, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); }); }
   Widget _buildDataTable(List<PlayerStats> originalStats) { final controller = ref.read(analysisControllerProvider.notifier); final definitions = controller.actionDefinitions; final List<_ColumnSpec> columnSpecs = []; columnSpecs.add(_ColumnSpec(label: "背番号", type: StatColumnType.number, isFixed: true)); columnSpecs.add(_ColumnSpec(label: "コートネーム", type: StatColumnType.name, isFixed: true)); columnSpecs.add(_ColumnSpec(label: "試合数", type: StatColumnType.matches, isFixed: true)); final dataActionNames = <String>{}; for (var p in originalStats) dataActionNames.addAll(p.actions.keys); final displayDefinitions = List<ActionDefinition>.from(definitions); final definedNames = definitions.map((d) => d.name).toSet(); for (var name in dataActionNames) { if (!definedNames.contains(name)) displayDefinitions.add(ActionDefinition(name: name, hasSuccess: false, hasFailure: false)); } for (var action in displayDefinitions) { if (action.hasSuccess && action.hasFailure) { columnSpecs.add(_ColumnSpec(label: "成功", type: StatColumnType.successCount, actionName: action.name)); columnSpecs.add(_ColumnSpec(label: "失敗", type: StatColumnType.failureCount, actionName: action.name)); columnSpecs.add(_ColumnSpec(label: "成功率", type: StatColumnType.successRate, actionName: action.name)); } else if (action.hasSuccess) { columnSpecs.add(_ColumnSpec(label: "成功数", type: StatColumnType.successCount, actionName: action.name)); } else if (action.hasFailure) { columnSpecs.add(_ColumnSpec(label: "失敗数", type: StatColumnType.failureCount, actionName: action.name)); } else { columnSpecs.add(_ColumnSpec(label: "数", type: StatColumnType.totalCount, actionName: action.name)); } } final sortedStats = List<PlayerStats>.from(originalStats); sortedStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999)); final maxValues = <String, Map<StatColumnType, double>>{}; return SingleChildScrollView(scrollDirection: Axis.vertical, child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_buildTableHeader(columnSpecs), const Divider(height: 1, thickness: 1), _buildTableBody(sortedStats, columnSpecs, maxValues)]))); }
