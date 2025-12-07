@@ -45,30 +45,80 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchDao.deleteMatchLog(logId);
   }
 
-  // ★ここが修正ポイント: DAOの新しいメソッド(updateMatchInfo)を呼ぶように変更
-  Future<void> updateMatchInfo(String matchId, DateTime newDate, MatchType newType) async {
+  // 試合情報の更新
+  Future<void> updateMatchInfo(
+      String matchId,
+      DateTime newDate,
+      MatchType newType,
+      {
+        String? opponentName,
+        String? opponentId,
+        String? venueName,
+        String? venueId
+      }) async {
     final teamStore = ref.read(teamStoreProvider);
     final currentTeamId = teamStore.currentTeam?.id;
     if (currentTeamId == null) return;
 
     final dateStr = DateFormat('yyyy-MM-dd').format(newDate);
 
-    // 日付変更に伴う連番の再計算
-    final allMatches = await _matchDao.getMatches(currentTeamId);
-    final matchesOnTargetDate = allMatches.where((m) => m['date'] == dateStr && m['id'] != matchId).toList();
-    final newSequentialId = matchesOnTargetDate.length + 1;
-    final newOpponentName = "試合-$dateStr #$newSequentialId";
+    // 未登録なら自動登録
+    String? finalOpponentId = opponentId;
+    String? finalVenueId = venueId;
 
-    // DAO呼び出し (引数が4つになっていることを確認)
-    await _matchDao.updateMatchInfo(matchId, dateStr, newOpponentName, newType.index);
+    if (opponentName != null && opponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
+      finalOpponentId = await teamStore.ensureItemExists(opponentName, 1);
+    }
+    if (venueName != null && venueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
+      finalVenueId = await teamStore.ensureItemExists(venueName, 2);
+    }
+
+    String newOpponentName = opponentName ?? "";
+    // ★修正: 対戦相手名が空の場合の連番生成ロジック
+    if (newOpponentName.isEmpty) {
+      final allMatches = await _matchDao.getMatches(currentTeamId);
+      // 同じ日の他の試合を取得 (自分自身は除く)
+      final matchesOnTargetDate = allMatches.where((m) => m['date'] == dateStr && m['id'] != matchId).toList();
+
+      // 既存の連番を抽出
+      final regex = RegExp(r'^試合-.* #(\d+)$');
+      final existingNumbers = <int>{};
+
+      for (var m in matchesOnTargetDate) {
+        final op = m['opponent'] as String? ?? "";
+        final match = regex.firstMatch(op);
+        if (match != null) {
+          existingNumbers.add(int.parse(match.group(1)!));
+        }
+      }
+
+      // 1から順に空いている番号を探す
+      int newNum = 1;
+      while (existingNumbers.contains(newNum)) {
+        newNum++;
+      }
+
+      newOpponentName = "試合-$dateStr #$newNum";
+    }
+
+    await _matchDao.updateMatchInfo(
+        matchId,
+        dateStr,
+        newOpponentName,
+        finalOpponentId,
+        venueName,
+        finalVenueId,
+        newType.index
+    );
+
+    // 更新後に詳細データを再ロードする
+    await _loadSelectedMatchRecord(matchId);
   }
 
-  // ★追加: 出場メンバーの更新
   Future<void> updateMatchMembers(String matchId, List<String> playerNumbers) async {
     await _matchDao.updateMatchParticipations(matchId, playerNumbers);
   }
 
-  // ★追加: 特定試合の出場メンバー取得
   Future<List<String>> getMatchMembers(String matchId) async {
     return await _matchDao.getMatchParticipations(matchId);
   }
@@ -192,14 +242,26 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }).map((m) => DateTime.tryParse(m['date'] as String? ?? '')?.day).whereType<int>().toSet().toList()..sort((a, b) => b.compareTo(a));
       ref.read(availableDaysProvider.notifier).state = days;
       ref.read(availableMatchesProvider.notifier).state = {};
-    } else if (matchId == null) {
-      final matches = allMatches.where((m) {
-        final dateStr = m['date'] as String?;
-        final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-        return date != null && date.year == year && date.month == month && date.day == day;
-      });
-      final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
-      ref.read(availableMatchesProvider.notifier).state = matchMap;
+    } else {
+      // ★修正: matchIdが選択されている場合(else)でも、日付(day)が確定していれば試合リストを更新する
+      // ここでは year, month, day が全て非nullである前提（analyze呼び出し時のロジック上）
+      // ただし、matchIdだけでanalyzeされるケースもあるため、matchIdから日付を逆引きしてフィルタするアプローチも可能だが、
+      // ここではシンプルに「日付が指定されている場合」のリスト更新を行う。
+
+      // analyze() の呼び出し元で、matchId指定時は year/month/day がnullになる可能性があるが、
+      // UI上（AnalysisScreen）のタブ選択状態（_selectedYear等）は保持されている。
+      // 引数の year, month, day を信頼してリストを作る。
+
+      // dayが指定されていれば、その日の試合リストを作る
+      if (year != null && month != null && day != null) {
+        final matches = allMatches.where((m) {
+          final dateStr = m['date'] as String?;
+          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
+          return date != null && date.year == year && date.month == month && date.day == day;
+        });
+        final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
+        ref.read(availableMatchesProvider.notifier).state = matchMap;
+      }
     }
   }
 
@@ -227,6 +289,9 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       id: matchId,
       date: matchRow['date'] as String? ?? '',
       opponent: matchRow['opponent'] as String? ?? '',
+      opponentId: matchRow['opponent_id'] as String?,
+      venueName: matchRow['venue_name'] as String?,
+      venueId: matchRow['venue_id'] as String?,
       logs: logs,
       matchType: MatchType.values[matchRow['match_type'] as int? ?? 0],
     );

@@ -1,3 +1,4 @@
+// lib/features/team_mgmt/application/team_store.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -7,18 +8,16 @@ import '../domain/team.dart';
 import '../domain/schema.dart';
 import '../domain/roster_item.dart';
 import '../data/team_dao.dart';
+import '../../game_record/data/match_dao.dart';
 
-// ★追加: アプリ全体で共有するTeamStoreのプロバイダー
 final teamStoreProvider = ChangeNotifierProvider<TeamStore>((ref) {
   return TeamStore();
 });
 
 class TeamStore extends ChangeNotifier {
-  // ★削除: シングルトン関連のコード (_instance, factory)
-
   final TeamDao _teamDao = TeamDao();
+  final MatchDao _matchDao = MatchDao();
 
-  // コンストラクタ
   TeamStore() {
     loadFromDb();
   }
@@ -41,6 +40,25 @@ class TeamStore extends ChangeNotifier {
 
       if (teams.isNotEmpty) {
         currentTeamId = teams.first.id;
+        for (var team in teams) {
+          // ★追加: 既存データの重複修復処理
+          await _cleanupDuplicateSystemFields(team, 1); // 対戦相手
+          await _cleanupDuplicateSystemFields(team, 2); // 会場
+
+          // データがない場合の初期化
+          if (team.opponentSchema.isEmpty) {
+            _initOpponentSchema(team);
+            for (var f in team.opponentSchema) {
+              await _teamDao.insertField(team.id, f, 1);
+            }
+          }
+          if (team.venueSchema.isEmpty) {
+            _initVenueSchema(team);
+            for (var f in team.venueSchema) {
+              await _teamDao.insertField(team.id, f, 2);
+            }
+          }
+        }
       } else {
         _createDefaultTeam();
       }
@@ -53,6 +71,36 @@ class TeamStore extends ChangeNotifier {
     }
   }
 
+  // ★追加: 重複したシステム項目を削除するメソッド
+  Future<void> _cleanupDuplicateSystemFields(Team team, int category) async {
+    final schema = team.getSchema(category);
+    final seenLabels = <String>{};
+    final toRemove = <FieldDefinition>[];
+
+    for (var field in schema) {
+      // システム項目かつ、既に同じ名前が出現している場合
+      if (field.isSystem) {
+        if (seenLabels.contains(field.label)) {
+          toRemove.add(field);
+        } else {
+          seenLabels.add(field.label);
+        }
+      }
+    }
+
+    // 重複分を削除
+    for (var field in toRemove) {
+      // メモリから削除
+      if (category == 1) {
+        team.opponentSchema.remove(field);
+      } else if (category == 2) {
+        team.venueSchema.remove(field);
+      }
+      // DBから削除
+      await _teamDao.deleteField(field.id);
+    }
+  }
+
   void _createDefaultTeam() {
     final defaultSchema = _createSystemFields();
     final defaultTeam = Team(
@@ -61,6 +109,9 @@ class TeamStore extends ChangeNotifier {
       schema: defaultSchema,
       items: [],
     );
+    _initOpponentSchema(defaultTeam);
+    _initVenueSchema(defaultTeam);
+
     teams.add(defaultTeam);
     currentTeamId = defaultTeam.id;
     _teamDao.insertTeam(defaultTeam);
@@ -70,13 +121,24 @@ class TeamStore extends ChangeNotifier {
     return [
       FieldDefinition(label: '背番号', type: FieldType.uniformNumber, isSystem: true, isUnique: true),
       FieldDefinition(label: 'コートネーム', type: FieldType.courtName, isSystem: true),
-
       FieldDefinition(label: '氏名', type: FieldType.personName, isSystem: true),
       FieldDefinition(label: 'フリガナ', type: FieldType.personKana, isSystem: true, isVisible: false),
       FieldDefinition(label: '生年月日', type: FieldType.date, isSystem: true, isVisible: false),
       FieldDefinition(label: '年齢', type: FieldType.age, isSystem: true, isVisible: false),
       FieldDefinition(label: '住所', type: FieldType.address, isSystem: true, isVisible: false),
       FieldDefinition(label: '電話番号', type: FieldType.phone, isSystem: true, isVisible: false),
+    ];
+  }
+
+  void _initOpponentSchema(Team team) {
+    team.opponentSchema = [
+      FieldDefinition(label: 'チーム名', type: FieldType.text, isSystem: true, isUnique: true),
+    ];
+  }
+
+  void _initVenueSchema(Team team) {
+    team.venueSchema = [
+      FieldDefinition(label: '会場名', type: FieldType.text, isSystem: true, isUnique: true),
     ];
   }
 
@@ -88,6 +150,9 @@ class TeamStore extends ChangeNotifier {
       name: name,
       schema: _createSystemFields(),
     );
+    _initOpponentSchema(newTeam);
+    _initVenueSchema(newTeam);
+
     teams.add(newTeam);
     if (teams.length == 1) currentTeamId = newTeam.id;
 
@@ -115,47 +180,14 @@ class TeamStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- スキーマ操作 ---
+  // --- スキーマ操作 (Category対応) ---
 
-  void saveSchema(String teamId, List<FieldDefinition> newSchema) {
-    final teamIndex = teams.indexWhere((t) => t.id == teamId);
-    if (teamIndex != -1) {
-      teams[teamIndex].schema = newSchema;
-      _teamDao.updateSchema(teamId, newSchema);
-      notifyListeners();
-    }
-  }
-
-  void addField(String teamId, FieldDefinition field) {
+  void saveSchema(String teamId, List<FieldDefinition> newSchema, {int category = 0}) {
     final team = teams.firstWhere((t) => t.id == teamId);
-    team.schema.add(field);
-    _teamDao.insertField(teamId, field);
+    team.setSchema(category, newSchema);
+    _teamDao.updateSchema(teamId, newSchema, category);
     notifyListeners();
   }
-
-  void deleteField(String teamId, FieldDefinition field) {
-    final team = teams.firstWhere((t) => t.id == teamId);
-    team.schema.remove(field);
-    _teamDao.deleteField(field.id);
-    notifyListeners();
-  }
-
-  void updateField(String teamId, FieldDefinition field) {
-    _teamDao.updateFieldVisibility(field.id, field.isVisible);
-    notifyListeners();
-  }
-
-  void reorderSchema(String teamId, int oldIndex, int newIndex) {
-    final team = teams.firstWhere((t) => t.id == teamId);
-    if (oldIndex < newIndex) newIndex -= 1;
-    final item = team.schema.removeAt(oldIndex);
-    team.schema.insert(newIndex, item);
-
-    _teamDao.updateSchema(teamId, team.schema);
-    notifyListeners();
-  }
-
-  // --- 表示フィルター操作 ---
 
   void toggleViewColumn(String teamId, String fieldId) {
     final team = teams.firstWhere((t) => t.id == teamId);
@@ -168,28 +200,75 @@ class TeamStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- データ操作 ---
+  // --- データ操作 (Category対応) ---
 
-  void addItem(String teamId, RosterItem item) {
+  void addItem(String teamId, RosterItem item, {int category = 0}) {
     final team = teams.firstWhere((t) => t.id == teamId);
-    team.items.add(item);
-    _teamDao.insertItem(teamId, item);
+    team.getItems(category).add(item);
+    _teamDao.insertItem(teamId, item, category);
     notifyListeners();
   }
 
-  void updateItem() {
+  void saveItem(String teamId, RosterItem item, {int category = 0}) {
+    _teamDao.insertItem(teamId, item, category);
     notifyListeners();
   }
 
-  void saveItem(String teamId, RosterItem item) {
-    _teamDao.insertItem(teamId, item);
-    notifyListeners();
-  }
-
-  void deleteItem(String teamId, RosterItem item) {
+  void deleteItem(String teamId, RosterItem item, {int category = 0}) {
     final team = teams.firstWhere((t) => t.id == teamId);
-    team.items.remove(item);
+    team.getItems(category).remove(item);
     _teamDao.deleteItem(item.id);
     notifyListeners();
+  }
+
+  // 名前からアイテムIDを取得（なければ新規作成して返す）
+  Future<String> ensureItemExists(String name, int category) async {
+    final team = currentTeam;
+    if (team == null || name.trim().isEmpty) return "";
+
+    final items = team.getItems(category);
+    final schema = team.getSchema(category);
+
+    if (schema.isEmpty) return "";
+
+    final nameField = schema.firstWhere((f) => f.label.contains("名") || f.type == FieldType.text, orElse: () => schema.first);
+
+    // 既存チェック
+    for (var item in items) {
+      final val = item.data[nameField.id]?.toString() ?? "";
+      if (val == name) {
+        return item.id;
+      }
+    }
+
+    // 新規作成
+    final newItem = RosterItem(data: {nameField.id: name});
+    addItem(team.id, newItem, category: category);
+    return newItem.id;
+  }
+
+  // 使用回数確認
+  Future<int> checkMatchInfoUsage(int category, String name) async {
+    final teamId = currentTeamId;
+    if (teamId == null) return 0;
+
+    if (category == 1) { // 対戦相手
+      return await _matchDao.countOpponentNameUsage(teamId, name);
+    } else if (category == 2) { // 会場
+      return await _matchDao.countVenueNameUsage(teamId, name);
+    }
+    return 0;
+  }
+
+  // 名前一括更新
+  Future<void> updateMatchInfoName(int category, String oldName, String newName) async {
+    final teamId = currentTeamId;
+    if (teamId == null) return;
+
+    if (category == 1) {
+      await _matchDao.updateOpponentName(teamId, oldName, newName);
+    } else if (category == 2) {
+      await _matchDao.updateVenueName(teamId, oldName, newName);
+    }
   }
 }

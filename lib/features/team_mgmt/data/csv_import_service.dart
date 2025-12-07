@@ -4,15 +4,11 @@ import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
 
-// Domain
 import '../domain/team.dart';
 import '../domain/schema.dart';
 import '../domain/roster_item.dart';
+import 'team_dao.dart';
 
-// Data
-import 'team_dao.dart'; // ★変更: Daoを直接使う
-
-// インポート結果の統計クラス
 class ImportStats {
   int inserted = 0;
   int updated = 0;
@@ -20,7 +16,6 @@ class ImportStats {
   int skipped = 0;
 }
 
-// カラムとスキーマのマッピング情報
 class _ColMap {
   final FieldDefinition field;
   final String? subKey;
@@ -28,11 +23,10 @@ class _ColMap {
 }
 
 class CsvImportService {
-  final TeamDao _teamDao = TeamDao(); // ★変更: Daoを使用
+  final TeamDao _teamDao = TeamDao();
 
   Future<ImportStats?> pickAndImportCsv(Team team) async {
     try {
-      // 1. ファイル選択
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['csv'],
@@ -46,7 +40,6 @@ class CsvImportService {
 
       if (rows.isEmpty) return ImportStats();
 
-      // 2. ヘッダー解析とマッピング
       final List<String> headers = rows.first.map((e) => e.toString().trim()).toList();
 
       int idColIndex = -1;
@@ -60,40 +53,20 @@ class CsvImportService {
         }
 
         for (var field in team.schema) {
-          // 完全一致
           if (h == field.label) {
             columnMapping[i] = _ColMap(field);
             break;
           }
-          // 接尾辞マッチ
           if (h.startsWith('${field.label}_')) {
             final suffix = h.substring('${field.label}_'.length);
             String? subKey;
-
             switch (field.type) {
-              case FieldType.personName:
-                if (suffix == '姓') subKey = 'last';
-                if (suffix == '名') subKey = 'first';
-                break;
-              case FieldType.personKana:
-                if (suffix == 'セイ') subKey = 'last';
-                if (suffix == 'メイ') subKey = 'first';
-                break;
-              case FieldType.phone:
-                if (suffix == '1') subKey = 'part1';
-                if (suffix == '2') subKey = 'part2';
-                if (suffix == '3') subKey = 'part3';
-                break;
-              case FieldType.address:
-                if (suffix == '郵便1') subKey = 'zip1';
-                if (suffix == '郵便2') subKey = 'zip2';
-                if (suffix == '県') subKey = 'pref';
-                if (suffix == '市町村') subKey = 'city';
-                if (suffix == '建物') subKey = 'building';
-                break;
+              case FieldType.personName: if (suffix == '姓') subKey = 'last'; if (suffix == '名') subKey = 'first'; break;
+              case FieldType.personKana: if (suffix == 'セイ') subKey = 'last'; if (suffix == 'メイ') subKey = 'first'; break;
+              case FieldType.phone: if (suffix == '1') subKey = 'part1'; if (suffix == '2') subKey = 'part2'; if (suffix == '3') subKey = 'part3'; break;
+              case FieldType.address: if (suffix == '郵便1') subKey = 'zip1'; if (suffix == '郵便2') subKey = 'zip2'; if (suffix == '県') subKey = 'pref'; if (suffix == '市町村') subKey = 'city'; if (suffix == '建物') subKey = 'building'; break;
               default: break;
             }
-
             if (subKey != null) {
               columnMapping[i] = _ColMap(field, subKey);
               break;
@@ -102,7 +75,6 @@ class CsvImportService {
         }
       }
 
-      // 3. データ処理
       final stats = ImportStats();
       final existingItemsMap = {for (var item in team.items) item.id: item};
 
@@ -141,22 +113,22 @@ class CsvImportService {
         });
 
         if (csvId != null && existingItemsMap.containsKey(csvId)) {
-          // --- 更新 ---
           final existingItem = existingItemsMap[csvId]!;
           if (_hasChanges(existingItem.data, newItemData, team.schema)) {
             existingItem.data = newItemData;
-            await _teamDao.insertItem(team.id, existingItem); // ★Daoで更新
+            // ★修正: category=0 (選手)
+            await _teamDao.insertItem(team.id, existingItem, 0);
             stats.updated++;
           } else {
             stats.unchanged++;
           }
         } else {
-          // --- 新規 ---
           final newItem = RosterItem(
               id: csvId ?? const Uuid().v4(),
               data: newItemData
           );
-          await _teamDao.insertItem(team.id, newItem); // ★Daoで追加
+          // ★修正: category=0 (選手)
+          await _teamDao.insertItem(team.id, newItem, 0);
           stats.inserted++;
         }
       }
@@ -172,7 +144,6 @@ class CsvImportService {
     if (value == null) return null;
     String strVal = value.toString().trim();
     if (strVal.isEmpty) return null;
-
     switch (field.type) {
       case FieldType.number:
       case FieldType.age:

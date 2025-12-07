@@ -1,3 +1,4 @@
+// lib/features/team_mgmt/data/team_dao.dart
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
@@ -20,9 +21,11 @@ class TeamDao {
         'name': team.name,
         'view_hidden_fields': jsonEncode(team.viewHiddenFields),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
-      for (var field in team.schema) {
-        await _insertField(txn, team.id, field);
-      }
+
+      // カテゴリごとに保存
+      for (var field in team.schema) await _insertField(txn, team.id, field, 0);
+      for (var field in team.opponentSchema) await _insertField(txn, team.id, field, 1);
+      for (var field in team.venueSchema) await _insertField(txn, team.id, field, 2);
     });
   }
 
@@ -34,7 +37,6 @@ class TeamDao {
   Future<void> deleteTeam(String teamId) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      // 関連データ削除
       await txn.delete('match_logs', where: 'match_id IN (SELECT id FROM matches WHERE team_id = ?)', whereArgs: [teamId]);
       await txn.delete('matches', where: 'team_id = ?', whereArgs: [teamId]);
       await txn.delete('action_definitions', where: 'team_id = ?', whereArgs: [teamId]);
@@ -50,30 +52,51 @@ class TeamDao {
     List<Team> teams = [];
     for (var map in teamMaps) {
       final teamId = map['id'] as String;
-      final fieldMaps = await db.query('fields', where: 'team_id = ?', whereArgs: [teamId]);
-      final schema = fieldMaps.map((f) => _mapToField(f)).toList();
-      final itemMaps = await db.query('items', where: 'team_id = ?', whereArgs: [teamId]);
-      final items = itemMaps.map((i) => _mapToItem(i)).toList();
+
+      // Fields取得 (カテゴリ別)
+      final allFields = await db.query('fields', where: 'team_id = ?', whereArgs: [teamId]);
+      final playerSchema = allFields.where((f) => (f['category'] as int? ?? 0) == 0).map((f) => _mapToField(f)).toList();
+      final opponentSchema = allFields.where((f) => (f['category'] as int? ?? 0) == 1).map((f) => _mapToField(f)).toList();
+      final venueSchema = allFields.where((f) => (f['category'] as int? ?? 0) == 2).map((f) => _mapToField(f)).toList();
+
+      // Items取得 (カテゴリ別)
+      final allItems = await db.query('items', where: 'team_id = ?', whereArgs: [teamId]);
+      final playerItems = allItems.where((i) => (i['category'] as int? ?? 0) == 0).map((i) => _mapToItem(i)).toList();
+      final opponentItems = allItems.where((i) => (i['category'] as int? ?? 0) == 1).map((i) => _mapToItem(i)).toList();
+      final venueItems = allItems.where((i) => (i['category'] as int? ?? 0) == 2).map((i) => _mapToItem(i)).toList();
+
       final hiddenFields = (jsonDecode(map['view_hidden_fields'] as String) as List).cast<String>();
-      teams.add(Team(id: teamId, name: map['name'] as String, schema: schema, items: items, viewHiddenFields: hiddenFields));
+
+      teams.add(Team(
+          id: teamId,
+          name: map['name'] as String,
+          schema: playerSchema,
+          items: playerItems,
+          opponentSchema: opponentSchema,
+          opponentItems: opponentItems,
+          venueSchema: venueSchema,
+          venueItems: venueItems,
+          viewHiddenFields: hiddenFields
+      ));
     }
     return teams;
   }
 
   // Schema & Items
-  Future<void> _insertField(Transaction txn, String teamId, FieldDefinition field) async {
+  Future<void> _insertField(Transaction txn, String teamId, FieldDefinition field, int category) async {
     await txn.insert('fields', {
       'id': field.id, 'team_id': teamId, 'label': field.label, 'type': field.type.index,
       'is_system': field.isSystem ? 1 : 0, 'is_visible': field.isVisible ? 1 : 0,
       'use_dropdown': field.useDropdown ? 1 : 0, 'is_range': field.isRange ? 1 : 0,
       'options': jsonEncode(field.options), 'min_num': field.minNum, 'max_num': field.maxNum,
       'is_unique': field.isUnique ? 1 : 0,
+      'category': category, // ★追加
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> insertField(String teamId, FieldDefinition field) async {
+  Future<void> insertField(String teamId, FieldDefinition field, int category) async {
     final db = await _dbHelper.database;
-    await db.transaction((txn) async { await _insertField(txn, teamId, field); });
+    await db.transaction((txn) async { await _insertField(txn, teamId, field, category); });
   }
 
   Future<void> deleteField(String fieldId) async {
@@ -81,11 +104,12 @@ class TeamDao {
     await db.delete('fields', where: 'id = ?', whereArgs: [fieldId]);
   }
 
-  Future<void> updateSchema(String teamId, List<FieldDefinition> schema) async {
+  Future<void> updateSchema(String teamId, List<FieldDefinition> schema, int category) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      await txn.delete('fields', where: 'team_id = ?', whereArgs: [teamId]);
-      for (var field in schema) { await _insertField(txn, teamId, field); }
+      // 指定カテゴリのフィールドのみ削除して再挿入
+      await txn.delete('fields', where: 'team_id = ? AND category = ?', whereArgs: [teamId, category]);
+      for (var field in schema) { await _insertField(txn, teamId, field, category); }
     });
   }
 
@@ -99,10 +123,15 @@ class TeamDao {
     await db.update('teams', {'view_hidden_fields': jsonEncode(hiddenFields)}, where: 'id = ?', whereArgs: [teamId]);
   }
 
-  Future<void> insertItem(String teamId, RosterItem item) async {
+  Future<void> insertItem(String teamId, RosterItem item, int category) async {
     final db = await _dbHelper.database;
     final jsonStr = jsonEncode(item.toJson()['data']);
-    await db.insert('items', {'id': item.id, 'team_id': teamId, 'data': jsonStr}, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert('items', {
+      'id': item.id,
+      'team_id': teamId,
+      'data': jsonStr,
+      'category': category // ★追加
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> deleteItem(String itemId) async {

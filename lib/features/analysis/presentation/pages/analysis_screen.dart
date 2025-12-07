@@ -13,6 +13,7 @@ import '../../../settings/data/action_dao.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../../team_mgmt/data/csv_export_service.dart';
 import '../../../team_mgmt/domain/schema.dart';
+import '../../../team_mgmt/domain/roster_item.dart';
 
 enum StatColumnType { number, name, matches, successCount, failureCount, successRate, totalCount }
 class _ColumnSpec {
@@ -27,6 +28,7 @@ class AnalysisScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProviderStateMixin {
+  // ignore: unused_field
   List<String> _sortedActionNames = [];
   int? _selectedYear;
   int? _selectedMonth;
@@ -38,7 +40,15 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
   List<String> _editingCourtMembers = [];
   List<String> _editingBenchMembers = [];
+  // ignore: unused_field
   bool _isMemberEditing = false;
+
+  final TextEditingController _opponentCtrl = TextEditingController();
+  final TextEditingController _venueCtrl = TextEditingController();
+  String? _opponentId;
+  String? _venueId;
+  DateTime _editingDate = DateTime.now();
+  MatchType _editingMatchType = MatchType.practiceMatch;
 
   @override
   void initState() {
@@ -50,6 +60,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   @override
   void dispose() {
     _tabController.dispose();
+    _opponentCtrl.dispose();
+    _venueCtrl.dispose();
     super.dispose();
   }
 
@@ -76,16 +88,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         targetTypes: _selectedMatchTypes.isEmpty ? null : _selectedMatchTypes
     );
 
-    if (_selectedMatchId != null && _tabController.index == 2) {
+    if (_selectedMatchId != null) {
       _loadMemberEditorData();
     }
-  }
-
-  Future<void> _showMatchInfoDialog(String matchId, String currentDateStr, MatchType currentType) async {
-    DateTime tempDate = DateTime.tryParse(currentDateStr) ?? DateTime.now();
-    MatchType tempType = currentType;
-    String getMatchTypeName(MatchType type) { switch (type) { case MatchType.official: return "大会"; case MatchType.practiceMatch: return "練習試合"; case MatchType.practice: return "練習"; } }
-    await showDialog(context: context, builder: (ctx) { return StatefulBuilder(builder: (context, setStateDialog) { return AlertDialog(title: const Text("試合情報の編集"), content: Column(mainAxisSize: MainAxisSize.min, children: [ListTile(title: const Text("日付"), subtitle: Text(DateFormat('yyyy/MM/dd').format(tempDate), style: const TextStyle(fontWeight: FontWeight.bold)), trailing: const Icon(Icons.calendar_today), onTap: () async { final picked = await showDatePicker(context: context, initialDate: tempDate, firstDate: DateTime(2000), lastDate: DateTime(2030), locale: const Locale('ja')); if (picked != null) setStateDialog(() => tempDate = picked); }), const SizedBox(height: 16), DropdownButtonFormField<MatchType>(value: tempType, decoration: const InputDecoration(labelText: "試合種別", border: OutlineInputBorder()), items: MatchType.values.map((t) => DropdownMenuItem(value: t, child: Text(getMatchTypeName(t)))).toList(), onChanged: (val) { if (val != null) setStateDialog(() => tempType = val); })]), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")), ElevatedButton(onPressed: () async { await ref.read(analysisControllerProvider.notifier).updateMatchInfo(matchId, tempDate, tempType); Navigator.pop(ctx); _runAnalysis(); if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("試合情報を更新しました"))); }, child: const Text("保存"))]); }); });
   }
 
   void _showFilterDialog() {
@@ -111,7 +116,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   }
 
   void _showEditLogDialog({LogEntry? log}) {
-    // ... (前回のコードと同じ、省略なし)
     final controller = ref.read(analysisControllerProvider.notifier); final definitions = controller.actionDefinitions; final isNew = log == null; final stats = ref.read(analysisControllerProvider).valueOrNull ?? [];
     final players = stats.map((p) => {'number': p.playerNumber, 'name': p.playerName}).toList(); final actionNames = definitions.map((d) => d.name).toList();
     String timeVal = log?.gameTime ?? "00:00"; String? playerNumVal = log?.playerNumber; String? actionNameVal = log?.action; String? subActionVal = log?.subAction; ActionResult resultVal = log?.result ?? ActionResult.none;
@@ -130,7 +134,19 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final store = ref.read(teamStoreProvider);
     if (!store.isLoaded) await store.loadFromDb();
     final currentTeam = store.currentTeam;
+    // ここでは watch ではなく read で一度だけ取得
+    final matchRecord = ref.read(selectedMatchRecordProvider);
+
     if (currentTeam == null || _selectedMatchId == null) return;
+
+    if (matchRecord != null) {
+      _opponentCtrl.text = matchRecord.opponent;
+      _venueCtrl.text = matchRecord.venueName ?? "";
+      _opponentId = matchRecord.opponentId;
+      _venueId = matchRecord.venueId;
+      _editingDate = DateTime.tryParse(matchRecord.date) ?? DateTime.now();
+      _editingMatchType = matchRecord.matchType;
+    }
 
     final allMembers = <String, String>{};
     String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
@@ -171,18 +187,52 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("出場メンバーを更新しました")));
   }
 
+  Future<void> _saveMatchInfo() async {
+    if (_selectedMatchId == null) return;
+
+    await ref.read(analysisControllerProvider.notifier).updateMatchInfo(
+        _selectedMatchId!,
+        _editingDate,
+        _editingMatchType,
+        opponentName: _opponentCtrl.text,
+        opponentId: _opponentId,
+        venueName: _venueCtrl.text,
+        venueId: _venueId
+    );
+
+    // updateMatchInfo内で_loadSelectedMatchRecordが呼ばれ、Providerが更新される
+    // UI反映は ref.listen で行うため、ここでは再分析のみ
+    _runAnalysis();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("基本情報を更新しました")));
+  }
+
   @override
   Widget build(BuildContext context) {
     final teamStore = ref.watch(teamStoreProvider); final currentTeam = teamStore.currentTeam;
     ref.listen(teamStoreProvider, (previous, next) { if (previous?.currentTeam?.id != next.currentTeam?.id) { setState(() { _selectedYear = null; _selectedMonth = null; _selectedDay = null; _selectedMatchId = null; }); _loadActionOrder().then((_) => _runAnalysis()); } });
+
     final asyncStats = ref.watch(analysisControllerProvider); final matchRecord = ref.watch(selectedMatchRecordProvider);
+
+    // ★追加: 選択中の試合データが更新されたら、テキスト入力欄などに反映する
+    ref.listen<MatchRecord?>(selectedMatchRecordProvider, (prev, next) {
+      if (next != null) {
+        _opponentCtrl.text = next.opponent;
+        _venueCtrl.text = next.venueName ?? "";
+        _opponentId = next.opponentId;
+        _venueId = next.venueId;
+        _editingDate = DateTime.tryParse(next.date) ?? DateTime.now();
+        _editingMatchType = next.matchType;
+        setState(() {}); // 画面更新
+      }
+    });
+
     final availableYears = ref.watch(availableYearsProvider); final availableMonths = ref.watch(availableMonthsProvider); final availableDays = ref.watch(availableDaysProvider); final availableMatches = ref.watch(availableMatchesProvider);
     final yearTabs = [null, ...availableYears]; final monthTabs = [null, ...availableMonths]; final dayTabs = [null, ...availableDays]; final matchTabs = [null, ...availableMatches.keys];
     final isLogTabVisible = _selectedMatchId != null && _tabController.index == 1;
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [if (_selectedMatchId != null && matchRecord != null) InkWell(onTap: () => _showMatchInfoDialog(matchRecord.id, matchRecord.date, matchRecord.matchType), child: Row(children: [Icon(_getMatchTypeIcon(matchRecord.matchType), size: 16, color: Colors.black54), const SizedBox(width: 4), Text(availableMatches[_selectedMatchId] ?? "試合", style: const TextStyle(fontSize: 16)), const SizedBox(width: 8), const Icon(Icons.edit, size: 14, color: Colors.black54), const SizedBox(width: 8), Text(matchRecord.date, style: const TextStyle(fontSize: 12, color: Colors.black54))])) else ...[const Text("データ分析", style: TextStyle(fontSize: 16)), Text(currentTeam?.name ?? "", style: const TextStyle(fontSize: 12, color: Colors.black54))]]),
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [if (_selectedMatchId != null && matchRecord != null) Row(children: [Icon(_getMatchTypeIcon(matchRecord.matchType), size: 16, color: Colors.black54), const SizedBox(width: 4), Text(availableMatches[_selectedMatchId] ?? "試合", style: const TextStyle(fontSize: 16)), const SizedBox(width: 8), const Icon(Icons.calendar_today, size: 14, color: Colors.black54), const SizedBox(width: 4), Text(matchRecord.date, style: const TextStyle(fontSize: 12, color: Colors.black54))]) else ...[const Text("データ分析", style: TextStyle(fontSize: 16)), Text(currentTeam?.name ?? "", style: const TextStyle(fontSize: 12, color: Colors.black54))]]),
         actions: [IconButton(icon: Icon(Icons.filter_alt, color: _selectedMatchTypes.isNotEmpty ? Colors.indigo : Colors.grey), tooltip: "種別フィルタ", onPressed: _showFilterDialog), IconButton(icon: const Icon(Icons.file_download), tooltip: "CSV出力", onPressed: _handleCsvExport), IconButton(icon: const Icon(Icons.refresh), onPressed: _runAnalysis)],
       ),
       body: Row(children: [_buildVerticalTabs<int>(items: yearTabs, selectedItem: _selectedYear, labelBuilder: (y) => y == null ? '全期間' : '$y年', onSelect: (y) { setState(() { _selectedYear = y; _selectedMonth = null; _selectedDay = null; _selectedMatchId = null; }); _runAnalysis(); }, width: 90, color: Colors.grey[50]!), if (_selectedYear != null) _buildVerticalTabs<int>(items: monthTabs, selectedItem: _selectedMonth, labelBuilder: (m) => m == null ? '年計' : '$m月', onSelect: (m) { setState(() { _selectedMonth = m; _selectedDay = null; _selectedMatchId = null; }); _runAnalysis(); }, width: 60, color: Colors.grey[100]!), if (_selectedMonth != null) _buildVerticalTabs<int>(items: dayTabs, selectedItem: _selectedDay, labelBuilder: (d) => d == null ? '月計' : '$d日', onSelect: (d) { setState(() { _selectedDay = d; _selectedMatchId = null; }); _runAnalysis(); }, width: 60, color: Colors.grey[200]!), if (_selectedDay != null) _buildVerticalTabs<String>(items: matchTabs, selectedItem: _selectedMatchId, labelBuilder: (id) => id == null ? '日計' : (availableMatches[id] ?? '試合'), onSelect: (id) { setState(() { _selectedMatchId = id; }); _runAnalysis(); }, width: 140, color: Colors.grey[300]!), const VerticalDivider(width: 1, thickness: 1),
@@ -194,144 +244,17 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                 setState((){});
                 if (idx == 2) _loadMemberEditorData();
               },
-              tabs: const [Tab(icon: Icon(Icons.analytics, size: 18), text: "集計"), Tab(icon: Icon(Icons.list, size: 18), text: "ログ"), Tab(icon: Icon(Icons.people, size: 18), text: "メンバー")]
+              tabs: const [Tab(icon: Icon(Icons.analytics, size: 18), text: "集計"), Tab(icon: Icon(Icons.list, size: 18), text: "ログ"), Tab(icon: Icon(Icons.info_outline, size: 18), text: "試合情報")]
           )),
           const Divider(height: 1),
-          Expanded(child: _selectedMatchId != null ? TabBarView(controller: _tabController, children: [_buildStatsContent(asyncStats), _buildLogContent(asyncStats), _buildMemberContent()]) : _buildStatsContent(asyncStats))
+          Expanded(child: _selectedMatchId != null ? TabBarView(controller: _tabController, children: [_buildStatsContent(asyncStats), _buildLogContent(asyncStats), _buildMatchInfoContent()]) : _buildStatsContent(asyncStats))
         ]))]),
       floatingActionButton: isLogTabVisible ? FloatingActionButton(onPressed: () => _showEditLogDialog(), child: const Icon(Icons.add)) : null,
     );
   }
 
-  // --- ★修正: メンバー編集タブのコンテンツ (ログチェック追加) ---
-  Widget _buildMemberContent() {
-    if (_selectedMatchId == null) return const SizedBox();
-
-    final store = ref.watch(teamStoreProvider);
-    final team = store.currentTeam;
-    final matchRecord = ref.watch(selectedMatchRecordProvider); // ログ確認用
-
-    if (team == null) return const Center(child: CircularProgressIndicator());
-
-    // ログを持っている選手のセットを作成
-    final Set<String> playersWithLogs = matchRecord?.logs.map((l) => l.playerNumber).toSet() ?? {};
-
-    final Map<String, String> nameMap = {};
-    String? numberFieldId; String? courtNameFieldId;
-    for(var f in team.schema) {
-      if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
-      if(f.type == FieldType.courtName) courtNameFieldId = f.id;
-    }
-    for(var item in team.items) {
-      final num = item.data[numberFieldId]?.toString() ?? "";
-      if (num.isNotEmpty) {
-        final name = item.data[courtNameFieldId]?.toString() ?? "";
-        nameMap[num] = name;
-      }
-    }
-
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          color: Colors.grey.shade100,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              const Text("タップして「出場」「未出場」を切り替え", style: TextStyle(fontSize: 12, color: Colors.grey)),
-              const Spacer(),
-              ElevatedButton.icon(
-                onPressed: _saveMembers,
-                icon: const Icon(Icons.save),
-                label: const Text("変更を保存"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-              )
-            ],
-          ),
-        ),
-        Expanded(
-          child: Row(
-            children: [
-              // 出場メンバー
-              Expanded(
-                child: Column(
-                  children: [
-                    Container(padding: const EdgeInsets.all(8), color: Colors.orange.shade100, width: double.infinity, child: Text("出場メンバー (${_editingCourtMembers.length})", textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _editingCourtMembers.length,
-                        itemBuilder: (context, index) {
-                          final num = _editingCourtMembers[index];
-                          final hasLog = playersWithLogs.contains(num); // ログ有無チェック
-
-                          return Card(
-                            color: Colors.white,
-                            child: ListTile(
-                              leading: CircleAvatar(backgroundColor: Colors.orange, child: Text(num, style: const TextStyle(color: Colors.white, fontSize: 12))),
-                              title: Text(nameMap[num] ?? ""),
-                              // ログがある場合はアイコン表示
-                              trailing: hasLog ? const Icon(Icons.assignment, color: Colors.grey, size: 16) : null,
-                              onTap: () {
-                                // ★修正: ログがある場合は移動禁止
-                                if (hasLog) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text("背番号$numは記録があるため外せません"), backgroundColor: Colors.red),
-                                  );
-                                  return;
-                                }
-                                setState(() {
-                                  _editingCourtMembers.removeAt(index);
-                                  _editingBenchMembers.add(num);
-                                  _editingBenchMembers.sort((a,b)=>(int.tryParse(a)??999).compareTo(int.tryParse(b)??999));
-                                });
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const VerticalDivider(width: 1),
-              // 未出場メンバー
-              Expanded(
-                child: Column(
-                  children: [
-                    Container(padding: const EdgeInsets.all(8), color: Colors.grey.shade200, width: double.infinity, child: Text("未出場 (${_editingBenchMembers.length})", textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _editingBenchMembers.length,
-                        itemBuilder: (context, index) {
-                          final num = _editingBenchMembers[index];
-                          return Card(
-                            color: Colors.grey.shade50,
-                            child: ListTile(
-                              leading: CircleAvatar(backgroundColor: Colors.grey, child: Text(num, style: const TextStyle(color: Colors.white, fontSize: 12))),
-                              title: Text(nameMap[num] ?? "", style: const TextStyle(color: Colors.grey)),
-                              onTap: () {
-                                setState(() {
-                                  _editingBenchMembers.removeAt(index);
-                                  _editingCourtMembers.add(num);
-                                  _editingCourtMembers.sort((a,b)=>(int.tryParse(a)??999).compareTo(int.tryParse(b)??999));
-                                });
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // (Stats, Log, Table content builders - 変更なし)
+  // ... (以下、_buildMatchInfoContent, _buildStatsContent, _buildLogContent, _buildDataTable, _buildTableHeader, _buildTableBody は変更なしのため省略) ...
+  Widget _buildMatchInfoContent() { if (_selectedMatchId == null) return const SizedBox(); final store = ref.watch(teamStoreProvider); final team = store.currentTeam; final matchRecord = ref.watch(selectedMatchRecordProvider); if (team == null || matchRecord == null) return const Center(child: CircularProgressIndicator()); final opponents = team.opponentItems; final venues = team.venueItems; final opSchema = team.opponentSchema.firstWhere((f)=>f.label=='チーム名', orElse: ()=>team.opponentSchema.first); final veSchema = team.venueSchema.firstWhere((f)=>f.label=='会場名', orElse: ()=>team.venueSchema.first); final Set<String> playersWithLogs = matchRecord.logs.map((l) => l.playerNumber).toSet(); final Map<String, String> nameMap = {}; String? numberFieldId; String? courtNameFieldId; for(var f in team.schema) { if(f.type == FieldType.uniformNumber) numberFieldId = f.id; if(f.type == FieldType.courtName) courtNameFieldId = f.id; } for(var item in team.items) { final num = item.data[numberFieldId]?.toString() ?? ""; if (num.isNotEmpty) { final name = item.data[courtNameFieldId]?.toString() ?? ""; nameMap[num] = name; } } return SingleChildScrollView( padding: const EdgeInsets.all(8.0), child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [ Card( elevation: 2, child: Padding( padding: const EdgeInsets.all(12.0), child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [ const Text("基本情報編集", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), const SizedBox(height: 12), InkWell( onTap: () async { final picked = await showDatePicker( context: context, initialDate: _editingDate, firstDate: DateTime(2000), lastDate: DateTime(2030) ); if(picked != null) setState(() => _editingDate = picked); }, child: InputDecorator( decoration: const InputDecoration(labelText: "日付", border: OutlineInputBorder()), child: Row( mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Text(DateFormat('yyyy/MM/dd (E)', 'ja').format(_editingDate)), const Icon(Icons.calendar_today, size: 20), ], ), ), ), const SizedBox(height: 8), DropdownButtonFormField<MatchType>( value: _editingMatchType, decoration: const InputDecoration(labelText: "試合種別", border: OutlineInputBorder()), items: MatchType.values.map((t) => DropdownMenuItem(value: t, child: Text(_getMatchTypeName(t)))).toList(), onChanged: (val) { if(val != null) setState(() => _editingMatchType = val); }, ), const SizedBox(height: 8), Row(children: [ Expanded(child: TextField(controller: _opponentCtrl, decoration: const InputDecoration(labelText: "対戦相手"))), PopupMenuButton<RosterItem>( icon: const Icon(Icons.list), onSelected: (item) { setState(() { _opponentCtrl.text = item.data[opSchema.id]?.toString() ?? ""; _opponentId = item.id; }); }, itemBuilder: (context) => opponents.map((i) => PopupMenuItem(value: i, child: Text(i.data[opSchema.id]?.toString() ?? ""))).toList(), ), ]), const SizedBox(height: 8), Row(children: [ Expanded(child: TextField(controller: _venueCtrl, decoration: const InputDecoration(labelText: "会場"))), PopupMenuButton<RosterItem>( icon: const Icon(Icons.list), onSelected: (item) { setState(() { _venueCtrl.text = item.data[veSchema.id]?.toString() ?? ""; _venueId = item.id; }); }, itemBuilder: (context) => venues.map((i) => PopupMenuItem(value: i, child: Text(i.data[veSchema.id]?.toString() ?? ""))).toList(), ), ]), const SizedBox(height: 12), Align( alignment: Alignment.centerRight, child: ElevatedButton.icon( onPressed: _saveMatchInfo, icon: const Icon(Icons.save, size: 16), label: const Text("基本情報を更新"), style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo.shade50), ), ) ], ), ), ), const SizedBox(height: 16), Card( elevation: 2, child: Column( children: [ Padding( padding: const EdgeInsets.all(8), child: Row( mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("出場メンバー編集", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), ElevatedButton.icon( onPressed: _saveMembers, icon: const Icon(Icons.save), label: const Text("メンバー変更を保存"), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white), ) ], ), ), const Divider(height: 1), SizedBox( height: 400, child: Row( children: [ Expanded( child: Column( children: [ Container(padding: const EdgeInsets.all(8), color: Colors.orange.shade100, width: double.infinity, child: Text("出場 (${_editingCourtMembers.length})", textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold))), Expanded( child: ListView.builder( itemCount: _editingCourtMembers.length, itemBuilder: (context, index) { final num = _editingCourtMembers[index]; final hasLog = playersWithLogs.contains(num); return Card( color: Colors.white, margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: ListTile( visualDensity: VisualDensity.compact, leading: CircleAvatar(backgroundColor: Colors.orange, radius: 12, child: Text(num, style: const TextStyle(color: Colors.white, fontSize: 10))), title: Text(nameMap[num] ?? "", style: const TextStyle(fontSize: 12)), trailing: hasLog ? const Icon(Icons.assignment, color: Colors.grey, size: 16) : null, onTap: () { if (hasLog) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("背番号$numは記録があるため外せません"), backgroundColor: Colors.red)); return; } setState(() { _editingCourtMembers.removeAt(index); _editingBenchMembers.add(num); _editingBenchMembers.sort((a,b)=>(int.tryParse(a)??999).compareTo(int.tryParse(b)??999)); }); }, ), ); }, ), ), ], ), ), const VerticalDivider(width: 1), Expanded( child: Column( children: [ Container(padding: const EdgeInsets.all(8), color: Colors.grey.shade200, width: double.infinity, child: Text("未出場 (${_editingBenchMembers.length})", textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold))), Expanded( child: ListView.builder( itemCount: _editingBenchMembers.length, itemBuilder: (context, index) { final num = _editingBenchMembers[index]; return Card( color: Colors.grey.shade50, margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: ListTile( visualDensity: VisualDensity.compact, leading: CircleAvatar(backgroundColor: Colors.grey, radius: 12, child: Text(num, style: const TextStyle(color: Colors.white, fontSize: 10))), title: Text(nameMap[num] ?? "", style: const TextStyle(color: Colors.grey, fontSize: 12)), onTap: () { setState(() { _editingBenchMembers.removeAt(index); _editingCourtMembers.add(num); _editingCourtMembers.sort((a,b)=>(int.tryParse(a)??999).compareTo(int.tryParse(b)??999)); }); }, ), ); }, ), ), ], ), ), ], ), ), ], ), ), ], ), ); }
   Widget _buildStatsContent(AsyncValue<List<PlayerStats>> asyncStats) { return asyncStats.when(loading: () => const Center(child: CircularProgressIndicator()), error: (err, stack) => Center(child: Text("エラー: $err")), data: (stats) { if (stats.isEmpty) return const Center(child: Text("データがありません")); return _buildDataTable(stats); }); }
   Widget _buildLogContent(AsyncValue<List<PlayerStats>> asyncStats) { final matchRecord = ref.watch(selectedMatchRecordProvider); if (matchRecord == null) return const Center(child: CircularProgressIndicator()); if (matchRecord.logs.isEmpty) return const Center(child: Text("ログがありません")); final Map<String, String> nameMap = {}; asyncStats.whenData((stats) { for (var p in stats) { nameMap[p.playerNumber] = p.playerName; } }); final logs = matchRecord.logs; return ListView.separated(itemCount: logs.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (context, index) { final log = logs[index]; final name = nameMap[log.playerNumber] ?? ""; if (log.type == LogType.system) { return Container(color: Colors.grey[50], padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Row(children: [SizedBox(width: 45, child: Text(log.gameTime, style: const TextStyle(color: Colors.grey, fontSize: 11))), const SizedBox(width: 90), Expanded(child: Text(log.action, style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis))])); } String resultText = ""; Color? bgColor = Colors.white; if (log.result == ActionResult.success) { resultText = "(成功)"; bgColor = Colors.red.shade50; } else if (log.result == ActionResult.failure) { resultText = "(失敗)"; bgColor = Colors.blue.shade50; } return InkWell(onTap: () => _showEditLogDialog(log: log), child: Container(color: bgColor, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Row(children: [SizedBox(width: 45, child: Text(log.gameTime, style: const TextStyle(color: Colors.grey, fontSize: 11))), SizedBox(width: 90, child: RichText(overflow: TextOverflow.ellipsis, text: TextSpan(style: const TextStyle(color: Colors.black87, fontSize: 12), children: [TextSpan(text: "#${log.playerNumber} ", style: const TextStyle(fontWeight: FontWeight.bold)), TextSpan(text: name, style: const TextStyle(fontSize: 11, color: Colors.black54))]))), Expanded(child: Text("${log.action} $resultText", style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)), if (log.subAction != null) Text(log.subAction!, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); }); }
   Widget _buildDataTable(List<PlayerStats> originalStats) { final controller = ref.read(analysisControllerProvider.notifier); final definitions = controller.actionDefinitions; final List<_ColumnSpec> columnSpecs = []; columnSpecs.add(_ColumnSpec(label: "背番号", type: StatColumnType.number, isFixed: true)); columnSpecs.add(_ColumnSpec(label: "コートネーム", type: StatColumnType.name, isFixed: true)); columnSpecs.add(_ColumnSpec(label: "試合数", type: StatColumnType.matches, isFixed: true)); final dataActionNames = <String>{}; for (var p in originalStats) dataActionNames.addAll(p.actions.keys); final displayDefinitions = List<ActionDefinition>.from(definitions); final definedNames = definitions.map((d) => d.name).toSet(); for (var name in dataActionNames) { if (!definedNames.contains(name)) displayDefinitions.add(ActionDefinition(name: name, hasSuccess: false, hasFailure: false)); } for (var action in displayDefinitions) { if (action.hasSuccess && action.hasFailure) { columnSpecs.add(_ColumnSpec(label: "成功", type: StatColumnType.successCount, actionName: action.name)); columnSpecs.add(_ColumnSpec(label: "失敗", type: StatColumnType.failureCount, actionName: action.name)); columnSpecs.add(_ColumnSpec(label: "成功率", type: StatColumnType.successRate, actionName: action.name)); } else if (action.hasSuccess) { columnSpecs.add(_ColumnSpec(label: "成功数", type: StatColumnType.successCount, actionName: action.name)); } else if (action.hasFailure) { columnSpecs.add(_ColumnSpec(label: "失敗数", type: StatColumnType.failureCount, actionName: action.name)); } else { columnSpecs.add(_ColumnSpec(label: "数", type: StatColumnType.totalCount, actionName: action.name)); } } final sortedStats = List<PlayerStats>.from(originalStats); sortedStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999)); final maxValues = <String, Map<StatColumnType, double>>{}; return SingleChildScrollView(scrollDirection: Axis.vertical, child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_buildTableHeader(columnSpecs), const Divider(height: 1, thickness: 1), _buildTableBody(sortedStats, columnSpecs, maxValues)]))); }

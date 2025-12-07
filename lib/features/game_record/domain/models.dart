@@ -4,27 +4,9 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'models.freezed.dart';
 part 'models.g.dart';
 
-// --- Enum定義 ---
-
-enum ActionResult {
-  none,    // 0
-  success, // 1
-  failure, // 2
-}
-
-enum LogType {
-  action, // 0
-  system, // 1
-}
-
-// ★追加: 試合種別
-enum MatchType {
-  practiceMatch, // 0: 練習試合 (デフォルト)
-  official,      // 1: 大会/公式戦
-  practice,      // 2: 練習
-}
-
-// --- コンバーター ---
+enum ActionResult { none, success, failure }
+enum LogType { action, system }
+enum MatchType { practiceMatch, official, practice }
 
 class ActionResultConverter implements JsonConverter<ActionResult, int> {
   const ActionResultConverter();
@@ -42,7 +24,6 @@ class LogTypeConverter implements JsonConverter<LogType, int> {
   int toJson(LogType object) => object.index;
 }
 
-// ★追加: MatchTypeコンバーター
 class MatchTypeConverter implements JsonConverter<MatchType, int> {
   const MatchTypeConverter();
   @override
@@ -50,8 +31,6 @@ class MatchTypeConverter implements JsonConverter<MatchType, int> {
   @override
   int toJson(MatchType object) => object.index;
 }
-
-// --- モデル定義 ---
 
 @freezed
 class UIActionItem with _$UIActionItem {
@@ -89,8 +68,11 @@ class MatchRecord with _$MatchRecord {
     required String id,
     required String date,
     required String opponent,
+    // ★追加: ID紐付け用
+    String? opponentId,
+    String? venueName,
+    String? venueId,
     required List<LogEntry> logs,
-    // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
     @MatchTypeConverter() @Default(MatchType.practiceMatch) MatchType matchType,
   }) = _MatchRecord;
 

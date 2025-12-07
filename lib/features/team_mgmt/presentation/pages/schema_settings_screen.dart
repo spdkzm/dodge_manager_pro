@@ -2,11 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../application/team_store.dart'; // Provider
+import '../../application/team_store.dart';
 import '../../domain/schema.dart';
 
 class SchemaSettingsScreen extends ConsumerStatefulWidget {
-  const SchemaSettingsScreen({super.key});
+  final int targetCategory; // 0:選手, 1:対戦相手, 2:会場
+
+  const SchemaSettingsScreen({super.key, this.targetCategory = 0});
 
   @override
   ConsumerState<SchemaSettingsScreen> createState() => _SchemaSettingsScreenState();
@@ -19,7 +21,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    // 画面構築後にデータをロード
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSchema();
     });
@@ -27,7 +28,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
 
   void _loadSchema() {
     final store = ref.read(teamStoreProvider);
-    // ロードされていなければロード
     if (!store.isLoaded) {
       store.loadFromDb().then((_) {
         _syncSchema();
@@ -41,10 +41,19 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     final currentTeam = ref.read(teamStoreProvider).currentTeam;
     if (currentTeam != null) {
       setState(() {
-        // データをコピーしてローカル変数へ（編集用）
-        _localSchema = currentTeam.schema.map((f) => f.clone()).toList();
+        // カテゴリに応じたスキーマをコピー
+        final schema = currentTeam.getSchema(widget.targetCategory);
+        _localSchema = schema.map((f) => f.clone()).toList();
         _isDirty = false;
       });
+    }
+  }
+
+  String _getPageTitle() {
+    switch (widget.targetCategory) {
+      case 1: return '対戦相手リストの項目設計';
+      case 2: return '会場リストの項目設計';
+      default: return '名簿の項目設計';
     }
   }
 
@@ -79,7 +88,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
               }
             }
 
-            // 入力方式エリアの構築
             Widget buildConfigArea() {
               if (selectedType == FieldType.text) {
                 return Column(
@@ -152,6 +160,7 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                           DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
                           DropdownMenuItem(value: FieldType.number, child: Text('数値')),
                           DropdownMenuItem(value: FieldType.date, child: Text('日付')),
+                          // 選手リスト以外では背番号やコートネームは意味が薄いが、一応残すか、制御してもよい
                           DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')),
                           DropdownMenuItem(value: FieldType.courtName, child: Text('コートネーム')),
                         ],
@@ -168,7 +177,7 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                         },
                       ),
                       buildConfigArea(),
-                      if (useDropdown || selectedType == FieldType.uniformNumber)
+                      if (useDropdown || selectedType == FieldType.uniformNumber || selectedType == FieldType.text)
                         CheckboxListTile(
                           title: const Text('重複を禁止する'),
                           value: isUnique,
@@ -185,10 +194,10 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                   onPressed: () {
                     if (nameController.text.isEmpty) return;
                     final newDef = FieldDefinition(
-                      id: field?.id, // 編集時はID維持、新規はnull(自動生成)
+                      id: field?.id,
                       label: nameController.text,
                       type: selectedType,
-                      isSystem: field?.isSystem ?? false, // システムフラグ維持
+                      isSystem: field?.isSystem ?? false,
                       isVisible: field?.isVisible ?? true,
                       useDropdown: useDropdown,
                       isRange: isRange,
@@ -218,7 +227,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     );
   }
 
-  // --- 削除確認 ---
   Future<void> _confirmDelete(FieldDefinition field) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -240,20 +248,18 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     }
   }
 
-  // --- 保存処理 ---
   void _saveChanges() {
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
     if (currentTeam == null) return;
 
-    store.saveSchema(currentTeam.id, _localSchema);
+    store.saveSchema(currentTeam.id, _localSchema, category: widget.targetCategory);
     setState(() { _isDirty = false; });
 
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('設定を保存しました')));
     Navigator.pop(context);
   }
 
-  // --- 戻る処理 ---
   Future<void> _handlePop() async {
     if (!_isDirty) {
       Navigator.pop(context);
@@ -301,7 +307,7 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
       onPopInvoked: (didPop) { if (!didPop) _handlePop(); },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('名簿の項目設計'),
+          title: Text(_getPageTitle()),
           actions: [
             TextButton(
               onPressed: _isDirty ? _saveChanges : null,
@@ -328,8 +334,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                 },
                 itemBuilder: (context, index) {
                   final field = _localSchema[index];
-
-                  // ★ここが重要: 基本項目かカスタム項目かで表示を分ける
                   return ListTile(
                     key: ValueKey(field.id),
                     leading: Icon(_getIconForType(field.type)),
@@ -340,15 +344,12 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                           const Padding(padding: EdgeInsets.only(left: 8.0), child: Chip(label: Text("基本", style: TextStyle(fontSize: 10)), padding: EdgeInsets.zero, visualDensity: VisualDensity.compact)),
                       ],
                     ),
-                    // システム項目なら「スイッチ」、カスタム項目なら「編集・削除ボタン」
                     trailing: field.isSystem
                         ? Switch(
                       value: field.isVisible,
                       activeColor: Colors.blue,
                       onChanged: (val) {
                         setState(() {
-                          // Freezedではない(またはclone済みのミュータブル)なら直接変更可
-                          // FieldDefinitionは現状Freezedではないため直接変更
                           field.isVisible = val;
                           _isDirty = true;
                         });

@@ -6,16 +6,17 @@ import '../../domain/models.dart';
 import '../../../../features/analysis/application/analysis_controller.dart';
 import '../../../../features/analysis/domain/player_stats.dart';
 import '../../../../features/settings/domain/action_definition.dart';
+import '../../../team_mgmt/application/team_store.dart';
+import '../../../team_mgmt/domain/roster_item.dart';
 
-// --- 集計テーブル用の定義 ---
 enum StatColumnType {
-  number,       // 背番号
-  name,         // コートネーム
-  matches,      // 試合数
-  successCount, // 成功数
-  failureCount, // 失敗数
-  successRate,  // 成功率
-  totalCount,   // 合計回数
+  number,
+  name,
+  matches,
+  successCount,
+  failureCount,
+  successRate,
+  totalCount,
 }
 
 class _ColumnSpec {
@@ -45,28 +46,65 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
   late TabController _tabController;
   bool _isInitialLoadComplete = false;
 
+  // 編集用データ
+  final _opponentCtrl = TextEditingController();
+  final _venueCtrl = TextEditingController();
+  String? _opponentId;
+  String? _venueId;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    // 初期値セット
+    _opponentCtrl.text = widget.record.opponent;
+    _venueCtrl.text = widget.record.venueName ?? "";
+    _opponentId = widget.record.opponentId;
+    _venueId = widget.record.venueId;
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isInitialLoadComplete) {
-      // 画面表示時に、この試合IDで集計を実行する
       Future.microtask(() {
         ref.read(analysisControllerProvider.notifier).analyze(matchId: widget.record.id);
-        if (mounted) {
-          setState(() => _isInitialLoadComplete = true);
-        }
+        if (mounted) setState(() => _isInitialLoadComplete = true);
       });
+    }
+  }
+
+  Future<void> _saveMatchInfo() async {
+    final controller = ref.read(analysisControllerProvider.notifier);
+
+    await controller.updateMatchInfo(
+        widget.record.id,
+        DateTime.tryParse(widget.record.date) ?? DateTime.now(),
+        widget.record.matchType,
+        opponentName: _opponentCtrl.text,
+        opponentId: _opponentId,
+        venueName: _venueCtrl.text,
+        venueId: _venueId
+    );
+
+    if(mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("試合情報を更新しました")));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // ★追加: データ更新の監視
+    ref.listen<MatchRecord?>(selectedMatchRecordProvider, (prev, next) {
+      if (next != null) {
+        _opponentCtrl.text = next.opponent;
+        _venueCtrl.text = next.venueName ?? "";
+        _opponentId = next.opponentId;
+        _venueId = next.venueId;
+        setState(() {}); // 画面更新
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -76,32 +114,30 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
             Text(widget.record.date, style: const TextStyle(fontSize: 12)),
           ],
         ),
-        // ★修正: AppBarのbottomからTabBarを削除
       ),
-      // ★修正: BodyをColumnにし、その先頭にTabBarを配置
       body: Column(
         children: [
-          // タブバーエリア
           Container(
-            color: Colors.indigo.shade50, // 背景色をつけて分かりやすくする
+            color: Colors.indigo.shade50,
             child: TabBar(
               controller: _tabController,
               labelColor: Colors.indigo,
               unselectedLabelColor: Colors.grey,
               indicatorColor: Colors.indigo,
               tabs: const [
-                Tab(icon: Icon(Icons.list), text: "ログ (詳細)"),
-                Tab(icon: Icon(Icons.analytics), text: "集計 (スタッツ)"),
+                Tab(icon: Icon(Icons.list), text: "ログ"),
+                Tab(icon: Icon(Icons.analytics), text: "集計"),
+                Tab(icon: Icon(Icons.info), text: "試合情報"),
               ],
             ),
           ),
-          // タブの中身
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
                 _buildLogTab(),
                 _buildStatsTab(),
+                _buildMatchInfoTab(),
               ],
             ),
           ),
@@ -110,7 +146,65 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
     );
   }
 
-  // --- タブ1: ログ詳細ビュー ---
+  // --- タブ3: 試合情報 ---
+  Widget _buildMatchInfoTab() {
+    final store = ref.watch(teamStoreProvider);
+    final currentTeam = store.currentTeam;
+    if (currentTeam == null) return const SizedBox();
+
+    final opponents = currentTeam.opponentItems;
+    final venues = currentTeam.venueItems;
+    final opSchema = currentTeam.opponentSchema.firstWhere((f)=>f.label=='チーム名', orElse: ()=>currentTeam.opponentSchema.first);
+    final veSchema = currentTeam.venueSchema.firstWhere((f)=>f.label=='会場名', orElse: ()=>currentTeam.venueSchema.first);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("基本情報", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(child: TextField(controller: _opponentCtrl, decoration: const InputDecoration(labelText: "対戦相手"))),
+            PopupMenuButton<RosterItem>(
+              icon: const Icon(Icons.list),
+              onSelected: (item) {
+                setState(() {
+                  _opponentCtrl.text = item.data[opSchema.id]?.toString() ?? "";
+                  _opponentId = item.id;
+                });
+              },
+              itemBuilder: (context) => opponents.map((i) => PopupMenuItem(value: i, child: Text(i.data[opSchema.id]?.toString() ?? ""))).toList(),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: TextField(controller: _venueCtrl, decoration: const InputDecoration(labelText: "会場"))),
+            PopupMenuButton<RosterItem>(
+              icon: const Icon(Icons.list),
+              onSelected: (item) {
+                setState(() {
+                  _venueCtrl.text = item.data[veSchema.id]?.toString() ?? "";
+                  _venueId = item.id;
+                });
+              },
+              itemBuilder: (context) => venues.map((i) => PopupMenuItem(value: i, child: Text(i.data[veSchema.id]?.toString() ?? ""))).toList(),
+            ),
+          ]),
+          const SizedBox(height: 16),
+          Center(
+            child: ElevatedButton(onPressed: _saveMatchInfo, child: const Text("基本情報を更新")),
+          ),
+          const Divider(height: 32),
+          const Text("出場メンバー (既存機能)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          const Center(child: Text("※ メンバー編集は分析画面から行ってください")),
+        ],
+      ),
+    );
+  }
+
+  // --- タブ1: ログ ---
   Widget _buildLogTab() {
     final logs = widget.record.logs;
 
@@ -202,7 +296,7 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
     );
   }
 
-  // --- タブ2: 集計ビュー ---
+  // --- タブ2: 集計 ---
   Widget _buildStatsTab() {
     final asyncStats = ref.watch(analysisControllerProvider);
 
@@ -222,11 +316,9 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
 
     final List<_ColumnSpec> columnSpecs = [];
 
-    // 固定列
     columnSpecs.add(_ColumnSpec(label: "背番号", type: StatColumnType.number, isFixed: true));
     columnSpecs.add(_ColumnSpec(label: "コートネーム", type: StatColumnType.name, isFixed: true));
 
-    // 動的列
     final dataActionNames = <String>{};
     for (var p in originalStats) dataActionNames.addAll(p.actions.keys);
 

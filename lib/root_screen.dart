@@ -1,12 +1,12 @@
 // lib/root_screen.dart
 import 'package:flutter/material.dart';
 
-// 各機能の画面をインポート
 import 'features/game_record/presentation/pages/match_record_screen.dart';
-// import 'features/game_record/presentation/pages/history_screen.dart'; // ★削除
 import 'features/team_mgmt/presentation/pages/main_screen.dart';
 import 'features/settings/presentation/pages/unified_settings_screen.dart';
 import 'features/analysis/presentation/pages/analysis_screen.dart';
+// ★修正: 正しいパスを指定
+import 'features/match_info/presentation/pages/match_info_list_screen.dart';
 
 class RootScreen extends StatefulWidget {
   const RootScreen({super.key});
@@ -19,11 +19,11 @@ class _RootScreenState extends State<RootScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = [
-    const MatchRecordScreen(),     // 0: 記録
-    // const HistoryScreen(),      // 1: 履歴 (★削除)
-    const AnalysisScreen(),        // 1: 分析 (★インデックス変更)
-    const MainScreen(),            // 2: チーム (★インデックス変更)
-    const UnifiedSettingsScreen(), // 3: 設定 (★インデックス変更)
+    const MatchRecordScreen(),     // 0
+    const AnalysisScreen(),        // 1
+    const MatchInfoListScreen(),   // 2
+    const MainScreen(),            // 3
+    const UnifiedSettingsScreen(), // 4
   ];
 
   @override
@@ -40,32 +40,15 @@ class _RootScreenState extends State<RootScreen> {
             },
             labelType: NavigationRailLabelType.all,
             destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.sports_handball),
-                label: Text('試合記録'),
-              ),
-              // NavigationRailDestination(
-              //   icon: Icon(Icons.history),
-              //   label: Text('履歴'),
-              // ), // ★削除
-              NavigationRailDestination(
-                icon: Icon(Icons.analytics),
-                label: Text('分析'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.people_alt),
-                label: Text('チーム管理'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.settings),
-                label: Text('設定'),
-              ),
+              NavigationRailDestination(icon: Icon(Icons.sports_handball), label: Text('試合記録')),
+              NavigationRailDestination(icon: Icon(Icons.analytics), label: Text('分析')),
+              NavigationRailDestination(icon: Icon(Icons.map), label: Text('試合情報')),
+              NavigationRailDestination(icon: Icon(Icons.people_alt), label: Text('チーム管理')),
+              NavigationRailDestination(icon: Icon(Icons.settings), label: Text('設定')),
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
-          Expanded(
-            child: _screens[_selectedIndex],
-          ),
+          Expanded(child: _screens[_selectedIndex]),
         ],
       ),
     );

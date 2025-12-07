@@ -643,9 +643,11 @@ MatchRecord _$MatchRecordFromJson(Map<String, dynamic> json) {
 mixin _$MatchRecord {
   String get id => throw _privateConstructorUsedError;
   String get date => throw _privateConstructorUsedError;
-  String get opponent => throw _privateConstructorUsedError;
-  List<LogEntry> get logs =>
-      throw _privateConstructorUsedError; // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
+  String get opponent => throw _privateConstructorUsedError; // ★追加: ID紐付け用
+  String? get opponentId => throw _privateConstructorUsedError;
+  String? get venueName => throw _privateConstructorUsedError;
+  String? get venueId => throw _privateConstructorUsedError;
+  List<LogEntry> get logs => throw _privateConstructorUsedError;
   @MatchTypeConverter()
   MatchType get matchType => throw _privateConstructorUsedError;
 
@@ -670,6 +672,9 @@ abstract class $MatchRecordCopyWith<$Res> {
     String id,
     String date,
     String opponent,
+    String? opponentId,
+    String? venueName,
+    String? venueId,
     List<LogEntry> logs,
     @MatchTypeConverter() MatchType matchType,
   });
@@ -693,6 +698,9 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
     Object? id = null,
     Object? date = null,
     Object? opponent = null,
+    Object? opponentId = freezed,
+    Object? venueName = freezed,
+    Object? venueId = freezed,
     Object? logs = null,
     Object? matchType = null,
   }) {
@@ -710,6 +718,18 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
                 ? _value.opponent
                 : opponent // ignore: cast_nullable_to_non_nullable
                       as String,
+            opponentId: freezed == opponentId
+                ? _value.opponentId
+                : opponentId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            venueName: freezed == venueName
+                ? _value.venueName
+                : venueName // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            venueId: freezed == venueId
+                ? _value.venueId
+                : venueId // ignore: cast_nullable_to_non_nullable
+                      as String?,
             logs: null == logs
                 ? _value.logs
                 : logs // ignore: cast_nullable_to_non_nullable
@@ -737,6 +757,9 @@ abstract class _$$MatchRecordImplCopyWith<$Res>
     String id,
     String date,
     String opponent,
+    String? opponentId,
+    String? venueName,
+    String? venueId,
     List<LogEntry> logs,
     @MatchTypeConverter() MatchType matchType,
   });
@@ -759,6 +782,9 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
     Object? id = null,
     Object? date = null,
     Object? opponent = null,
+    Object? opponentId = freezed,
+    Object? venueName = freezed,
+    Object? venueId = freezed,
     Object? logs = null,
     Object? matchType = null,
   }) {
@@ -776,6 +802,18 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
             ? _value.opponent
             : opponent // ignore: cast_nullable_to_non_nullable
                   as String,
+        opponentId: freezed == opponentId
+            ? _value.opponentId
+            : opponentId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        venueName: freezed == venueName
+            ? _value.venueName
+            : venueName // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        venueId: freezed == venueId
+            ? _value.venueId
+            : venueId // ignore: cast_nullable_to_non_nullable
+                  as String?,
         logs: null == logs
             ? _value._logs
             : logs // ignore: cast_nullable_to_non_nullable
@@ -796,6 +834,9 @@ class _$MatchRecordImpl implements _MatchRecord {
     required this.id,
     required this.date,
     required this.opponent,
+    this.opponentId,
+    this.venueName,
+    this.venueId,
     required final List<LogEntry> logs,
     @MatchTypeConverter() this.matchType = MatchType.practiceMatch,
   }) : _logs = logs;
@@ -809,6 +850,13 @@ class _$MatchRecordImpl implements _MatchRecord {
   final String date;
   @override
   final String opponent;
+  // ★追加: ID紐付け用
+  @override
+  final String? opponentId;
+  @override
+  final String? venueName;
+  @override
+  final String? venueId;
   final List<LogEntry> _logs;
   @override
   List<LogEntry> get logs {
@@ -817,7 +865,6 @@ class _$MatchRecordImpl implements _MatchRecord {
     return EqualUnmodifiableListView(_logs);
   }
 
-  // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
   @override
   @JsonKey()
   @MatchTypeConverter()
@@ -825,7 +872,7 @@ class _$MatchRecordImpl implements _MatchRecord {
 
   @override
   String toString() {
-    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, logs: $logs, matchType: $matchType)';
+    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType)';
   }
 
   @override
@@ -837,6 +884,11 @@ class _$MatchRecordImpl implements _MatchRecord {
             (identical(other.date, date) || other.date == date) &&
             (identical(other.opponent, opponent) ||
                 other.opponent == opponent) &&
+            (identical(other.opponentId, opponentId) ||
+                other.opponentId == opponentId) &&
+            (identical(other.venueName, venueName) ||
+                other.venueName == venueName) &&
+            (identical(other.venueId, venueId) || other.venueId == venueId) &&
             const DeepCollectionEquality().equals(other._logs, _logs) &&
             (identical(other.matchType, matchType) ||
                 other.matchType == matchType));
@@ -849,6 +901,9 @@ class _$MatchRecordImpl implements _MatchRecord {
     id,
     date,
     opponent,
+    opponentId,
+    venueName,
+    venueId,
     const DeepCollectionEquality().hash(_logs),
     matchType,
   );
@@ -872,6 +927,9 @@ abstract class _MatchRecord implements MatchRecord {
     required final String id,
     required final String date,
     required final String opponent,
+    final String? opponentId,
+    final String? venueName,
+    final String? venueId,
     required final List<LogEntry> logs,
     @MatchTypeConverter() final MatchType matchType,
   }) = _$MatchRecordImpl;
@@ -884,9 +942,15 @@ abstract class _MatchRecord implements MatchRecord {
   @override
   String get date;
   @override
-  String get opponent;
+  String get opponent; // ★追加: ID紐付け用
   @override
-  List<LogEntry> get logs; // ★追加: 試合種別 (既存データとの互換性のためデフォルト値を設定)
+  String? get opponentId;
+  @override
+  String? get venueName;
+  @override
+  String? get venueId;
+  @override
+  List<LogEntry> get logs;
   @override
   @MatchTypeConverter()
   MatchType get matchType;

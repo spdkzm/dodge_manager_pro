@@ -33,7 +33,6 @@ class GameRecorderController extends ChangeNotifier {
   List<LogEntry> logs = [];
 
   DateTime _matchDate = DateTime.now();
-  // ★追加: 試合種別の状態管理 (デフォルトは練習試合)
   MatchType _matchType = MatchType.practiceMatch;
 
   Timer? _gameTimer;
@@ -48,13 +47,12 @@ class GameRecorderController extends ChangeNotifier {
   ActionResult selectedResult = ActionResult.none;
 
   DateTime get matchDate => _matchDate;
-  MatchType get matchType => _matchType; // getter
+  MatchType get matchType => _matchType;
   int get remainingSeconds => _remainingSeconds;
   bool get isRunning => _isRunning;
   bool get hasMatchStarted => _hasMatchStarted;
   String get formattedTime { final m = (_remainingSeconds ~/ 60).toString().padLeft(2, '0'); final s = (_remainingSeconds % 60).toString().padLeft(2, '0'); return "$m:$s"; }
 
-  // --- 初期化 ---
   Future<void> loadData() async {
     final loadedSettings = await DataManager.loadSettings();
     final currentLogs = await DataManager.loadCurrentLogs();
@@ -139,14 +137,13 @@ class GameRecorderController extends ChangeNotifier {
     if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
       if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
       _matchDate = DateTime.now();
-      _matchType = MatchType.practiceMatch; // 初回リセット
+      _matchType = MatchType.practiceMatch;
     }
 
     notifyListeners();
   }
 
   void updateMatchDate(DateTime date) { _matchDate = date; notifyListeners(); }
-  // ★追加: 種別更新
   void updateMatchType(MatchType type) { _matchType = type; notifyListeners(); }
 
   void selectPlayer(String number) { if (isMultiSelectMode) { _toggleMultiSelect(number); } else { selectedPlayer = number; notifyListeners(); } }
@@ -174,24 +171,64 @@ class GameRecorderController extends ChangeNotifier {
   void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
 
-  Future<bool> saveMatchToDb() async {
+  Future<bool> saveMatchToDb({
+    String? opponentName,
+    String? opponentId,
+    String? venueName,
+    String? venueId,
+  }) async {
     final currentTeam = _teamStore.currentTeam;
     if (currentTeam == null) return false;
     final dateStr = DateFormat('yyyy-MM-dd').format(_matchDate);
-    final existingMatches = await _matchDao.getMatches(currentTeam.id);
-    final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
-    final sequentialId = matchesToday + 1;
-    // 連番名の生成ロジックは既存通り
-    final generatedOpponentName = "試合-${dateStr} #${sequentialId}";
+
+    String finalOpponentName = opponentName ?? "";
+    String? finalOpponentId = opponentId;
+    String? finalVenueName = venueName;
+    String? finalVenueId = venueId;
+
+    if (finalOpponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
+      finalOpponentId = await _teamStore.ensureItemExists(finalOpponentName, 1);
+    }
+    if (finalVenueName != null && finalVenueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
+      finalVenueId = await _teamStore.ensureItemExists(finalVenueName, 2);
+    }
+
+    // ★修正: 対戦相手名が空の場合の連番生成ロジック
+    if (finalOpponentName.isEmpty) {
+      final existingMatches = await _matchDao.getMatches(currentTeam.id);
+      final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
+
+      final regex = RegExp(r'^試合-.* #(\d+)$');
+      final existingNumbers = <int>{};
+
+      for (var m in existingMatches.where((m) => m['date'] == dateStr)) {
+        final op = m['opponent'] as String? ?? "";
+        final match = regex.firstMatch(op);
+        if (match != null) {
+          existingNumbers.add(int.parse(match.group(1)!));
+        }
+      }
+
+      int newNum = 1;
+      while (existingNumbers.contains(newNum)) {
+        newNum++;
+      }
+
+      finalOpponentName = "試合-${dateStr} #${newNum}";
+    }
 
     final matchId = DateTime.now().millisecondsSinceEpoch.toString();
     final matchData = {
       'id': matchId,
-      'opponent': generatedOpponentName,
+      'opponent': finalOpponentName,
+      'opponent_id': finalOpponentId,
+      'venue_name': finalVenueName,
+      'venue_id': finalVenueId,
       'date': dateStr,
-      'match_type': _matchType.index, // ★追加: 種別IDを保存
+      'match_type': _matchType.index,
     };
-    final logMaps = logs.reversed.map((log) { final map = log.toJson(); map['opponent'] = generatedOpponentName; return map; }).toList();
+
+    final logMaps = logs.reversed.map((log) { final map = log.toJson(); map['opponent'] = finalOpponentName; return map; }).toList();
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
     await DataManager.clearCurrentLogs();
 
@@ -204,15 +241,11 @@ class GameRecorderController extends ChangeNotifier {
     _hasMatchStarted = false;
     _isRunning = false;
     _remainingSeconds = settings.matchDurationMinutes * 60;
-
-    // matchType はリセットせず維持する (連続で同じ種類の試合を行うことが多いため)
-
     selectedForMove.clear();
     selectedPlayer = null;
     selectedUIAction = null;
     selectedSubAction = null;
     selectedResult = ActionResult.none;
-
     notifyListeners();
   }
 
@@ -223,19 +256,15 @@ class GameRecorderController extends ChangeNotifier {
     _remainingSeconds = settings.matchDurationMinutes * 60;
     _hasMatchStarted = false;
     _isRunning = false;
-
     courtPlayers.clear();
     benchPlayers.clear();
     absentPlayers.clear();
-
     await loadData();
-
     selectedForMove.clear();
     selectedPlayer = null;
     selectedUIAction = null;
     selectedSubAction = null;
     selectedResult = ActionResult.none;
-
     notifyListeners();
   }
 
