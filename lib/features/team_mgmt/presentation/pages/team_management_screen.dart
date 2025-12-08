@@ -39,7 +39,7 @@ class _TeamManagementScreenState extends ConsumerState<TeamManagementScreen> {
                 final name = nameController.text.trim();
                 if (name.isNotEmpty) {
                   if (isEditing) {
-                    store.updateTeamName(team!, name);
+                    store.updateTeamName(team, name);
                   } else {
                     store.addTeam(name);
                   }

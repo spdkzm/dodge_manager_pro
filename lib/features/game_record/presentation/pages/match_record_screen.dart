@@ -55,8 +55,8 @@ class MatchRecordScreen extends HookConsumerWidget {
       // リストデータの準備
       final opponents = currentTeam?.opponentItems ?? [];
       final venues = currentTeam?.venueItems ?? [];
-      final opSchema = currentTeam?.opponentSchema.firstWhere((f) => f.label == 'チーム名', orElse: () => currentTeam!.opponentSchema.first);
-      final veSchema = currentTeam?.venueSchema.firstWhere((f) => f.label == '会場名', orElse: () => currentTeam!.venueSchema.first);
+      final opSchema = currentTeam?.opponentSchema.firstWhere((f) => f.label == 'チーム名', orElse: () => currentTeam.opponentSchema.first);
+      final veSchema = currentTeam?.venueSchema.firstWhere((f) => f.label == '会場名', orElse: () => currentTeam.venueSchema.first);
 
       // ダイアログ内での一時的な状態管理
       MatchType tempType = controller.matchType;

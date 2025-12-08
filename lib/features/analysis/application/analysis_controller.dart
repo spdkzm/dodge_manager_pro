@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../game_record/data/match_dao.dart';
 import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
+// ★追加: カテゴリEnumをインポート
+import '../../team_mgmt/domain/roster_category.dart';
 import '../../game_record/domain/models.dart';
 import '../../settings/data/action_dao.dart';
 import '../../settings/domain/action_definition.dart';
@@ -66,21 +68,20 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     String? finalOpponentId = opponentId;
     String? finalVenueId = venueId;
 
+    // ★修正: 1 -> RosterCategory.opponent
     if (opponentName != null && opponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
-      finalOpponentId = await teamStore.ensureItemExists(opponentName, 1);
+      finalOpponentId = await teamStore.ensureItemExists(opponentName, RosterCategory.opponent);
     }
+    // ★修正: 2 -> RosterCategory.venue
     if (venueName != null && venueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
-      finalVenueId = await teamStore.ensureItemExists(venueName, 2);
+      finalVenueId = await teamStore.ensureItemExists(venueName, RosterCategory.venue);
     }
 
     String newOpponentName = opponentName ?? "";
-    // ★修正: 対戦相手名が空の場合の連番生成ロジック
     if (newOpponentName.isEmpty) {
       final allMatches = await _matchDao.getMatches(currentTeamId);
-      // 同じ日の他の試合を取得 (自分自身は除く)
       final matchesOnTargetDate = allMatches.where((m) => m['date'] == dateStr && m['id'] != matchId).toList();
 
-      // 既存の連番を抽出
       final regex = RegExp(r'^試合-.* #(\d+)$');
       final existingNumbers = <int>{};
 
@@ -92,7 +93,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         }
       }
 
-      // 1から順に空いている番号を探す
       int newNum = 1;
       while (existingNumbers.contains(newNum)) {
         newNum++;
@@ -243,16 +243,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       ref.read(availableDaysProvider.notifier).state = days;
       ref.read(availableMatchesProvider.notifier).state = {};
     } else {
-      // ★修正: matchIdが選択されている場合(else)でも、日付(day)が確定していれば試合リストを更新する
-      // ここでは year, month, day が全て非nullである前提（analyze呼び出し時のロジック上）
-      // ただし、matchIdだけでanalyzeされるケースもあるため、matchIdから日付を逆引きしてフィルタするアプローチも可能だが、
-      // ここではシンプルに「日付が指定されている場合」のリスト更新を行う。
-
-      // analyze() の呼び出し元で、matchId指定時は year/month/day がnullになる可能性があるが、
-      // UI上（AnalysisScreen）のタブ選択状態（_selectedYear等）は保持されている。
-      // 引数の year, month, day を信頼してリストを作る。
-
-      // dayが指定されていれば、その日の試合リストを作る
       if (year != null && month != null && day != null) {
         final matches = allMatches.where((m) {
           final dateStr = m['date'] as String?;

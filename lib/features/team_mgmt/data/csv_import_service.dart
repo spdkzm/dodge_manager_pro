@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../domain/team.dart';
 import '../domain/schema.dart';
 import '../domain/roster_item.dart';
+import '../domain/roster_category.dart'; // ★追加
 import 'team_dao.dart';
 
 class ImportStats {
@@ -116,8 +117,8 @@ class CsvImportService {
           final existingItem = existingItemsMap[csvId]!;
           if (_hasChanges(existingItem.data, newItemData, team.schema)) {
             existingItem.data = newItemData;
-            // ★修正: category=0 (選手)
-            await _teamDao.insertItem(team.id, existingItem, 0);
+            // ★修正: RosterCategory.player
+            await _teamDao.insertItem(team.id, existingItem, RosterCategory.player);
             stats.updated++;
           } else {
             stats.unchanged++;
@@ -127,8 +128,8 @@ class CsvImportService {
               id: csvId ?? const Uuid().v4(),
               data: newItemData
           );
-          // ★修正: category=0 (選手)
-          await _teamDao.insertItem(team.id, newItem, 0);
+          // ★修正: RosterCategory.player
+          await _teamDao.insertItem(team.id, newItem, RosterCategory.player);
           stats.inserted++;
         }
       }

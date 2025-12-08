@@ -9,16 +9,27 @@ import 'package:file_picker/file_picker.dart';
 // Domain
 import '../domain/team.dart';
 import '../domain/schema.dart';
+import '../domain/roster_category.dart'; // ★追加
 import '../../analysis/domain/player_stats.dart';
 import '../../settings/domain/action_definition.dart';
 
 class CsvExportService {
 
   // --- チーム名簿のエクスポート ---
-  Future<void> exportTeamToCsv(Team team) async {
+  // ★修正: category引数を追加
+  Future<void> exportTeamToCsv(Team team, {RosterCategory category = RosterCategory.player}) async {
+    // カテゴリに応じたスキーマとアイテムを取得
+    final schema = team.getSchema(category);
+    final items = team.getItems(category);
+
+    // ファイル名の接尾辞決定
+    String suffix = "名簿";
+    if (category == RosterCategory.opponent) suffix = "対戦相手";
+    if (category == RosterCategory.venue) suffix = "会場";
+
     // 1. ヘッダー行
     final List<String> headers = ['system_id'];
-    for (var field in team.schema) {
+    for (var field in schema) {
       headers.addAll(_generateHeaders(field));
     }
 
@@ -26,24 +37,24 @@ class CsvExportService {
     final List<List<dynamic>> rows = [];
     rows.add(headers);
 
-    for (var item in team.items) {
+    for (var item in items) {
       final List<dynamic> row = [];
       row.add(item.id);
 
-      for (var field in team.schema) {
+      for (var field in schema) {
         final value = item.data[field.id];
         row.addAll(_expandValues(field, value));
       }
       rows.add(row);
     }
 
-    await _saveCsvFile(rows, '${team.name}_名簿');
+    await _saveCsvFile(rows, '${team.name}_$suffix');
   }
 
-  // --- 集計データのエクスポート (★追加) ---
+  // --- 集計データのエクスポート ---
   Future<void> exportAnalysisStats(
       String teamName,
-      String periodLabel, // "2025年", "10月", "vs 〇〇" など
+      String periodLabel,
       List<PlayerStats> stats,
       List<ActionDefinition> definitions,
       ) async {
@@ -51,11 +62,9 @@ class CsvExportService {
     // 1. ヘッダー作成
     final List<String> headers = ['背番号', 'コートネーム', '試合数'];
 
-    // 現在のデータに含まれるアクション名を取得
     final dataActionNames = <String>{};
     for (var p in stats) dataActionNames.addAll(p.actions.keys);
 
-    // 定義済み + データにのみあるアクション
     final displayDefinitions = List<ActionDefinition>.from(definitions);
     final definedNames = definitions.map((d) => d.name).toSet();
     for (var name in dataActionNames) {
@@ -64,7 +73,6 @@ class CsvExportService {
       }
     }
 
-    // カラム構造の定義
     for (var action in displayDefinitions) {
       if (action.hasSuccess && action.hasFailure) {
         headers.add('${action.name}(成功)');
@@ -83,19 +91,16 @@ class CsvExportService {
     final List<List<dynamic>> rows = [];
     rows.add(headers);
 
-    // 背番号順ソート
     final sortedStats = List<PlayerStats>.from(stats);
     sortedStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
 
     for (var p in sortedStats) {
       final List<dynamic> row = [];
 
-      // 基本情報 (0落ち対策を適用)
       row.add(_formatValue(p.playerNumber));
       row.add(p.playerName);
       row.add(p.matchesPlayed);
 
-      // アクション情報
       for (var action in displayDefinitions) {
         final stat = p.actions[action.name];
 
@@ -120,7 +125,6 @@ class CsvExportService {
   // --- 共通: ファイル保存処理 ---
   Future<void> _saveCsvFile(List<List<dynamic>> rows, String baseName) async {
     final String csvData = const ListToCsvConverter().convert(rows);
-    // BOMを追加してExcelでの文字化けを防ぐ
     final String bomCsv = '\uFEFF$csvData';
 
     final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
@@ -155,11 +159,7 @@ class CsvExportService {
   dynamic _formatValue(dynamic value) {
     if (value == null) return '';
     final str = value.toString();
-
-    // 数字のみで構成され、かつ "0" から始まる文字列 (例: "090...", "0043...")
-    // ただし "0" 単体は除く
     if (str.length > 1 && str.startsWith('0') && int.tryParse(str) != null) {
-      // Excelの数式として出力することで、強制的に文字列として扱わせる
       return '="$str"';
     }
     return str;
@@ -178,7 +178,6 @@ class CsvExportService {
 
   List<dynamic> _expandValues(FieldDefinition field, dynamic val) {
     if (val == null) {
-      // 空の場合もカラム数を合わせる
       switch (field.type) {
         case FieldType.personName:
         case FieldType.personKana: return ['', ''];
@@ -200,7 +199,6 @@ class CsvExportService {
 
       case FieldType.phone:
         if (val is Map) {
-          // 電話番号の各パーツに0落ち対策
           return [
             _formatValue(val['part1']),
             _formatValue(val['part2']),
@@ -212,8 +210,8 @@ class CsvExportService {
       case FieldType.address:
         if (val is Map) {
           return [
-            _formatValue(val['zip1']), // 郵便番号上3桁
-            _formatValue(val['zip2']), // 郵便番号下4桁 (0043等に対応)
+            _formatValue(val['zip1']),
+            _formatValue(val['zip2']),
             val['pref'] ?? '',
             val['city'] ?? '',
             val['building'] ?? ''
@@ -222,7 +220,6 @@ class CsvExportService {
         return ['', '', '', '', ''];
 
       case FieldType.uniformNumber:
-      // 背番号に0落ち対策
         return [_formatValue(val)];
 
       default:

@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../domain/team.dart';
 import '../domain/schema.dart';
 import '../domain/roster_item.dart';
+import '../domain/roster_category.dart';
 import '../data/team_dao.dart';
 import '../../game_record/data/match_dao.dart';
 
@@ -16,7 +17,10 @@ final teamStoreProvider = ChangeNotifierProvider<TeamStore>((ref) {
 
 class TeamStore extends ChangeNotifier {
   final TeamDao _teamDao = TeamDao();
-  final MatchDao _matchDao = MatchDao();
+  final MatchDao _matchDao = MatchDao(); // ignore: unused_field
+
+  // ★追加: クリーンアップ処理が完了したかを管理するフラグ
+  bool _isCleanupDone = false;
 
   TeamStore() {
     loadFromDb();
@@ -40,22 +44,27 @@ class TeamStore extends ChangeNotifier {
 
       if (teams.isNotEmpty) {
         currentTeamId = teams.first.id;
-        for (var team in teams) {
-          // ★追加: 既存データの重複修復処理
-          await _cleanupDuplicateSystemFields(team, 1); // 対戦相手
-          await _cleanupDuplicateSystemFields(team, 2); // 会場
 
-          // データがない場合の初期化
+        // ★修正: アプリ起動後、一度もクリーンアップしていなければ実行
+        if (!_isCleanupDone) {
+          for (var team in teams) {
+            await _cleanupDuplicateSystemFields(team, RosterCategory.opponent);
+            await _cleanupDuplicateSystemFields(team, RosterCategory.venue);
+          }
+          _isCleanupDone = true; // 実行済みフラグを立てる
+        }
+
+        for (var team in teams) {
           if (team.opponentSchema.isEmpty) {
             _initOpponentSchema(team);
             for (var f in team.opponentSchema) {
-              await _teamDao.insertField(team.id, f, 1);
+              await _teamDao.insertField(team.id, f, RosterCategory.opponent);
             }
           }
           if (team.venueSchema.isEmpty) {
             _initVenueSchema(team);
             for (var f in team.venueSchema) {
-              await _teamDao.insertField(team.id, f, 2);
+              await _teamDao.insertField(team.id, f, RosterCategory.venue);
             }
           }
         }
@@ -71,14 +80,12 @@ class TeamStore extends ChangeNotifier {
     }
   }
 
-  // ★追加: 重複したシステム項目を削除するメソッド
-  Future<void> _cleanupDuplicateSystemFields(Team team, int category) async {
+  Future<void> _cleanupDuplicateSystemFields(Team team, RosterCategory category) async {
     final schema = team.getSchema(category);
     final seenLabels = <String>{};
     final toRemove = <FieldDefinition>[];
 
     for (var field in schema) {
-      // システム項目かつ、既に同じ名前が出現している場合
       if (field.isSystem) {
         if (seenLabels.contains(field.label)) {
           toRemove.add(field);
@@ -88,12 +95,11 @@ class TeamStore extends ChangeNotifier {
       }
     }
 
-    // 重複分を削除
     for (var field in toRemove) {
       // メモリから削除
-      if (category == 1) {
+      if (category == RosterCategory.opponent) {
         team.opponentSchema.remove(field);
-      } else if (category == 2) {
+      } else if (category == RosterCategory.venue) {
         team.venueSchema.remove(field);
       }
       // DBから削除
@@ -180,9 +186,9 @@ class TeamStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- スキーマ操作 (Category対応) ---
+  // --- スキーマ操作 ---
 
-  void saveSchema(String teamId, List<FieldDefinition> newSchema, {int category = 0}) {
+  void saveSchema(String teamId, List<FieldDefinition> newSchema, {RosterCategory category = RosterCategory.player}) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.setSchema(category, newSchema);
     _teamDao.updateSchema(teamId, newSchema, category);
@@ -200,29 +206,28 @@ class TeamStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- データ操作 (Category対応) ---
+  // --- データ操作 ---
 
-  void addItem(String teamId, RosterItem item, {int category = 0}) {
+  void addItem(String teamId, RosterItem item, {RosterCategory category = RosterCategory.player}) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.getItems(category).add(item);
     _teamDao.insertItem(teamId, item, category);
     notifyListeners();
   }
 
-  void saveItem(String teamId, RosterItem item, {int category = 0}) {
+  void saveItem(String teamId, RosterItem item, {RosterCategory category = RosterCategory.player}) {
     _teamDao.insertItem(teamId, item, category);
     notifyListeners();
   }
 
-  void deleteItem(String teamId, RosterItem item, {int category = 0}) {
+  void deleteItem(String teamId, RosterItem item, {RosterCategory category = RosterCategory.player}) {
     final team = teams.firstWhere((t) => t.id == teamId);
     team.getItems(category).remove(item);
     _teamDao.deleteItem(item.id);
     notifyListeners();
   }
 
-  // 名前からアイテムIDを取得（なければ新規作成して返す）
-  Future<String> ensureItemExists(String name, int category) async {
+  Future<String> ensureItemExists(String name, RosterCategory category) async {
     final team = currentTeam;
     if (team == null || name.trim().isEmpty) return "";
 
@@ -233,7 +238,6 @@ class TeamStore extends ChangeNotifier {
 
     final nameField = schema.firstWhere((f) => f.label.contains("名") || f.type == FieldType.text, orElse: () => schema.first);
 
-    // 既存チェック
     for (var item in items) {
       final val = item.data[nameField.id]?.toString() ?? "";
       if (val == name) {
@@ -241,33 +245,30 @@ class TeamStore extends ChangeNotifier {
       }
     }
 
-    // 新規作成
     final newItem = RosterItem(data: {nameField.id: name});
     addItem(team.id, newItem, category: category);
     return newItem.id;
   }
 
-  // 使用回数確認
-  Future<int> checkMatchInfoUsage(int category, String name) async {
+  Future<int> checkMatchInfoUsage(RosterCategory category, String name) async {
     final teamId = currentTeamId;
     if (teamId == null) return 0;
 
-    if (category == 1) { // 対戦相手
+    if (category == RosterCategory.opponent) {
       return await _matchDao.countOpponentNameUsage(teamId, name);
-    } else if (category == 2) { // 会場
+    } else if (category == RosterCategory.venue) {
       return await _matchDao.countVenueNameUsage(teamId, name);
     }
     return 0;
   }
 
-  // 名前一括更新
-  Future<void> updateMatchInfoName(int category, String oldName, String newName) async {
+  Future<void> updateMatchInfoName(RosterCategory category, String oldName, String newName) async {
     final teamId = currentTeamId;
     if (teamId == null) return;
 
-    if (category == 1) {
+    if (category == RosterCategory.opponent) {
       await _matchDao.updateOpponentName(teamId, oldName, newName);
-    } else if (category == 2) {
+    } else if (category == RosterCategory.venue) {
       await _matchDao.updateVenueName(teamId, oldName, newName);
     }
   }

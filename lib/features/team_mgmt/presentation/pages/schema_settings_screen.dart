@@ -4,11 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/team_store.dart';
 import '../../domain/schema.dart';
+import '../../domain/roster_category.dart'; // ★追加
 
 class SchemaSettingsScreen extends ConsumerStatefulWidget {
-  final int targetCategory; // 0:選手, 1:対戦相手, 2:会場
+  final RosterCategory targetCategory; // ★修正
 
-  const SchemaSettingsScreen({super.key, this.targetCategory = 0});
+  const SchemaSettingsScreen({super.key, this.targetCategory = RosterCategory.player});
 
   @override
   ConsumerState<SchemaSettingsScreen> createState() => _SchemaSettingsScreenState();
@@ -41,7 +42,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     final currentTeam = ref.read(teamStoreProvider).currentTeam;
     if (currentTeam != null) {
       setState(() {
-        // カテゴリに応じたスキーマをコピー
         final schema = currentTeam.getSchema(widget.targetCategory);
         _localSchema = schema.map((f) => f.clone()).toList();
         _isDirty = false;
@@ -51,13 +51,12 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
 
   String _getPageTitle() {
     switch (widget.targetCategory) {
-      case 1: return '対戦相手リストの項目設計';
-      case 2: return '会場リストの項目設計';
+      case RosterCategory.opponent: return '対戦相手リストの項目設計';
+      case RosterCategory.venue: return '会場リストの項目設計';
       default: return '名簿の項目設計';
     }
   }
 
-  // --- ダイアログ (追加・編集) ---
   void _showFieldDialog({FieldDefinition? field, int? index}) {
     final isEditing = field != null;
     final nameController = TextEditingController(text: field?.label ?? '');
@@ -160,7 +159,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                           DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
                           DropdownMenuItem(value: FieldType.number, child: Text('数値')),
                           DropdownMenuItem(value: FieldType.date, child: Text('日付')),
-                          // 選手リスト以外では背番号やコートネームは意味が薄いが、一応残すか、制御してもよい
                           DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')),
                           DropdownMenuItem(value: FieldType.courtName, child: Text('コートネーム')),
                         ],

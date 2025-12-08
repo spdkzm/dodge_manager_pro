@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
+import '../../team_mgmt/domain/roster_category.dart'; // Enum使用
 import '../../settings/data/action_dao.dart';
 import '../data/match_dao.dart';
 import '../domain/models.dart';
@@ -62,20 +63,6 @@ class GameRecorderController extends ChangeNotifier {
 
     List<String> rosterNumbers = [];
     Map<String, String> nameMap = {};
-    Map<int, UIActionItem> gridMap = {};
-    int maxIndex = 0;
-
-    void placeSafe(int pos, UIActionItem item) {
-      if (!gridMap.containsKey(pos)) {
-        gridMap[pos] = item;
-        if (pos > maxIndex) maxIndex = pos;
-      } else {
-        int newPos = 0;
-        while (gridMap.containsKey(newPos)) newPos++;
-        gridMap[newPos] = item;
-        if (newPos > maxIndex) maxIndex = newPos;
-      }
-    }
 
     if (currentTeam != null) {
       String? numberFieldId; String? nameFieldId; String? courtNameFieldId;
@@ -98,39 +85,12 @@ class GameRecorderController extends ChangeNotifier {
         rosterNumbers.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
       }
 
-      final dbActions = await _actionDao.getActionDefinitions(currentTeam.id);
-      for (var map in dbActions) {
-        final name = map['name'] as String;
-        final isSubReq = map['isSubRequired'] == true;
-        final hasSuccess = map['hasSuccess'] == true;
-        final hasFailure = map['hasFailure'] == true;
-        final posIndex = map['positionIndex'] as int? ?? 0;
-        final successPos = map['successPositionIndex'] as int? ?? 0;
-        final failurePos = map['failurePositionIndex'] as int? ?? 0;
-        final subMap = map['subActionsMap'] as Map<String, dynamic>? ?? {};
-        List<String> getSubs(String key) => (subMap[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-
-        if (hasSuccess) {
-          final item = UIActionItem(name: "${name}成功", parentName: name, fixedResult: ActionResult.success, subActions: getSubs('success'), isSubRequired: isSubReq, hasSuccess: true, hasFailure: false);
-          placeSafe(successPos, item);
-        }
-        if (hasFailure) {
-          final item = UIActionItem(name: "${name}失敗", parentName: name, fixedResult: ActionResult.failure, subActions: getSubs('failure'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: true);
-          placeSafe(failurePos, item);
-        }
-        if (!hasSuccess && !hasFailure) {
-          final item = UIActionItem(name: name, parentName: name, fixedResult: ActionResult.none, subActions: getSubs('default'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: false);
-          placeSafe(posIndex, item);
-        }
-      }
+      // ★リファクタリング: アクションボタン構築ロジックを分離
+      uiActions = await _buildUIActionList(currentTeam.id);
     }
-
-    List<UIActionItem?> finalList = [];
-    for (int i = 0; i <= maxIndex; i++) finalList.add(gridMap[i]);
 
     settings = loadedSettings;
     logs = currentLogs;
-    uiActions = finalList;
     _remainingSeconds = settings.matchDurationMinutes * 60;
     playerNames = nameMap;
 
@@ -141,6 +101,54 @@ class GameRecorderController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  // ★追加: アクションボタンリストの構築メソッド
+  Future<List<UIActionItem?>> _buildUIActionList(String teamId) async {
+    final dbActions = await _actionDao.getActionDefinitions(teamId);
+    Map<int, UIActionItem> gridMap = {};
+    int maxIndex = 0;
+
+    void placeSafe(int pos, UIActionItem item) {
+      if (!gridMap.containsKey(pos)) {
+        gridMap[pos] = item;
+        if (pos > maxIndex) maxIndex = pos;
+      } else {
+        int newPos = 0;
+        while (gridMap.containsKey(newPos)) newPos++;
+        gridMap[newPos] = item;
+        if (newPos > maxIndex) maxIndex = newPos;
+      }
+    }
+
+    for (var map in dbActions) {
+      final name = map['name'] as String;
+      final isSubReq = map['isSubRequired'] == true;
+      final hasSuccess = map['hasSuccess'] == true;
+      final hasFailure = map['hasFailure'] == true;
+      final posIndex = map['positionIndex'] as int? ?? 0;
+      final successPos = map['successPositionIndex'] as int? ?? 0;
+      final failurePos = map['failurePositionIndex'] as int? ?? 0;
+      final subMap = map['subActionsMap'] as Map<String, dynamic>? ?? {};
+      List<String> getSubs(String key) => (subMap[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+      if (hasSuccess) {
+        final item = UIActionItem(name: "${name}成功", parentName: name, fixedResult: ActionResult.success, subActions: getSubs('success'), isSubRequired: isSubReq, hasSuccess: true, hasFailure: false);
+        placeSafe(successPos, item);
+      }
+      if (hasFailure) {
+        final item = UIActionItem(name: "${name}失敗", parentName: name, fixedResult: ActionResult.failure, subActions: getSubs('failure'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: true);
+        placeSafe(failurePos, item);
+      }
+      if (!hasSuccess && !hasFailure) {
+        final item = UIActionItem(name: name, parentName: name, fixedResult: ActionResult.none, subActions: getSubs('default'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: false);
+        placeSafe(posIndex, item);
+      }
+    }
+
+    List<UIActionItem?> finalList = [];
+    for (int i = 0; i <= maxIndex; i++) finalList.add(gridMap[i]);
+    return finalList;
   }
 
   void updateMatchDate(DateTime date) { _matchDate = date; notifyListeners(); }
@@ -187,13 +195,12 @@ class GameRecorderController extends ChangeNotifier {
     String? finalVenueId = venueId;
 
     if (finalOpponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
-      finalOpponentId = await _teamStore.ensureItemExists(finalOpponentName, 1);
+      finalOpponentId = await _teamStore.ensureItemExists(finalOpponentName, RosterCategory.opponent);
     }
     if (finalVenueName != null && finalVenueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
-      finalVenueId = await _teamStore.ensureItemExists(finalVenueName, 2);
+      finalVenueId = await _teamStore.ensureItemExists(finalVenueName, RosterCategory.venue);
     }
 
-    // ★修正: 対戦相手名が空の場合の連番生成ロジック
     if (finalOpponentName.isEmpty) {
       final existingMatches = await _matchDao.getMatches(currentTeam.id);
       final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
