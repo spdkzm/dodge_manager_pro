@@ -46,7 +46,6 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
   late TabController _tabController;
   bool _isInitialLoadComplete = false;
 
-  // 編集用データ
   final _opponentCtrl = TextEditingController();
   final _venueCtrl = TextEditingController();
   String? _opponentId;
@@ -56,7 +55,6 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    // 初期値セット
     _opponentCtrl.text = widget.record.opponent;
     _venueCtrl.text = widget.record.venueName ?? "";
     _opponentId = widget.record.opponentId;
@@ -94,14 +92,13 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
 
   @override
   Widget build(BuildContext context) {
-    // ★追加: データ更新の監視
     ref.listen<MatchRecord?>(selectedMatchRecordProvider, (prev, next) {
       if (next != null) {
         _opponentCtrl.text = next.opponent;
         _venueCtrl.text = next.venueName ?? "";
         _opponentId = next.opponentId;
         _venueId = next.venueId;
-        setState(() {}); // 画面更新
+        setState(() {});
       }
     });
 
@@ -146,7 +143,6 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
     );
   }
 
-  // --- タブ3: 試合情報 ---
   Widget _buildMatchInfoTab() {
     final store = ref.watch(teamStoreProvider);
     final currentTeam = store.currentTeam;
@@ -204,9 +200,10 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
     );
   }
 
-  // --- タブ1: ログ ---
+  // ★修正: ログタブに「試合結果バー」を追加
   Widget _buildLogTab() {
-    final logs = widget.record.logs;
+    final record = ref.watch(selectedMatchRecordProvider) ?? widget.record;
+    final logs = record.logs;
 
     return Column(
       children: [
@@ -231,15 +228,178 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
         ),
         Expanded(
           child: ListView.separated(
-            itemCount: logs.length,
+            itemCount: logs.length + 1, // ★ +1 for Result Bar
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, index) {
+              if (index == logs.length) {
+                return _buildResultFooter(record);
+              }
               final log = logs[index];
               return _buildLogRow(log);
             },
           ),
         ),
       ],
+    );
+  }
+
+  // ★追加: 試合結果表示用フッター
+  Widget _buildResultFooter(MatchRecord record) {
+    if (record.result == MatchResult.none) return const SizedBox();
+
+    Color bgColor = Colors.white;
+    String resultText = "";
+
+    // 勝敗による色とテキスト
+    if (record.result == MatchResult.win) {
+      bgColor = Colors.red.shade100;
+      resultText = "WIN";
+    } else if (record.result == MatchResult.lose) {
+      bgColor = Colors.blue.shade100;
+      resultText = "LOSE";
+    } else {
+      bgColor = Colors.grey.shade200;
+      resultText = "DRAW";
+    }
+
+    String scoreText = "";
+    if (record.scoreOwn != null && record.scoreOpponent != null) {
+      scoreText = "${record.scoreOwn} - ${record.scoreOpponent}";
+    }
+
+    // 延長戦情報
+    if (record.isExtraTime) {
+      resultText += " (延長戦)";
+      if (record.extraScoreOwn != null) {
+        scoreText += " [EX: ${record.extraScoreOwn} - ${record.extraScoreOpponent}]";
+      }
+    }
+
+    return InkWell(
+      onTap: () => _showResultEditDialog(record),
+      child: Container(
+        color: bgColor,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(resultText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(width: 16),
+            Text(scoreText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+            const SizedBox(width: 8),
+            const Icon(Icons.edit, size: 16, color: Colors.black54),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ★追加: 結果編集ダイアログ
+  void _showResultEditDialog(MatchRecord record) {
+    MatchResult tempResult = record.result;
+    MatchResult tempExtraResult = record.isExtraTime ? record.result : MatchResult.none; // 延長がある場合、メイン結果は延長結果と同じ
+
+    // 延長があり、かつスコアが引き分けでない場合、本戦の結果はDrawのはずだが、
+    // ここでは簡易的に、延長があれば「延長入力モード」をONにする
+    if (record.isExtraTime) tempResult = MatchResult.draw;
+
+    final scoreOwnCtrl = TextEditingController(text: record.scoreOwn?.toString() ?? "");
+    final scoreOppCtrl = TextEditingController(text: record.scoreOpponent?.toString() ?? "");
+    final extraScoreOwnCtrl = TextEditingController(text: record.extraScoreOwn?.toString() ?? "");
+    final extraScoreOppCtrl = TextEditingController(text: record.extraScoreOpponent?.toString() ?? "");
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setStateDialog) {
+
+          Widget buildScoreInput(String label, TextEditingController ctrl1, TextEditingController ctrl2) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(width: 50, child: TextField(controller: ctrl1, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()))),
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text("-", style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 50, child: TextField(controller: ctrl2, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()))),
+              ],
+            );
+          }
+
+          Widget buildResultToggle(MatchResult current, Function(MatchResult) onSelect) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ChoiceChip(label: const Text("勝"), selected: current == MatchResult.win, onSelected: (v) => onSelect(MatchResult.win), selectedColor: Colors.red.shade100),
+                const SizedBox(width: 8),
+                ChoiceChip(label: const Text("引分"), selected: current == MatchResult.draw, onSelected: (v) => onSelect(MatchResult.draw), selectedColor: Colors.grey.shade300),
+                const SizedBox(width: 8),
+                ChoiceChip(label: const Text("負"), selected: current == MatchResult.lose, onSelected: (v) => onSelect(MatchResult.lose), selectedColor: Colors.blue.shade100),
+              ],
+            );
+          }
+
+          return AlertDialog(
+            title: const Text("試合結果の編集"),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("本戦結果", style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  buildResultToggle(tempResult, (r) => setStateDialog(() => tempResult = r)),
+                  const SizedBox(height: 8),
+                  buildScoreInput("スコア", scoreOwnCtrl, scoreOppCtrl),
+
+                  if (tempResult == MatchResult.draw) ...[
+                    const Divider(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
+                      child: Column(
+                        children: [
+                          const Text("▼ 延長・決着戦", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text("なし", style: TextStyle(fontSize: 12)),
+                              Radio<MatchResult>(value: MatchResult.none, groupValue: tempExtraResult, onChanged: (v) => setStateDialog(() => tempExtraResult = v!)),
+                              const Text("勝", style: TextStyle(fontSize: 12)),
+                              Radio<MatchResult>(value: MatchResult.win, groupValue: tempExtraResult, onChanged: (v) => setStateDialog(() => tempExtraResult = v!)),
+                              const Text("負", style: TextStyle(fontSize: 12)),
+                              Radio<MatchResult>(value: MatchResult.lose, groupValue: tempExtraResult, onChanged: (v) => setStateDialog(() => tempExtraResult = v!)),
+                            ],
+                          ),
+                          if (tempExtraResult != MatchResult.none)
+                            buildScoreInput("延長スコア", extraScoreOwnCtrl, extraScoreOppCtrl),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
+              ElevatedButton(onPressed: () async {
+                MatchResult finalResult = tempExtraResult != MatchResult.none ? tempExtraResult : tempResult;
+                bool isExtra = tempExtraResult != MatchResult.none;
+
+                await ref.read(analysisControllerProvider.notifier).updateMatchResult(
+                  record.id,
+                  finalResult,
+                  int.tryParse(scoreOwnCtrl.text),
+                  int.tryParse(scoreOppCtrl.text),
+                  isExtra,
+                  int.tryParse(extraScoreOwnCtrl.text),
+                  int.tryParse(extraScoreOppCtrl.text),
+                );
+
+                if (mounted) Navigator.pop(context);
+              }, child: const Text("保存"))
+            ],
+          );
+        });
+      },
     );
   }
 
@@ -296,7 +456,6 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> with Sing
     );
   }
 
-  // --- タブ2: 集計 ---
   Widget _buildStatsTab() {
     final asyncStats = ref.watch(analysisControllerProvider);
 

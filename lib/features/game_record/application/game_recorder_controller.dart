@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
-import '../../team_mgmt/domain/roster_category.dart'; // Enum使用
+import '../../team_mgmt/domain/roster_category.dart';
 import '../../settings/data/action_dao.dart';
 import '../data/match_dao.dart';
 import '../domain/models.dart';
@@ -35,6 +35,10 @@ class GameRecorderController extends ChangeNotifier {
 
   DateTime _matchDate = DateTime.now();
   MatchType _matchType = MatchType.practiceMatch;
+  String _opponentName = "";
+  String? _opponentId;
+  String _venueName = "";
+  String? _venueId;
 
   Timer? _gameTimer;
   int _remainingSeconds = 300;
@@ -49,6 +53,11 @@ class GameRecorderController extends ChangeNotifier {
 
   DateTime get matchDate => _matchDate;
   MatchType get matchType => _matchType;
+  String get opponentName => _opponentName;
+  String? get opponentId => _opponentId;
+  String get venueName => _venueName;
+  String? get venueId => _venueId;
+
   int get remainingSeconds => _remainingSeconds;
   bool get isRunning => _isRunning;
   bool get hasMatchStarted => _hasMatchStarted;
@@ -85,25 +94,35 @@ class GameRecorderController extends ChangeNotifier {
         rosterNumbers.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
       }
 
-      // ★リファクタリング: アクションボタン構築ロジックを分離
       uiActions = await _buildUIActionList(currentTeam.id);
     }
 
     settings = loadedSettings;
     logs = currentLogs;
-    _remainingSeconds = settings.matchDurationMinutes * 60;
+    if (_remainingSeconds == 300 && !_hasMatchStarted) {
+      _remainingSeconds = settings.matchDurationMinutes * 60;
+    }
     playerNames = nameMap;
 
     if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
-      if (rosterNumbers.isNotEmpty) { benchPlayers = rosterNumbers; } else { benchPlayers = List.from(settings.squadNumbers); }
-      _matchDate = DateTime.now();
-      _matchType = MatchType.practiceMatch;
+      if (rosterNumbers.isNotEmpty) { benchPlayers = List.from(rosterNumbers); }
+      else { benchPlayers = List.from(settings.squadNumbers); }
+    } else {
+      final currentRegistered = {...courtPlayers, ...benchPlayers, ...absentPlayers};
+      final newNumbers = rosterNumbers.where((n) => !currentRegistered.contains(n)).toList();
+      if (newNumbers.isNotEmpty) {
+        benchPlayers.addAll(newNumbers);
+        _sortList(benchPlayers);
+      }
+      final validSet = rosterNumbers.toSet();
+      courtPlayers.removeWhere((n) => !validSet.contains(n));
+      benchPlayers.removeWhere((n) => !validSet.contains(n));
+      absentPlayers.removeWhere((n) => !validSet.contains(n));
     }
 
     notifyListeners();
   }
 
-  // ★追加: アクションボタンリストの構築メソッド
   Future<List<UIActionItem?>> _buildUIActionList(String teamId) async {
     final dbActions = await _actionDao.getActionDefinitions(teamId);
     Map<int, UIActionItem> gridMap = {};
@@ -154,6 +173,14 @@ class GameRecorderController extends ChangeNotifier {
   void updateMatchDate(DateTime date) { _matchDate = date; notifyListeners(); }
   void updateMatchType(MatchType type) { _matchType = type; notifyListeners(); }
 
+  void updateMatchInfo({String? opponentName, String? opponentId, String? venueName, String? venueId}) {
+    if (opponentName != null) _opponentName = opponentName;
+    if (opponentId != null) _opponentId = opponentId;
+    if (venueName != null) _venueName = venueName;
+    if (venueId != null) _venueId = venueId;
+    notifyListeners();
+  }
+
   void selectPlayer(String number) { if (isMultiSelectMode) { _toggleMultiSelect(number); } else { selectedPlayer = number; notifyListeners(); } }
   void startMultiSelect(String number) { _toggleMultiSelect(number); }
   void _toggleMultiSelect(String number) { if (selectedForMove.contains(number)) { selectedForMove.remove(number); if (selectedForMove.isEmpty) isMultiSelectMode = false; } else { selectedForMove.add(number); isMultiSelectMode = true; selectedPlayer = null; } notifyListeners(); }
@@ -179,32 +206,33 @@ class GameRecorderController extends ChangeNotifier {
   void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
 
+  // ★修正: 勝敗・スコアの引数を追加
   Future<bool> saveMatchToDb({
-    String? opponentName,
-    String? opponentId,
-    String? venueName,
-    String? venueId,
+    MatchResult result = MatchResult.none,
+    int? scoreOwn,
+    int? scoreOpponent,
+    bool isExtraTime = false,
+    int? extraScoreOwn,
+    int? extraScoreOpponent,
   }) async {
     final currentTeam = _teamStore.currentTeam;
     if (currentTeam == null) return false;
     final dateStr = DateFormat('yyyy-MM-dd').format(_matchDate);
 
-    String finalOpponentName = opponentName ?? "";
-    String? finalOpponentId = opponentId;
-    String? finalVenueName = venueName;
-    String? finalVenueId = venueId;
+    String finalOpponentName = _opponentName;
+    String? finalOpponentId = _opponentId;
+    String? finalVenueName = _venueName;
+    String? finalVenueId = _venueId;
 
     if (finalOpponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
       finalOpponentId = await _teamStore.ensureItemExists(finalOpponentName, RosterCategory.opponent);
     }
-    if (finalVenueName != null && finalVenueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
+    if (finalVenueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
       finalVenueId = await _teamStore.ensureItemExists(finalVenueName, RosterCategory.venue);
     }
 
     if (finalOpponentName.isEmpty) {
       final existingMatches = await _matchDao.getMatches(currentTeam.id);
-      final matchesToday = existingMatches.where((m) => m['date'] == dateStr).length;
-
       final regex = RegExp(r'^試合-.* #(\d+)$');
       final existingNumbers = <int>{};
 
@@ -233,6 +261,13 @@ class GameRecorderController extends ChangeNotifier {
       'venue_id': finalVenueId,
       'date': dateStr,
       'match_type': _matchType.index,
+      // ★追加: 勝敗・スコア
+      'result': result.index,
+      'score_own': scoreOwn,
+      'score_opponent': scoreOpponent,
+      'is_extra_time': isExtraTime ? 1 : 0,
+      'extra_score_own': extraScoreOwn,
+      'extra_score_opponent': extraScoreOpponent,
     };
 
     final logMaps = logs.reversed.map((log) { final map = log.toJson(); map['opponent'] = finalOpponentName; return map; }).toList();
@@ -266,6 +301,8 @@ class GameRecorderController extends ChangeNotifier {
     courtPlayers.clear();
     benchPlayers.clear();
     absentPlayers.clear();
+    _opponentName = ""; _opponentId = null; _venueName = ""; _venueId = null;
+
     await loadData();
     selectedForMove.clear();
     selectedPlayer = null;

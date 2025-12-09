@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/team_store.dart';
 import '../../domain/schema.dart';
-import '../../domain/roster_category.dart'; // ★追加
+import '../../domain/roster_category.dart';
 
 class SchemaSettingsScreen extends ConsumerStatefulWidget {
-  final RosterCategory targetCategory; // ★修正
+  final RosterCategory targetCategory;
 
   const SchemaSettingsScreen({super.key, this.targetCategory = RosterCategory.player});
 
@@ -57,14 +57,41 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     }
   }
 
+  // データ型の日本語表示用ヘルパー
+  String _getFieldTypeLabel(FieldType type) {
+    switch (type) {
+      case FieldType.text: return '自由テキスト';
+      case FieldType.number: return '数値';
+      case FieldType.date: return '日付';
+      case FieldType.uniformNumber: return '背番号';
+      case FieldType.courtName: return 'コートネーム';
+      case FieldType.personName: return '氏名';
+      case FieldType.personKana: return 'フリガナ';
+      case FieldType.address: return '住所';
+      case FieldType.phone: return '電話番号';
+      case FieldType.age: return '年齢';
+    }
+  }
+
   void _showFieldDialog({FieldDefinition? field, int? index}) {
     final isEditing = field != null;
+    final bool isSystem = field?.isSystem ?? false;
+
     final nameController = TextEditingController(text: field?.label ?? '');
 
+    // 基本項目の場合、プルダウンにない型が含まれている可能性があるため
+    // 初期値として安全な値をセットしておく（表示用には使わない）
     FieldType selectedType = field?.type ?? FieldType.text;
+
+    // カスタム項目の場合のみプルダウンで選べる型に限定する
+    if (!isSystem && !FieldType.values.contains(selectedType)) {
+      selectedType = FieldType.text;
+    }
+
     bool useDropdown = field?.useDropdown ?? false;
     bool isRange = field?.isRange ?? false;
     bool isUnique = field?.isUnique ?? false;
+    bool isRequired = field?.isRequired ?? false;
 
     final optionInputCtrl = TextEditingController();
     List<String> tempOptions = field != null ? List.from(field.options) : [];
@@ -88,6 +115,8 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
             }
 
             Widget buildConfigArea() {
+              if (isSystem) return const SizedBox();
+
               if (selectedType == FieldType.text) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -143,41 +172,68 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
             }
 
             return AlertDialog(
-              title: Text(isEditing ? '項目を編集' : '項目を追加'),
+              title: Text(isEditing ? (isSystem ? '基本項目の設定変更' : '項目を編集') : '項目を追加'),
               content: SizedBox(
                 width: 500,
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      TextField(controller: nameController, decoration: const InputDecoration(labelText: '項目名'), autofocus: true),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<FieldType>(
-                        value: selectedType,
-                        decoration: const InputDecoration(labelText: 'データの種類'),
-                        items: const [
-                          DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
-                          DropdownMenuItem(value: FieldType.number, child: Text('数値')),
-                          DropdownMenuItem(value: FieldType.date, child: Text('日付')),
-                          DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')),
-                          DropdownMenuItem(value: FieldType.courtName, child: Text('コートネーム')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setStateDialog(() {
-                              selectedType = val;
-                              useDropdown = false;
-                              isRange = false;
-                              isUnique = (val == FieldType.uniformNumber);
-                              tempOptions.clear();
-                            });
-                          }
-                        },
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: '項目名'),
+                        autofocus: !isSystem,
+                        enabled: !isSystem,
+                        style: isSystem ? const TextStyle(color: Colors.grey) : null,
                       ),
+                      const SizedBox(height: 16),
+
+                      // ★修正: 基本項目の場合、プルダウンではなくテキスト表示にする (クラッシュ回避)
+                      if (isSystem)
+                        TextFormField(
+                          initialValue: _getFieldTypeLabel(field!.type),
+                          decoration: const InputDecoration(labelText: 'データの種類', border: OutlineInputBorder()),
+                          enabled: false,
+                          style: const TextStyle(color: Colors.black54),
+                        )
+                      else
+                        DropdownButtonFormField<FieldType>(
+                          value: selectedType,
+                          decoration: const InputDecoration(labelText: 'データの種類'),
+                          items: const [
+                            DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
+                            DropdownMenuItem(value: FieldType.number, child: Text('数値')),
+                            DropdownMenuItem(value: FieldType.date, child: Text('日付')),
+                            DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')),
+                            DropdownMenuItem(value: FieldType.courtName, child: Text('コートネーム')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setStateDialog(() {
+                                selectedType = val;
+                                useDropdown = false;
+                                isRange = false;
+                                isUnique = (val == FieldType.uniformNumber);
+                                tempOptions.clear();
+                              });
+                            }
+                          },
+                        ),
+
                       buildConfigArea(),
+
+                      const Divider(),
+                      CheckboxListTile(
+                        title: const Text('必須項目にする'),
+                        subtitle: const Text('データ登録時に入力を強制します'),
+                        value: isRequired,
+                        onChanged: (v) => setStateDialog(() => isRequired = v!),
+                        contentPadding: EdgeInsets.zero,
+                      ),
                       if (useDropdown || selectedType == FieldType.uniformNumber || selectedType == FieldType.text)
                         CheckboxListTile(
                           title: const Text('重複を禁止する'),
+                          subtitle: const Text('他のデータと同じ値を入力できなくなります'),
                           value: isUnique,
                           onChanged: (v) => setStateDialog(() => isUnique = v!),
                           contentPadding: EdgeInsets.zero,
@@ -194,9 +250,10 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                     final newDef = FieldDefinition(
                       id: field?.id,
                       label: nameController.text,
-                      type: selectedType,
-                      isSystem: field?.isSystem ?? false,
+                      type: isSystem ? field!.type : selectedType, // システム項目の場合は元の型を維持
+                      isSystem: isSystem,
                       isVisible: field?.isVisible ?? true,
+                      isRequired: isRequired,
                       useDropdown: useDropdown,
                       isRange: isRange,
                       options: tempOptions,
@@ -298,6 +355,42 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     }
   }
 
+  // ★追加: 編集ボタン押下時の処理 (表示確認ダイアログ)
+  void _onEditPressed(FieldDefinition field, int index) {
+    if (field.isSystem && !field.isVisible) {
+      showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("表示設定"),
+            content: Text("「${field.label}」は現在、非表示に設定されています。\n編集するために表示設定をONにしますか？"),
+            actions: [
+              TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _showFieldDialog(field: field, index: index); // そのまま編集へ
+                  },
+                  child: const Text("いいえ (編集のみ)")
+              ),
+              ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    // 表示をONにしてから編集へ
+                    setState(() {
+                      field.isVisible = true;
+                      _isDirty = true;
+                    });
+                    _showFieldDialog(field: field, index: index);
+                  },
+                  child: const Text("はい")
+              ),
+            ],
+          )
+      );
+    } else {
+      _showFieldDialog(field: field, index: index);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -317,7 +410,7 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: Text('項目の並び替え、追加、編集ができます。\n「基本項目」は削除できませんが、表示/非表示を切り替えられます。', style: TextStyle(color: Colors.grey), textAlign: TextAlign.center),
+              child: Text('項目の並び替え、追加、編集ができます。\n「基本項目」は削除できませんが、必須設定などは変更可能です。', style: TextStyle(color: Colors.grey), textAlign: TextAlign.center),
             ),
             Expanded(
               child: ReorderableListView.builder(
@@ -342,22 +435,31 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                           const Padding(padding: EdgeInsets.only(left: 8.0), child: Chip(label: Text("基本", style: TextStyle(fontSize: 10)), padding: EdgeInsets.zero, visualDensity: VisualDensity.compact)),
                       ],
                     ),
-                    trailing: field.isSystem
-                        ? Switch(
-                      value: field.isVisible,
-                      activeColor: Colors.blue,
-                      onChanged: (val) {
-                        setState(() {
-                          field.isVisible = val;
-                          _isDirty = true;
-                        });
-                      },
-                    )
-                        : Row(
+                    subtitle: field.isRequired ? const Text("必須", style: TextStyle(color: Colors.red, fontSize: 11)) : null,
+                    trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFieldDialog(field: field, index: index)),
-                        IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(field)),
+                        if (field.isSystem)
+                          Switch(
+                            value: field.isVisible,
+                            activeColor: Colors.blue,
+                            onChanged: (val) {
+                              setState(() {
+                                field.isVisible = val;
+                                _isDirty = true;
+                              });
+                            },
+                          ),
+                        IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            // ★修正: 新しいハンドラを使用
+                            onPressed: () => _onEditPressed(field, index)
+                        ),
+                        if (!field.isSystem)
+                          IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _confirmDelete(field)
+                          ),
                         const Icon(Icons.drag_handle, color: Colors.grey),
                       ],
                     ),

@@ -23,6 +23,13 @@ class MatchDao {
         'venue_id': matchData['venue_id'],
         'date': matchData['date'],
         'match_type': matchData['match_type'] ?? 0,
+        // ★追加: 勝敗・スコア
+        'result': matchData['result'] ?? 0,
+        'score_own': matchData['score_own'],
+        'score_opponent': matchData['score_opponent'],
+        'is_extra_time': matchData['is_extra_time'] ?? 0,
+        'extra_score_own': matchData['extra_score_own'],
+        'extra_score_opponent': matchData['extra_score_opponent'],
         'created_at': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -93,15 +100,23 @@ class MatchDao {
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
   }
 
-  // --- 試合情報の更新 ---
-  Future<void> updateMatchInfo(
-      String matchId,
-      String newDate,
-      String newOpponent,
-      String? newOpponentId,
-      String? newVenueName,
-      String? newVenueId,
-      int newMatchType) async {
+  // --- 試合情報の更新 (引数拡張版) ---
+  Future<void> updateMatchInfo({
+    required String matchId,
+    required String newDate,
+    required String newOpponent,
+    String? newOpponentId,
+    String? newVenueName,
+    String? newVenueId,
+    required int newMatchType,
+    // ★追加: 勝敗・スコア関連
+    int result = 0,
+    int? scoreOwn,
+    int? scoreOpponent,
+    int isExtraTime = 0,
+    int? extraScoreOwn,
+    int? extraScoreOpponent,
+  }) async {
     final db = await _dbHelper.database;
     await db.update('matches', {
       'date': newDate,
@@ -109,7 +124,14 @@ class MatchDao {
       'opponent_id': newOpponentId,
       'venue_name': newVenueName,
       'venue_id': newVenueId,
-      'match_type': newMatchType
+      'match_type': newMatchType,
+      // ★追加
+      'result': result,
+      'score_own': scoreOwn,
+      'score_opponent': scoreOpponent,
+      'is_extra_time': isExtraTime,
+      'extra_score_own': extraScoreOwn,
+      'extra_score_opponent': extraScoreOpponent,
     }, where: 'id = ?', whereArgs: [matchId]);
   }
 
@@ -126,7 +148,6 @@ class MatchDao {
     });
   }
 
-  // --- アクション名一括変更 ---
   Future<void> updateActionNameInLogs(String teamId, String oldName, String newName) async {
     final db = await _dbHelper.database;
     await db.rawUpdate('''
@@ -160,9 +181,6 @@ class MatchDao {
     ''', [newSubName, actionName, oldSubName, teamId]);
   }
 
-  // --- ★追加: 対戦相手名・会場名の一括変更用 ---
-
-  // 対戦相手の使用数カウント
   Future<int> countOpponentNameUsage(String teamId, String name) async {
     final db = await _dbHelper.database;
     final result = await db.rawQuery(
@@ -172,7 +190,6 @@ class MatchDao {
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
-  // 対戦相手名の一括更新
   Future<void> updateOpponentName(String teamId, String oldName, String newName) async {
     final db = await _dbHelper.database;
     await db.update(
@@ -183,7 +200,6 @@ class MatchDao {
     );
   }
 
-  // 会場名の使用数カウント
   Future<int> countVenueNameUsage(String teamId, String name) async {
     final db = await _dbHelper.database;
     final result = await db.rawQuery(
@@ -193,7 +209,6 @@ class MatchDao {
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
-  // 会場名の一括更新
   Future<void> updateVenueName(String teamId, String oldName, String newName) async {
     final db = await _dbHelper.database;
     await db.update(
@@ -226,7 +241,6 @@ class MatchDao {
     return result.map((row) => row['player_number'] as String).toList();
   }
 
-  // --- 削除 ---
   Future<void> deleteMatch(String matchId) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -236,7 +250,6 @@ class MatchDao {
     });
   }
 
-  // --- 分析用 ---
   Future<List<Map<String, dynamic>>> getLogsInPeriod(
       String teamId, String startDate, String endDate,
       [List<int>? matchTypes]) async {

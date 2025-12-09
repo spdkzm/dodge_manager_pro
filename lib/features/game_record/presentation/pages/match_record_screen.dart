@@ -27,11 +27,12 @@ class MatchRecordScreen extends HookConsumerWidget {
     final teamStore = ref.watch(teamStoreProvider);
     final currentTeam = teamStore.currentTeam;
 
-    // 対戦相手・会場の一時保存用 (State)
-    final opponentController = useTextEditingController();
-    final venueController = useTextEditingController();
-    final opponentId = useState<String?>(null);
-    final venueId = useState<String?>(null);
+    final opponentController = useTextEditingController(text: controller.opponentName);
+    final venueController = useTextEditingController(text: controller.venueName);
+
+    ref.listen(teamStoreProvider, (previous, next) {
+      controller.loadData();
+    });
 
     useEffect(() {
       Future.microtask(() => controller.loadData());
@@ -41,7 +42,6 @@ class MatchRecordScreen extends HookConsumerWidget {
     final tabController = useTabController(initialLength: 3);
     useListenable(tabController);
 
-    // ヘルパー: 種別表示
     String getMatchTypeName(MatchType type) {
       switch (type) {
         case MatchType.official: return "大会";
@@ -50,17 +50,18 @@ class MatchRecordScreen extends HookConsumerWidget {
       }
     }
 
-    // --- 一括編集ダイアログ ---
     void showMatchInfoDialog() {
-      // リストデータの準備
       final opponents = currentTeam?.opponentItems ?? [];
       final venues = currentTeam?.venueItems ?? [];
-      final opSchema = currentTeam?.opponentSchema.firstWhere((f) => f.label == 'チーム名', orElse: () => currentTeam.opponentSchema.first);
-      final veSchema = currentTeam?.venueSchema.firstWhere((f) => f.label == '会場名', orElse: () => currentTeam.venueSchema.first);
+      final opSchema = currentTeam?.opponentSchema.firstWhere((f) => f.label == 'チーム名', orElse: () => currentTeam!.opponentSchema.first);
+      final veSchema = currentTeam?.venueSchema.firstWhere((f) => f.label == '会場名', orElse: () => currentTeam!.venueSchema.first);
 
-      // ダイアログ内での一時的な状態管理
       MatchType tempType = controller.matchType;
       DateTime tempDate = controller.matchDate;
+      opponentController.text = controller.opponentName;
+      venueController.text = controller.venueName;
+      String? tempOpponentId = controller.opponentId;
+      String? tempVenueId = controller.venueId;
 
       showDialog(
         context: context,
@@ -73,7 +74,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 1. 日付
                       const Text("日付", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                       InkWell(
                         onTap: () async {
@@ -101,7 +101,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                       ),
                       const SizedBox(height: 16),
 
-                      // 2. 試合種別
                       const Text("試合種別", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                       DropdownButton<MatchType>(
                         value: tempType,
@@ -116,7 +115,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                       ),
                       const SizedBox(height: 16),
 
-                      // 3. 対戦相手
                       const Text("対戦相手", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                       Row(children: [
                         Expanded(child: TextField(controller: opponentController, decoration: const InputDecoration(hintText: "直接入力も可"))),
@@ -126,7 +124,7 @@ class MatchRecordScreen extends HookConsumerWidget {
                           onSelected: (item) {
                             final name = item.data[opSchema?.id]?.toString() ?? "";
                             opponentController.text = name;
-                            opponentId.value = item.id;
+                            tempOpponentId = item.id;
                           },
                           itemBuilder: (context) => opponents.map((item) {
                             final name = item.data[opSchema?.id]?.toString() ?? "名称未設定";
@@ -137,7 +135,6 @@ class MatchRecordScreen extends HookConsumerWidget {
 
                       const SizedBox(height: 16),
 
-                      // 4. 会場
                       const Text("会場", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                       Row(children: [
                         Expanded(child: TextField(controller: venueController, decoration: const InputDecoration(hintText: "直接入力も可"))),
@@ -147,7 +144,7 @@ class MatchRecordScreen extends HookConsumerWidget {
                           onSelected: (item) {
                             final name = item.data[veSchema?.id]?.toString() ?? "";
                             venueController.text = name;
-                            venueId.value = item.id;
+                            tempVenueId = item.id;
                           },
                           itemBuilder: (context) => venues.map((item) {
                             final name = item.data[veSchema?.id]?.toString() ?? "名称未設定";
@@ -162,10 +159,14 @@ class MatchRecordScreen extends HookConsumerWidget {
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
                 ElevatedButton(
                     onPressed: () {
-                      // Controllerに変更を反映
                       controller.updateMatchDate(tempDate);
                       controller.updateMatchType(tempType);
-                      // 対戦相手・会場はTextController経由で画面に反映済み
+                      controller.updateMatchInfo(
+                          opponentName: opponentController.text,
+                          opponentId: tempOpponentId,
+                          venueName: venueController.text,
+                          venueId: tempVenueId
+                      );
                       Navigator.pop(context);
                     },
                     child: const Text("設定")
@@ -184,36 +185,133 @@ class MatchRecordScreen extends HookConsumerWidget {
       }
     }
 
+    // ★修正: 試合終了ダイアログ（勝敗・スコア入力対応）
     void handleEndMatch() {
       controller.endMatch();
+
+      // 設定値の読み込み
+      final bool isResultEnabled = controller.settings.isResultRecordingEnabled;
+      final bool isScoreEnabled = controller.settings.isScoreRecordingEnabled;
+
+      // 入力用の一時変数
+      MatchResult tempResult = MatchResult.none;
+      MatchResult tempExtraResult = MatchResult.none;
+      final scoreOwnCtrl = TextEditingController();
+      final scoreOppCtrl = TextEditingController();
+      final extraScoreOwnCtrl = TextEditingController();
+      final extraScoreOppCtrl = TextEditingController();
+
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text("試合記録の保存"),
-          content: const Text("記録をデータベースに保存しますか？\n保存すると現在のログはクリアされます。"),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
-            ElevatedButton(onPressed: () async {
-              final success = await controller.saveMatchToDb(
-                  opponentName: opponentController.text,
-                  opponentId: opponentId.value,
-                  venueName: venueController.text,
-                  venueId: venueId.value
-              );
+        builder: (context) {
+          return StatefulBuilder(builder: (context, setStateDialog) {
 
-              if (context.mounted) {
-                Navigator.pop(context);
-                if (success) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("保存しました")));
-                else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("チーム未選択のため保存できません"), backgroundColor: Colors.red));
-              }
-            }, child: const Text("保存"))
-          ],
-        ),
+            // スコア入力ウィジェットビルダー
+            Widget buildScoreInput(String label, TextEditingController ctrl1, TextEditingController ctrl2) {
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(width: 50, child: TextField(controller: ctrl1, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()))),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text("-", style: TextStyle(fontWeight: FontWeight.bold))),
+                  SizedBox(width: 50, child: TextField(controller: ctrl2, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()))),
+                ],
+              );
+            }
+
+            // 勝敗選択ボタンビルダー
+            Widget buildResultToggle(MatchResult current, Function(MatchResult) onSelect) {
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ChoiceChip(label: const Text("勝"), selected: current == MatchResult.win, onSelected: (v) => onSelect(MatchResult.win), selectedColor: Colors.red.shade100),
+                  const SizedBox(width: 8),
+                  ChoiceChip(label: const Text("引分"), selected: current == MatchResult.draw, onSelected: (v) => onSelect(MatchResult.draw), selectedColor: Colors.grey.shade300),
+                  const SizedBox(width: 8),
+                  ChoiceChip(label: const Text("負"), selected: current == MatchResult.lose, onSelected: (v) => onSelect(MatchResult.lose), selectedColor: Colors.blue.shade100),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: const Text("試合記録の保存"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text("記録をデータベースに保存しますか？"),
+                    if (isResultEnabled) ...[
+                      const Divider(height: 24),
+                      const Text("試合結果", style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      buildResultToggle(tempResult, (r) => setStateDialog(() => tempResult = r)),
+
+                      if (isScoreEnabled) ...[
+                        const SizedBox(height: 8),
+                        buildScoreInput("スコア", scoreOwnCtrl, scoreOppCtrl),
+                      ],
+
+                      // 引き分け選択時のみ表示
+                      if (tempResult == MatchResult.draw) ...[
+                        const Divider(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
+                          child: Column(
+                            children: [
+                              const Text("▼ 延長・決着戦 (オプション)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text("なし", style: TextStyle(fontSize: 12)),
+                                  Radio<MatchResult>(value: MatchResult.none, groupValue: tempExtraResult, onChanged: (v) => setStateDialog(() => tempExtraResult = v!)),
+                                  const Text("勝", style: TextStyle(fontSize: 12)),
+                                  Radio<MatchResult>(value: MatchResult.win, groupValue: tempExtraResult, onChanged: (v) => setStateDialog(() => tempExtraResult = v!)),
+                                  const Text("負", style: TextStyle(fontSize: 12)),
+                                  Radio<MatchResult>(value: MatchResult.lose, groupValue: tempExtraResult, onChanged: (v) => setStateDialog(() => tempExtraResult = v!)),
+                                ],
+                              ),
+                              if (isScoreEnabled && tempExtraResult != MatchResult.none)
+                                buildScoreInput("延長スコア", extraScoreOwnCtrl, extraScoreOppCtrl),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
+                ElevatedButton(onPressed: () async {
+                  // 保存処理呼び出し
+                  // 最終的な結果: 延長があれば延長の結果、なければ本戦の結果
+                  MatchResult finalResult = tempExtraResult != MatchResult.none ? tempExtraResult : tempResult;
+                  bool isExtra = tempExtraResult != MatchResult.none;
+
+                  final success = await controller.saveMatchToDb(
+                    result: finalResult,
+                    scoreOwn: int.tryParse(scoreOwnCtrl.text),
+                    scoreOpponent: int.tryParse(scoreOppCtrl.text),
+                    isExtraTime: isExtra,
+                    extraScoreOwn: int.tryParse(extraScoreOwnCtrl.text),
+                    extraScoreOpponent: int.tryParse(extraScoreOppCtrl.text),
+                  );
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    if (success) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("保存しました")));
+                    else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("チーム未選択のため保存できません"), backgroundColor: Colors.red));
+                  }
+                }, child: const Text("保存"))
+              ],
+            );
+          });
+        },
       );
     }
 
-    // ログ編集ダイアログ
     void showEditLogDialog(LogEntry log, int index) {
       controller.deleteLog(index);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -227,20 +325,14 @@ class MatchRecordScreen extends HookConsumerWidget {
       );
     }
 
-    if (controller.settings.squadNumbers.isEmpty && controller.benchPlayers.isEmpty) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    // 情報表示用の文字列生成
     final dateStr = DateFormat('MM/dd').format(controller.matchDate);
     final typeStr = getMatchTypeName(controller.matchType);
-    final opponentStr = opponentController.text.isEmpty ? "対戦相手未定" : "VS ${opponentController.text}";
-    final venueStr = venueController.text.isEmpty ? "" : "@${venueController.text}";
+    final opponentStr = controller.opponentName.isEmpty ? "対戦相手未定" : "VS ${controller.opponentName}";
+    final venueStr = controller.venueName.isEmpty ? "" : "@${controller.venueName}";
 
     return Scaffold(
       appBar: AppBar(
         elevation: 1,
-        // タイトルエリアをタップ可能にする
         title: InkWell(
           onTap: showMatchInfoDialog,
           child: Container(
@@ -256,12 +348,10 @@ class MatchRecordScreen extends HookConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // 上段: 日付 (種別)
                       Text(
                           "$dateStr ($typeStr)",
                           style: const TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.bold)
                       ),
-                      // 下段: VS 相手 @会場
                       Text(
                         "$opponentStr $venueStr",
                         style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
@@ -276,7 +366,6 @@ class MatchRecordScreen extends HookConsumerWidget {
           ),
         ),
         actions: [
-          // タイマー表示
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Center(
@@ -291,7 +380,6 @@ class MatchRecordScreen extends HookConsumerWidget {
               ),
             ),
           ),
-          // 設定メニュー
           PopupMenuButton<String>(
             onSelected: (val) async {
               if (val == 'layout') await Navigator.push(context, MaterialPageRoute(builder: (_) => const ButtonLayoutSettingsScreen()));

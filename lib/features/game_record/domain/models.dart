@@ -7,6 +7,8 @@ part 'models.g.dart';
 enum ActionResult { none, success, failure }
 enum LogType { action, system }
 enum MatchType { practiceMatch, official, practice }
+// ★追加: 勝敗Enum
+enum MatchResult { none, win, lose, draw }
 
 class ActionResultConverter implements JsonConverter<ActionResult, int> {
   const ActionResultConverter();
@@ -30,6 +32,15 @@ class MatchTypeConverter implements JsonConverter<MatchType, int> {
   MatchType fromJson(int json) => MatchType.values.length > json ? MatchType.values[json] : MatchType.practiceMatch;
   @override
   int toJson(MatchType object) => object.index;
+}
+
+// ★追加: MatchResultConverter
+class MatchResultConverter implements JsonConverter<MatchResult, int> {
+  const MatchResultConverter();
+  @override
+  MatchResult fromJson(int json) => MatchResult.values.length > json ? MatchResult.values[json] : MatchResult.none;
+  @override
+  int toJson(MatchResult object) => object.index;
 }
 
 @freezed
@@ -68,12 +79,18 @@ class MatchRecord with _$MatchRecord {
     required String id,
     required String date,
     required String opponent,
-    // ★追加: ID紐付け用
     String? opponentId,
     String? venueName,
     String? venueId,
     required List<LogEntry> logs,
     @MatchTypeConverter() @Default(MatchType.practiceMatch) MatchType matchType,
+    // ★追加: 勝敗・スコア情報
+    @MatchResultConverter() @Default(MatchResult.none) MatchResult result,
+    int? scoreOwn,
+    int? scoreOpponent,
+    @Default(false) bool isExtraTime,
+    int? extraScoreOwn,
+    int? extraScoreOpponent,
   }) = _MatchRecord;
 
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);
@@ -100,6 +117,9 @@ class AppSettings with _$AppSettings {
     @Default(5) int matchDurationMinutes,
     @Default(3) int gridColumns,
     @Default("練習試合") String lastOpponent,
+    // ★追加: 記録オプション設定
+    @Default(false) bool isResultRecordingEnabled,
+    @Default(false) bool isScoreRecordingEnabled,
   }) = _AppSettings;
 
   factory AppSettings.fromJson(Map<String, dynamic> json) =>

@@ -12,7 +12,6 @@ class BackupService {
   // --- バックアップ作成 (エクスポート) ---
   Future<String?> createBackup() async {
     try {
-      // 1. 現在のDBファイルのパスを取得
       final dbPath = await _dbHelper.getDbPath();
       final dbFile = File(dbPath);
 
@@ -20,17 +19,14 @@ class BackupService {
         throw Exception("データベースファイルが見つかりません");
       }
 
-      // 2. 出力ファイル名の生成
       final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
       final fileName = 'dodge_manager_backup_$dateStr.db';
 
-      // 3. プラットフォーム別の保存処理
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // デスクトップ: 保存ダイアログ
         String? outputFile = await FilePicker.platform.saveFile(
           dialogTitle: 'バックアップファイルの保存場所を選択',
           fileName: fileName,
-          type: FileType.any, // .db 拡張子用
+          type: FileType.any,
         );
 
         if (outputFile != null) {
@@ -38,7 +34,6 @@ class BackupService {
           return outputFile;
         }
       } else {
-        // モバイル: 一時フォルダにコピーしてShare
         final tempDir = await getTemporaryDirectory();
         final tempPath = '${tempDir.path}/$fileName';
         await dbFile.copy(tempPath);
@@ -55,28 +50,18 @@ class BackupService {
   // --- バックアップから復元 (インポート) ---
   Future<bool> restoreBackup() async {
     try {
-      // 1. ファイル選択
       FilePickerResult? result = await FilePicker.platform.pickFiles();
 
       if (result == null || result.files.single.path == null) return false;
 
       final sourcePath = result.files.single.path!;
 
-      // 簡易チェック: 拡張子やサイズ (必要なら)
-      // if (!sourcePath.endsWith('.db')) throw Exception("無効なファイル形式です");
-
-      // 2. データベース接続を閉じる (重要)
       await _dbHelper.close();
 
-      // 3. ファイルの上書き
       final dbPath = await _dbHelper.getDbPath();
-      final dbFile = File(dbPath);
 
-      // 元のファイルを一応バックアップするか？ -> 今回は「上書き」仕様なのでそのまま
+      // ★修正: 不要なFileオブジェクト作成を削除
       await File(sourcePath).copy(dbPath);
-
-      // 4. アプリ再起動を促すため、ここでは接続を再開しない
-      // (再開してもメモリ上のキャッシュと不整合が起きる可能性があるため)
 
       return true;
     } catch (e) {

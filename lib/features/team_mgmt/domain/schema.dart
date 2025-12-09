@@ -1,4 +1,4 @@
-// lib/features/team_mgmt/schema.dart
+// lib/features/team_mgmt/domain/schema.dart
 import 'package:uuid/uuid.dart';
 
 enum FieldType {
@@ -11,7 +11,7 @@ enum FieldType {
   phone,
   age,
   uniformNumber,
-  courtName, // ★追加: コートネーム
+  courtName,
 }
 
 class FieldDefinition {
@@ -20,6 +20,7 @@ class FieldDefinition {
   FieldType type;
   bool isSystem;
   bool isVisible;
+  bool isRequired; // ★追加: 必須項目フラグ
 
   bool useDropdown;
   bool isRange;
@@ -34,6 +35,7 @@ class FieldDefinition {
     this.type = FieldType.text,
     this.isSystem = false,
     this.isVisible = true,
+    this.isRequired = false, // ★デフォルトfalse
     this.useDropdown = false,
     this.isRange = false,
     this.options = const [],
@@ -44,7 +46,8 @@ class FieldDefinition {
 
   FieldDefinition clone() {
     return FieldDefinition(
-      id: id, label: label, type: type, isSystem: isSystem, isVisible: isVisible,
+      id: id, label: label, type: type, isSystem: isSystem,
+      isVisible: isVisible, isRequired: isRequired, // ★追加
       useDropdown: useDropdown, isRange: isRange, options: List.from(options),
       minNum: minNum, maxNum: maxNum, isUnique: isUnique,
     );
@@ -56,6 +59,7 @@ class FieldDefinition {
     'type': type.index,
     'isSystem': isSystem,
     'isVisible': isVisible,
+    'isRequired': isRequired, // ★追加
     'useDropdown': useDropdown,
     'isRange': isRange,
     'options': options,
@@ -71,6 +75,7 @@ class FieldDefinition {
       type: FieldType.values[json['type'] ?? 0],
       isSystem: json['isSystem'] ?? false,
       isVisible: json['isVisible'] ?? true,
+      isRequired: json['isRequired'] ?? false, // ★追加
       useDropdown: json['useDropdown'] ?? false,
       isRange: json['isRange'] ?? false,
       options: List<String>.from(json['options'] ?? []),

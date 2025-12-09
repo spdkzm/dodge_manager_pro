@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../../game_record/data/match_dao.dart';
 import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
-// ★追加: カテゴリEnumをインポート
 import '../../team_mgmt/domain/roster_category.dart';
 import '../../game_record/domain/models.dart';
 import '../../settings/data/action_dao.dart';
@@ -47,7 +46,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchDao.deleteMatchLog(logId);
   }
 
-  // 試合情報の更新
   Future<void> updateMatchInfo(
       String matchId,
       DateTime newDate,
@@ -64,15 +62,12 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
     final dateStr = DateFormat('yyyy-MM-dd').format(newDate);
 
-    // 未登録なら自動登録
     String? finalOpponentId = opponentId;
     String? finalVenueId = venueId;
 
-    // ★修正: 1 -> RosterCategory.opponent
     if (opponentName != null && opponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
       finalOpponentId = await teamStore.ensureItemExists(opponentName, RosterCategory.opponent);
     }
-    // ★修正: 2 -> RosterCategory.venue
     if (venueName != null && venueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
       finalVenueId = await teamStore.ensureItemExists(venueName, RosterCategory.venue);
     }
@@ -102,16 +97,54 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     }
 
     await _matchDao.updateMatchInfo(
-        matchId,
-        dateStr,
-        newOpponentName,
-        finalOpponentId,
-        venueName,
-        finalVenueId,
-        newType.index
+        matchId: matchId,
+        newDate: dateStr,
+        newOpponent: newOpponentName,
+        newOpponentId: finalOpponentId,
+        newVenueName: venueName,
+        newVenueId: finalVenueId,
+        newMatchType: newType.index
     );
 
-    // 更新後に詳細データを再ロードする
+    await _loadSelectedMatchRecord(matchId);
+  }
+
+  // ★追加: 勝敗・スコアの更新
+  Future<void> updateMatchResult(
+      String matchId,
+      MatchResult result,
+      int? scoreOwn,
+      int? scoreOpponent,
+      bool isExtraTime,
+      int? extraScoreOwn,
+      int? extraScoreOpponent,
+      ) async {
+
+    // updateMatchInfoの引数を拡張してもよいが、MatchDaoのupdateMatchInfoは既に拡張済みなので
+    // 現在のMatchRecordを取得して、変更がない部分はそのまま渡す必要がある。
+    // ここではDAOを直接叩く方が安全（updateMatchInfoは日付なども必須引数にしているため）
+    // -> MatchDao.updateMatchInfoは全項目更新型にしたので、現在の値をロードして合成する
+
+    final currentRecord = ref.read(selectedMatchRecordProvider);
+    if (currentRecord == null || currentRecord.id != matchId) return;
+
+    await _matchDao.updateMatchInfo(
+      matchId: matchId,
+      newDate: currentRecord.date,
+      newOpponent: currentRecord.opponent,
+      newOpponentId: currentRecord.opponentId,
+      newVenueName: currentRecord.venueName,
+      newVenueId: currentRecord.venueId,
+      newMatchType: currentRecord.matchType.index,
+      // 変更点
+      result: result.index,
+      scoreOwn: scoreOwn,
+      scoreOpponent: scoreOpponent,
+      isExtraTime: isExtraTime ? 1 : 0,
+      extraScoreOwn: extraScoreOwn,
+      extraScoreOpponent: extraScoreOpponent,
+    );
+
     await _loadSelectedMatchRecord(matchId);
   }
 
@@ -284,6 +317,13 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       venueId: matchRow['venue_id'] as String?,
       logs: logs,
       matchType: MatchType.values[matchRow['match_type'] as int? ?? 0],
+      // ★追加: 読込
+      result: MatchResult.values[matchRow['result'] ?? 0],
+      scoreOwn: matchRow['score_own'],
+      scoreOpponent: matchRow['score_opponent'],
+      isExtraTime: (matchRow['is_extra_time'] ?? 0) == 1,
+      extraScoreOwn: matchRow['extra_score_own'],
+      extraScoreOpponent: matchRow['extra_score_opponent'],
     );
     ref.read(selectedMatchRecordProvider.notifier).state = record;
   }

@@ -643,13 +643,20 @@ MatchRecord _$MatchRecordFromJson(Map<String, dynamic> json) {
 mixin _$MatchRecord {
   String get id => throw _privateConstructorUsedError;
   String get date => throw _privateConstructorUsedError;
-  String get opponent => throw _privateConstructorUsedError; // ★追加: ID紐付け用
+  String get opponent => throw _privateConstructorUsedError;
   String? get opponentId => throw _privateConstructorUsedError;
   String? get venueName => throw _privateConstructorUsedError;
   String? get venueId => throw _privateConstructorUsedError;
   List<LogEntry> get logs => throw _privateConstructorUsedError;
   @MatchTypeConverter()
-  MatchType get matchType => throw _privateConstructorUsedError;
+  MatchType get matchType => throw _privateConstructorUsedError; // ★追加: 勝敗・スコア情報
+  @MatchResultConverter()
+  MatchResult get result => throw _privateConstructorUsedError;
+  int? get scoreOwn => throw _privateConstructorUsedError;
+  int? get scoreOpponent => throw _privateConstructorUsedError;
+  bool get isExtraTime => throw _privateConstructorUsedError;
+  int? get extraScoreOwn => throw _privateConstructorUsedError;
+  int? get extraScoreOpponent => throw _privateConstructorUsedError;
 
   /// Serializes this MatchRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -677,6 +684,12 @@ abstract class $MatchRecordCopyWith<$Res> {
     String? venueId,
     List<LogEntry> logs,
     @MatchTypeConverter() MatchType matchType,
+    @MatchResultConverter() MatchResult result,
+    int? scoreOwn,
+    int? scoreOpponent,
+    bool isExtraTime,
+    int? extraScoreOwn,
+    int? extraScoreOpponent,
   });
 }
 
@@ -703,6 +716,12 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
     Object? venueId = freezed,
     Object? logs = null,
     Object? matchType = null,
+    Object? result = null,
+    Object? scoreOwn = freezed,
+    Object? scoreOpponent = freezed,
+    Object? isExtraTime = null,
+    Object? extraScoreOwn = freezed,
+    Object? extraScoreOpponent = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -738,6 +757,30 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
                 ? _value.matchType
                 : matchType // ignore: cast_nullable_to_non_nullable
                       as MatchType,
+            result: null == result
+                ? _value.result
+                : result // ignore: cast_nullable_to_non_nullable
+                      as MatchResult,
+            scoreOwn: freezed == scoreOwn
+                ? _value.scoreOwn
+                : scoreOwn // ignore: cast_nullable_to_non_nullable
+                      as int?,
+            scoreOpponent: freezed == scoreOpponent
+                ? _value.scoreOpponent
+                : scoreOpponent // ignore: cast_nullable_to_non_nullable
+                      as int?,
+            isExtraTime: null == isExtraTime
+                ? _value.isExtraTime
+                : isExtraTime // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            extraScoreOwn: freezed == extraScoreOwn
+                ? _value.extraScoreOwn
+                : extraScoreOwn // ignore: cast_nullable_to_non_nullable
+                      as int?,
+            extraScoreOpponent: freezed == extraScoreOpponent
+                ? _value.extraScoreOpponent
+                : extraScoreOpponent // ignore: cast_nullable_to_non_nullable
+                      as int?,
           )
           as $Val,
     );
@@ -762,6 +805,12 @@ abstract class _$$MatchRecordImplCopyWith<$Res>
     String? venueId,
     List<LogEntry> logs,
     @MatchTypeConverter() MatchType matchType,
+    @MatchResultConverter() MatchResult result,
+    int? scoreOwn,
+    int? scoreOpponent,
+    bool isExtraTime,
+    int? extraScoreOwn,
+    int? extraScoreOpponent,
   });
 }
 
@@ -787,6 +836,12 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
     Object? venueId = freezed,
     Object? logs = null,
     Object? matchType = null,
+    Object? result = null,
+    Object? scoreOwn = freezed,
+    Object? scoreOpponent = freezed,
+    Object? isExtraTime = null,
+    Object? extraScoreOwn = freezed,
+    Object? extraScoreOpponent = freezed,
   }) {
     return _then(
       _$MatchRecordImpl(
@@ -822,6 +877,30 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
             ? _value.matchType
             : matchType // ignore: cast_nullable_to_non_nullable
                   as MatchType,
+        result: null == result
+            ? _value.result
+            : result // ignore: cast_nullable_to_non_nullable
+                  as MatchResult,
+        scoreOwn: freezed == scoreOwn
+            ? _value.scoreOwn
+            : scoreOwn // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        scoreOpponent: freezed == scoreOpponent
+            ? _value.scoreOpponent
+            : scoreOpponent // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        isExtraTime: null == isExtraTime
+            ? _value.isExtraTime
+            : isExtraTime // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        extraScoreOwn: freezed == extraScoreOwn
+            ? _value.extraScoreOwn
+            : extraScoreOwn // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        extraScoreOpponent: freezed == extraScoreOpponent
+            ? _value.extraScoreOpponent
+            : extraScoreOpponent // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -839,6 +918,12 @@ class _$MatchRecordImpl implements _MatchRecord {
     this.venueId,
     required final List<LogEntry> logs,
     @MatchTypeConverter() this.matchType = MatchType.practiceMatch,
+    @MatchResultConverter() this.result = MatchResult.none,
+    this.scoreOwn,
+    this.scoreOpponent,
+    this.isExtraTime = false,
+    this.extraScoreOwn,
+    this.extraScoreOpponent,
   }) : _logs = logs;
 
   factory _$MatchRecordImpl.fromJson(Map<String, dynamic> json) =>
@@ -850,7 +935,6 @@ class _$MatchRecordImpl implements _MatchRecord {
   final String date;
   @override
   final String opponent;
-  // ★追加: ID紐付け用
   @override
   final String? opponentId;
   @override
@@ -869,10 +953,26 @@ class _$MatchRecordImpl implements _MatchRecord {
   @JsonKey()
   @MatchTypeConverter()
   final MatchType matchType;
+  // ★追加: 勝敗・スコア情報
+  @override
+  @JsonKey()
+  @MatchResultConverter()
+  final MatchResult result;
+  @override
+  final int? scoreOwn;
+  @override
+  final int? scoreOpponent;
+  @override
+  @JsonKey()
+  final bool isExtraTime;
+  @override
+  final int? extraScoreOwn;
+  @override
+  final int? extraScoreOpponent;
 
   @override
   String toString() {
-    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType)';
+    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent)';
   }
 
   @override
@@ -891,7 +991,18 @@ class _$MatchRecordImpl implements _MatchRecord {
             (identical(other.venueId, venueId) || other.venueId == venueId) &&
             const DeepCollectionEquality().equals(other._logs, _logs) &&
             (identical(other.matchType, matchType) ||
-                other.matchType == matchType));
+                other.matchType == matchType) &&
+            (identical(other.result, result) || other.result == result) &&
+            (identical(other.scoreOwn, scoreOwn) ||
+                other.scoreOwn == scoreOwn) &&
+            (identical(other.scoreOpponent, scoreOpponent) ||
+                other.scoreOpponent == scoreOpponent) &&
+            (identical(other.isExtraTime, isExtraTime) ||
+                other.isExtraTime == isExtraTime) &&
+            (identical(other.extraScoreOwn, extraScoreOwn) ||
+                other.extraScoreOwn == extraScoreOwn) &&
+            (identical(other.extraScoreOpponent, extraScoreOpponent) ||
+                other.extraScoreOpponent == extraScoreOpponent));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -906,6 +1017,12 @@ class _$MatchRecordImpl implements _MatchRecord {
     venueId,
     const DeepCollectionEquality().hash(_logs),
     matchType,
+    result,
+    scoreOwn,
+    scoreOpponent,
+    isExtraTime,
+    extraScoreOwn,
+    extraScoreOpponent,
   );
 
   /// Create a copy of MatchRecord
@@ -932,6 +1049,12 @@ abstract class _MatchRecord implements MatchRecord {
     final String? venueId,
     required final List<LogEntry> logs,
     @MatchTypeConverter() final MatchType matchType,
+    @MatchResultConverter() final MatchResult result,
+    final int? scoreOwn,
+    final int? scoreOpponent,
+    final bool isExtraTime,
+    final int? extraScoreOwn,
+    final int? extraScoreOpponent,
   }) = _$MatchRecordImpl;
 
   factory _MatchRecord.fromJson(Map<String, dynamic> json) =
@@ -942,7 +1065,7 @@ abstract class _MatchRecord implements MatchRecord {
   @override
   String get date;
   @override
-  String get opponent; // ★追加: ID紐付け用
+  String get opponent;
   @override
   String? get opponentId;
   @override
@@ -953,7 +1076,20 @@ abstract class _MatchRecord implements MatchRecord {
   List<LogEntry> get logs;
   @override
   @MatchTypeConverter()
-  MatchType get matchType;
+  MatchType get matchType; // ★追加: 勝敗・スコア情報
+  @override
+  @MatchResultConverter()
+  MatchResult get result;
+  @override
+  int? get scoreOwn;
+  @override
+  int? get scoreOpponent;
+  @override
+  bool get isExtraTime;
+  @override
+  int? get extraScoreOwn;
+  @override
+  int? get extraScoreOpponent;
 
   /// Create a copy of MatchRecord
   /// with the given fields replaced by the non-null parameter values.
@@ -1244,7 +1380,14 @@ mixin _$AppSettings {
   int get gridColumns => throw _privateConstructorUsedError;
   set gridColumns(int value) => throw _privateConstructorUsedError;
   String get lastOpponent => throw _privateConstructorUsedError;
-  set lastOpponent(String value) => throw _privateConstructorUsedError;
+  set lastOpponent(String value) =>
+      throw _privateConstructorUsedError; // ★追加: 記録オプション設定
+  bool get isResultRecordingEnabled =>
+      throw _privateConstructorUsedError; // ★追加: 記録オプション設定
+  set isResultRecordingEnabled(bool value) =>
+      throw _privateConstructorUsedError;
+  bool get isScoreRecordingEnabled => throw _privateConstructorUsedError;
+  set isScoreRecordingEnabled(bool value) => throw _privateConstructorUsedError;
 
   /// Serializes this AppSettings to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -1269,6 +1412,8 @@ abstract class $AppSettingsCopyWith<$Res> {
     int matchDurationMinutes,
     int gridColumns,
     String lastOpponent,
+    bool isResultRecordingEnabled,
+    bool isScoreRecordingEnabled,
   });
 }
 
@@ -1292,6 +1437,8 @@ class _$AppSettingsCopyWithImpl<$Res, $Val extends AppSettings>
     Object? matchDurationMinutes = null,
     Object? gridColumns = null,
     Object? lastOpponent = null,
+    Object? isResultRecordingEnabled = null,
+    Object? isScoreRecordingEnabled = null,
   }) {
     return _then(
       _value.copyWith(
@@ -1315,6 +1462,14 @@ class _$AppSettingsCopyWithImpl<$Res, $Val extends AppSettings>
                 ? _value.lastOpponent
                 : lastOpponent // ignore: cast_nullable_to_non_nullable
                       as String,
+            isResultRecordingEnabled: null == isResultRecordingEnabled
+                ? _value.isResultRecordingEnabled
+                : isResultRecordingEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            isScoreRecordingEnabled: null == isScoreRecordingEnabled
+                ? _value.isScoreRecordingEnabled
+                : isScoreRecordingEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
           )
           as $Val,
     );
@@ -1336,6 +1491,8 @@ abstract class _$$AppSettingsImplCopyWith<$Res>
     int matchDurationMinutes,
     int gridColumns,
     String lastOpponent,
+    bool isResultRecordingEnabled,
+    bool isScoreRecordingEnabled,
   });
 }
 
@@ -1358,6 +1515,8 @@ class __$$AppSettingsImplCopyWithImpl<$Res>
     Object? matchDurationMinutes = null,
     Object? gridColumns = null,
     Object? lastOpponent = null,
+    Object? isResultRecordingEnabled = null,
+    Object? isScoreRecordingEnabled = null,
   }) {
     return _then(
       _$AppSettingsImpl(
@@ -1381,6 +1540,14 @@ class __$$AppSettingsImplCopyWithImpl<$Res>
             ? _value.lastOpponent
             : lastOpponent // ignore: cast_nullable_to_non_nullable
                   as String,
+        isResultRecordingEnabled: null == isResultRecordingEnabled
+            ? _value.isResultRecordingEnabled
+            : isResultRecordingEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        isScoreRecordingEnabled: null == isScoreRecordingEnabled
+            ? _value.isScoreRecordingEnabled
+            : isScoreRecordingEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
       ),
     );
   }
@@ -1395,6 +1562,8 @@ class _$AppSettingsImpl implements _AppSettings {
     this.matchDurationMinutes = 5,
     this.gridColumns = 3,
     this.lastOpponent = "練習試合",
+    this.isResultRecordingEnabled = false,
+    this.isScoreRecordingEnabled = false,
   });
 
   factory _$AppSettingsImpl.fromJson(Map<String, dynamic> json) =>
@@ -1413,10 +1582,17 @@ class _$AppSettingsImpl implements _AppSettings {
   @override
   @JsonKey()
   String lastOpponent;
+  // ★追加: 記録オプション設定
+  @override
+  @JsonKey()
+  bool isResultRecordingEnabled;
+  @override
+  @JsonKey()
+  bool isScoreRecordingEnabled;
 
   @override
   String toString() {
-    return 'AppSettings(squadNumbers: $squadNumbers, actions: $actions, matchDurationMinutes: $matchDurationMinutes, gridColumns: $gridColumns, lastOpponent: $lastOpponent)';
+    return 'AppSettings(squadNumbers: $squadNumbers, actions: $actions, matchDurationMinutes: $matchDurationMinutes, gridColumns: $gridColumns, lastOpponent: $lastOpponent, isResultRecordingEnabled: $isResultRecordingEnabled, isScoreRecordingEnabled: $isScoreRecordingEnabled)';
   }
 
   /// Create a copy of AppSettings
@@ -1440,6 +1616,8 @@ abstract class _AppSettings implements AppSettings {
     int matchDurationMinutes,
     int gridColumns,
     String lastOpponent,
+    bool isResultRecordingEnabled,
+    bool isScoreRecordingEnabled,
   }) = _$AppSettingsImpl;
 
   factory _AppSettings.fromJson(Map<String, dynamic> json) =
@@ -1459,7 +1637,13 @@ abstract class _AppSettings implements AppSettings {
   set gridColumns(int value);
   @override
   String get lastOpponent;
-  set lastOpponent(String value);
+  set lastOpponent(String value); // ★追加: 記録オプション設定
+  @override
+  bool get isResultRecordingEnabled; // ★追加: 記録オプション設定
+  set isResultRecordingEnabled(bool value);
+  @override
+  bool get isScoreRecordingEnabled;
+  set isScoreRecordingEnabled(bool value);
 
   /// Create a copy of AppSettings
   /// with the given fields replaced by the non-null parameter values.

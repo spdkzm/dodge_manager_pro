@@ -14,12 +14,8 @@ import '../../data/csv_import_service.dart';
 import 'team_management_screen.dart';
 import 'schema_settings_screen.dart';
 
-/// 汎用リスト管理画面
-/// 選手、対戦相手、会場などのリスト表示・追加・編集・削除を行う共通コンポーネント
 class GenericRosterScreen extends ConsumerStatefulWidget {
   final RosterCategory category;
-
-  // AppBarを表示するかどうか (Tab内などではfalseにする)
   final bool showAppBar;
 
   const GenericRosterScreen({
@@ -46,7 +42,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
 
-  // --- CSV Export ---
   Future<void> _handleExport() async {
     final store = ref.read(teamStoreProvider);
     if (store.currentTeam != null) {
@@ -59,38 +54,12 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     }
   }
 
-  // --- CSV Import ---
   Future<void> _handleImport() async {
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
     if (currentTeam == null) return;
 
     try {
-      // ImportService側もCategory対応が必要だが、現状のImportServiceはCategory引数を取らない実装だったため
-      // 必要に応じて拡張が必要。Turn 1のコードではTeamのみ。
-      // ※注: 前回の修正でCsvImportServiceにCategoryを追加した前提で呼び出します
-      // 前回の提示コード(Turn 5)では category引数を追加していませんでしたが、
-      // 実際には必要です。ここではエラーにならないよう、TeamDao経由またはImportServiceの拡張を想定。
-      // 今回のTurnでImportServiceの修正は含めていないため、
-      // 既存の pickAndImportCsv が Player (0) 固定になっている可能性があります。
-      // *修正*: ImportServiceは前回のTurnで category=0 固定で実装しました。
-      // これを汎用化しないと、対戦相手のインポートができません。
-      // しかし今回の指示は「画面コードの共通化」であり、ImportServiceの修正は
-      // 含まれていませんが、機能として必須のため、UI側から呼び出す際に考慮します。
-
-      // 今回は ImportService の修正コードは提示済みファイルに含まれないため、
-      // UI上では呼び出しますが、ImportService側が未対応の場合は
-      // Playerにインポートされてしまうリスクがあります。
-      // リファクタリングStep 1で ImportService も修正すべきでしたが、
-      // UI統合のStep 2で合わせるのが自然です。
-
-      // -> 今回は GenericRosterScreen の提供が主目的のため、
-      // ImportService の呼び出しは一旦コメントアウト、または Player 限定にしておくのが安全ですが、
-      // ユーザーの利便性を考え、CsvImportService も category 対応版にアップデートするのがベストです。
-      // ただし、ファイル数制限があるため、ここでは `CsvImportService` の修正コードは出しません。
-      // (Turn 5で修正した `CsvImportService` は `insertItem(..., 0)` 固定でした)
-
-      // 暫定対応: Playerカテゴリの時のみImportを許可、他はToastで未対応を通知
       if (widget.category != RosterCategory.player) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSVインポートは現在、選手リストのみ対応しています')));
         return;
@@ -108,7 +77,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     }
   }
 
-  // --- 表示設定ダイアログ ---
   void _showViewFilterDialog(Team team) {
     final activeFields = team.getSchema(widget.category).where((f) => f.isVisible).toList();
     showDialog(context: context, builder: (context) {
@@ -124,7 +92,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     });
   }
 
-  // --- 編集ダイアログ ---
   Future<void> _showItemDialog({RosterItem? item}) async {
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
@@ -145,7 +112,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     bool isChanged = false;
     void markChanged() { isChanged = true; }
 
-    // 年齢自動計算 (Playerのみ有効)
     void tryCalculateAge() {
       if (widget.category != RosterCategory.player) return;
       final dateField = schema.firstWhere((f) => f.type == FieldType.date, orElse: () => FieldDefinition(label: '', type: FieldType.text));
@@ -161,22 +127,26 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
       }
     }
 
-    // 名前フィールドの特定（リネーム警告用）
     final nameField = schema.firstWhere((f) => f.label.contains("名") || f.type == FieldType.text, orElse: () => schema.first);
     final String originalName = item?.data[nameField.id]?.toString() ?? "";
 
     await showDialog(context: context, barrierDismissible: false, builder: (context) {
       return StatefulBuilder(builder: (context, setStateDialog) {
         Future<void> saveProcess() async {
-          // 必須チェック (System field)
+
+          // ★修正: バリデーションロジック
+          // 古い「f.isSystem」チェックを廃止し、「f.isRequired」のみをチェックする
           for(var f in schema) {
-            if (f.isSystem && (tempData[f.id] == null || tempData[f.id].toString().isEmpty)) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${f.label}は必須です')));
-              return;
+            if (f.isRequired) {
+              final val = tempData[f.id];
+              if (val == null || val.toString().trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${f.label}は必須です')));
+                return;
+              }
             }
           }
 
-          // 重複チェック (isUnique)
+          // 重複チェック
           for (var field in inputFields) {
             if (field.isUnique) {
               final newValue = tempData[field.id];
@@ -192,7 +162,7 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             }
           }
 
-          // ★リネーム時の過去ログ一括更新 (対戦相手・会場のみ)
+          // リネーム時の過去ログ一括更新
           if (widget.category != RosterCategory.player && isEditing && originalName.isNotEmpty) {
             final newName = tempData[nameField.id]?.toString() ?? "";
             if (newName != originalName) {
@@ -218,7 +188,7 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
           }
 
           if (isEditing) {
-            item.data = tempData;
+            item!.data = tempData;
             store.saveItem(currentTeam.id, item, category: widget.category);
           } else {
             final newItem = RosterItem(data: tempData);
@@ -238,38 +208,35 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     });
   }
 
-  // 入力フィールド構築
   Widget _buildComplexInput(FieldDefinition field, Map<String, dynamic> data, VoidCallback onChange, Function(VoidCallback) setStateDialog, VoidCallback calcAge) {
     Map<String, dynamic> getMap() { if (data[field.id] is! Map) data[field.id] = <String, dynamic>{}; return data[field.id] as Map<String, dynamic>; }
     if (field.useDropdown) {
       final dropdownItems = _generateDropdownItems(field);
       dynamic currentValue = data[field.id];
       if (!dropdownItems.any((item) => item.value.toString() == currentValue.toString())) currentValue = null;
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(field.label, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 4), DropdownButtonFormField<dynamic>(initialValue: currentValue, decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 12)), items: dropdownItems, onChanged: (val) { setStateDialog(() { data[field.id] = val; onChange(); }); })]);
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), DropdownButtonFormField<dynamic>(initialValue: currentValue, decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 12)), items: dropdownItems, onChanged: (val) { setStateDialog(() { data[field.id] = val; onChange(); }); })]);
     }
     switch (field.type) {
-      case FieldType.personName: case FieldType.personKana: final map = getMap(); final l1 = field.type == FieldType.personName ? '氏' : 'セイ'; final l2 = field.type == FieldType.personName ? '名' : 'メイ'; return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(field.label, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 4), Row(children: [Expanded(child: TextFormField(initialValue: map['last'], decoration: InputDecoration(labelText: l1), onChanged: (v) { map['last'] = v; onChange(); })), const SizedBox(width: 16), Expanded(child: TextFormField(initialValue: map['first'], decoration: InputDecoration(labelText: l2), onChanged: (v) { map['first'] = v; onChange(); }))])]);
-      case FieldType.date: final currentDate = data[field.id] as DateTime?; return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(field.label, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 4), InkWell(onTap: () async { final picked = await showDatePicker(context: context, initialDate: currentDate ?? DateTime(2000), firstDate: DateTime(1900), lastDate: DateTime.now(), locale: const Locale('ja')); if (picked != null) { setStateDialog(() { data[field.id] = picked; onChange(); calcAge(); }); } }, child: InputDecorator(decoration: const InputDecoration(suffixIcon: Icon(Icons.calendar_today)), child: Text(currentDate != null ? DateFormat('yyyy/MM/dd').format(currentDate) : '選択')) )]);
-      case FieldType.age: return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(field.label, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 4), TextFormField(controller: TextEditingController(text: data[field.id]?.toString() ?? ''), decoration: const InputDecoration(suffixText: '歳'), keyboardType: TextInputType.number, onChanged: (v) { data[field.id] = int.tryParse(v); onChange(); })]);
-      case FieldType.address: final map = getMap(); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(field.label, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 8), Row(children: [const Icon(Icons.markunread_mailbox_outlined, color: Colors.grey), const SizedBox(width: 8), SizedBox(width: 80, child: TextFormField(initialValue: map['zip1'], decoration: const InputDecoration(hintText: '000', counterText: ''), keyboardType: TextInputType.number, maxLength: 3, onChanged: (v) { map['zip1'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), SizedBox(width: 100, child: TextFormField(initialValue: map['zip2'], decoration: const InputDecoration(hintText: '0000', counterText: ''), keyboardType: TextInputType.number, maxLength: 4, onChanged: (v) { map['zip2'] = v; onChange(); }))]), const SizedBox(height: 8), DropdownButtonFormField<String>(initialValue: _prefectures.contains(map['pref']) ? map['pref'] : null, decoration: const InputDecoration(labelText: '都道府県'), items: _prefectures.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(), onChanged: (v) { map['pref'] = v; onChange(); }), const SizedBox(height: 8), TextFormField(initialValue: map['city'], decoration: const InputDecoration(labelText: '市区町村・番地'), onChanged: (v) { map['city'] = v; onChange(); }), const SizedBox(height: 8), TextFormField(initialValue: map['building'], decoration: const InputDecoration(labelText: '建物名'), onChanged: (v) { map['building'] = v; onChange(); })]);
-      case FieldType.phone: final map = getMap(); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(field.label, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 4), Row(children: [const Icon(Icons.phone, color: Colors.grey), const SizedBox(width: 16), Expanded(child: TextFormField(initialValue: map['part1'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part1'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), Expanded(child: TextFormField(initialValue: map['part2'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part2'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), Expanded(child: TextFormField(initialValue: map['part3'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part3'] = v; onChange(); }))])]);
-      case FieldType.uniformNumber: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: field.label, suffixIcon: const Icon(Icons.looks_one)), keyboardType: TextInputType.number, onChanged: (val) { data[field.id] = val; onChange(); });
-      case FieldType.courtName: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: field.label, suffixIcon: const Icon(Icons.sports_handball)), onChanged: (val) { data[field.id] = val; onChange(); });
-      case FieldType.number: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: field.label, suffixIcon: const Icon(Icons.numbers)), keyboardType: TextInputType.number, onChanged: (val) { data[field.id] = num.tryParse(val); onChange(); });
-      default: return TextFormField(initialValue: data[field.id] as String?, decoration: InputDecoration(labelText: field.label), onChanged: (val) { data[field.id] = val; onChange(); });
+      case FieldType.personName: case FieldType.personKana: final map = getMap(); final l1 = field.type == FieldType.personName ? '氏' : 'セイ'; final l2 = field.type == FieldType.personName ? '名' : 'メイ'; return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), Row(children: [Expanded(child: TextFormField(initialValue: map['last'], decoration: InputDecoration(labelText: l1), onChanged: (v) { map['last'] = v; onChange(); })), const SizedBox(width: 16), Expanded(child: TextFormField(initialValue: map['first'], decoration: InputDecoration(labelText: l2), onChanged: (v) { map['first'] = v; onChange(); }))])]);
+      case FieldType.date: final currentDate = data[field.id] as DateTime?; return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), InkWell(onTap: () async { final picked = await showDatePicker(context: context, initialDate: currentDate ?? DateTime(2000), firstDate: DateTime(1900), lastDate: DateTime.now(), locale: const Locale('ja')); if (picked != null) { setStateDialog(() { data[field.id] = picked; onChange(); calcAge(); }); } }, child: InputDecorator(decoration: const InputDecoration(suffixIcon: Icon(Icons.calendar_today)), child: Text(currentDate != null ? DateFormat('yyyy/MM/dd').format(currentDate) : '選択')) )]);
+      case FieldType.age: return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), TextFormField(controller: TextEditingController(text: data[field.id]?.toString() ?? ''), decoration: const InputDecoration(suffixText: '歳'), keyboardType: TextInputType.number, onChanged: (v) { data[field.id] = int.tryParse(v); onChange(); })]);
+      case FieldType.address: final map = getMap(); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 8), Row(children: [const Icon(Icons.markunread_mailbox_outlined, color: Colors.grey), const SizedBox(width: 8), SizedBox(width: 80, child: TextFormField(initialValue: map['zip1'], decoration: const InputDecoration(hintText: '000', counterText: ''), keyboardType: TextInputType.number, maxLength: 3, onChanged: (v) { map['zip1'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), SizedBox(width: 100, child: TextFormField(initialValue: map['zip2'], decoration: const InputDecoration(hintText: '0000', counterText: ''), keyboardType: TextInputType.number, maxLength: 4, onChanged: (v) { map['zip2'] = v; onChange(); }))]), const SizedBox(height: 8), DropdownButtonFormField<String>(initialValue: _prefectures.contains(map['pref']) ? map['pref'] : null, decoration: const InputDecoration(labelText: '都道府県'), items: _prefectures.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(), onChanged: (v) { map['pref'] = v; onChange(); }), const SizedBox(height: 8), TextFormField(initialValue: map['city'], decoration: const InputDecoration(labelText: '市区町村・番地'), onChanged: (v) { map['city'] = v; onChange(); }), const SizedBox(height: 8), TextFormField(initialValue: map['building'], decoration: const InputDecoration(labelText: '建物名'), onChanged: (v) { map['building'] = v; onChange(); })]);
+      case FieldType.phone: final map = getMap(); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), Row(children: [const Icon(Icons.phone, color: Colors.grey), const SizedBox(width: 16), Expanded(child: TextFormField(initialValue: map['part1'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part1'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), Expanded(child: TextFormField(initialValue: map['part2'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part2'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), Expanded(child: TextFormField(initialValue: map['part3'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part3'] = v; onChange(); }))])]);
+      case FieldType.uniformNumber: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}", suffixIcon: const Icon(Icons.looks_one)), keyboardType: TextInputType.number, onChanged: (val) { data[field.id] = val; onChange(); });
+      case FieldType.courtName: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}", suffixIcon: const Icon(Icons.sports_handball)), onChanged: (val) { data[field.id] = val; onChange(); });
+      case FieldType.number: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}", suffixIcon: const Icon(Icons.numbers)), keyboardType: TextInputType.number, onChanged: (val) { data[field.id] = num.tryParse(val); onChange(); });
+      default: return TextFormField(initialValue: data[field.id] as String?, decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}"), onChanged: (val) { data[field.id] = val; onChange(); });
     }
   }
 
   List<DropdownMenuItem<dynamic>> _generateDropdownItems(FieldDefinition field) { List<dynamic> items = []; if (field.type == FieldType.number && field.isRange) { for (int i = (field.minNum ?? 1); i <= (field.maxNum ?? 99); i++) items.add(i); } else if (field.type == FieldType.number) { items = field.options.map((e) => int.tryParse(e) ?? 0).toList(); } else { items = field.options; } return items.map((e) => DropdownMenuItem<dynamic>(value: e, child: Text(e.toString()))).toList(); }
   String _formatCellValue(FieldDefinition field, dynamic val) { if (val == null) return '-'; switch (field.type) { case FieldType.date: if (val is DateTime) return DateFormat('yyyy/MM/dd').format(val); return val.toString(); case FieldType.personName: case FieldType.personKana: if (val is Map) return '${val['last'] ?? ''} ${val['first'] ?? ''}'; return val.toString(); case FieldType.address: if (val is Map) return '〒${val['zip1']}-${val['zip2']} ${val['pref']}${val['city']}...'; return val.toString(); case FieldType.phone: if (val is Map) return '${val['part1']}-${val['part2']}-${val['part3']}'; return val.toString(); case FieldType.age: return '$val歳'; case FieldType.uniformNumber: return '#$val'; default: return val.toString(); } }
 
-  // --- 削除処理 ---
   Future<void> _deleteItem(RosterItem item) async {
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
     if(currentTeam==null) return;
 
-    // 対戦相手・会場の場合、警告チェック
     if (widget.category != RosterCategory.player) {
       final schema = currentTeam.getSchema(widget.category);
       final nameField = schema.firstWhere((f) => f.label.contains("名") || f.type == FieldType.text, orElse: () => schema.first);
@@ -290,7 +257,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
       }
     }
 
-    // 通常の削除確認 (使用されていない場合、またはPlayerの場合)
     if (mounted) {
       final confirm = await showDialog<bool>(context: context, builder: (ctx)=>AlertDialog(title: const Text('削除確認'), content: const Text('削除しますか？'), actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('キャンセル')), TextButton(onPressed: ()=>Navigator.pop(ctx, true), child: const Text('削除', style: TextStyle(color: Colors.red)))]));
       if (confirm == true) {
@@ -320,7 +286,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     if (_sortColumnIndex < visibleColumns.length) {
       _sortItems(sortedItems, visibleColumns[_sortColumnIndex], _sortAscending);
     } else if (widget.category == RosterCategory.player) {
-      // 選手の場合、デフォルトで背番号ソート
       final uIdx = visibleColumns.indexWhere((f) => f.type == FieldType.uniformNumber);
       if (uIdx != -1) { _sortColumnIndex = uIdx; _sortItems(sortedItems, visibleColumns[uIdx], true); }
     }
@@ -344,7 +309,7 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             rows: sortedItems.map((item) => DataRow(
               cells: visibleColumns.map((f) => DataCell(Text(_formatCellValue(f, item.data[f.id])))).toList(),
               onSelectChanged: (_) => _showItemDialog(item: item),
-              onLongPress: () => _deleteItem(item), // ★削除はロングプレス
+              onLongPress: () => _deleteItem(item),
             )).toList(),
           ),
         ),
@@ -358,7 +323,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
       );
     }
 
-    // AppBarありの場合（選手名簿画面など）
     return Scaffold(
       appBar: AppBar(
         title: Text(currentTeam.name),

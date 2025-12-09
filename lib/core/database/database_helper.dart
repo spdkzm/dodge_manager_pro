@@ -10,8 +10,8 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v7.db';
-  // ★修正: バージョンを2に上げる
-  static const int _dbVersion = 2;
+  // ★修正: バージョンを4に上げる
+  static const int _dbVersion = 4;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -27,7 +27,7 @@ class DatabaseHelper {
       path,
       version: _dbVersion,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade, // ★追加: マイグレーション
+      onUpgrade: _onUpgrade,
       onOpen: _onOpen,
     );
   }
@@ -54,7 +54,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★修正: categoryカラムを追加 (0:選手, 1:対戦相手, 2:会場)
     await db.execute('''
       CREATE TABLE fields(
         id TEXT PRIMARY KEY,
@@ -63,6 +62,7 @@ class DatabaseHelper {
         type INTEGER,
         is_system INTEGER,
         is_visible INTEGER,
+        is_required INTEGER DEFAULT 0,
         use_dropdown INTEGER,
         is_range INTEGER,
         options TEXT,
@@ -74,7 +74,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★修正: categoryカラムを追加
     await db.execute('''
       CREATE TABLE items(
         id TEXT PRIMARY KEY,
@@ -102,7 +101,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★修正: opponent_id, venue_name, venue_id を追加
+    // ★修正: 勝敗・スコア関連のカラムを追加
     await db.execute('''
       CREATE TABLE matches(
         id TEXT PRIMARY KEY,
@@ -113,6 +112,12 @@ class DatabaseHelper {
         venue_id TEXT,
         date TEXT,
         match_type INTEGER DEFAULT 0,
+        result INTEGER DEFAULT 0,
+        score_own INTEGER,
+        score_opponent INTEGER,
+        is_extra_time INTEGER DEFAULT 0,
+        extra_score_own INTEGER,
+        extra_score_opponent INTEGER,
         created_at TEXT,
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
@@ -142,22 +147,29 @@ class DatabaseHelper {
     ''');
   }
 
-  // ★追加: マイグレーション処理
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // fieldsテーブルにcategory追加
       await db.execute("ALTER TABLE fields ADD COLUMN category INTEGER DEFAULT 0");
-      // itemsテーブルにcategory追加
       await db.execute("ALTER TABLE items ADD COLUMN category INTEGER DEFAULT 0");
-      // matchesテーブルにカラム追加
       await db.execute("ALTER TABLE matches ADD COLUMN opponent_id TEXT");
       await db.execute("ALTER TABLE matches ADD COLUMN venue_name TEXT");
       await db.execute("ALTER TABLE matches ADD COLUMN venue_id TEXT");
     }
+    if (oldVersion < 3) {
+      await db.execute("ALTER TABLE fields ADD COLUMN is_required INTEGER DEFAULT 0");
+    }
+    // ★追加: v4への移行 (勝敗・スコア)
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE matches ADD COLUMN result INTEGER DEFAULT 0");
+      await db.execute("ALTER TABLE matches ADD COLUMN score_own INTEGER");
+      await db.execute("ALTER TABLE matches ADD COLUMN score_opponent INTEGER");
+      await db.execute("ALTER TABLE matches ADD COLUMN is_extra_time INTEGER DEFAULT 0");
+      await db.execute("ALTER TABLE matches ADD COLUMN extra_score_own INTEGER");
+      await db.execute("ALTER TABLE matches ADD COLUMN extra_score_opponent INTEGER");
+    }
   }
 
   Future<void> _onOpen(Database db) async {
-    // 念のためmatch_typeのカラムチェック（古いバージョンからの移行用）
     final result = await db.rawQuery("PRAGMA table_info(matches)");
     final hasMatchType = result.any((col) => col['name'] == 'match_type');
     if (!hasMatchType) {
