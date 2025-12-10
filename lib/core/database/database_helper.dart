@@ -10,8 +10,8 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v7.db';
-  // ★修正: バージョンを4に上げる
-  static const int _dbVersion = 4;
+  // ★修正: バージョンを5に上げる
+  static const int _dbVersion = 5;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -46,11 +46,13 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    // ★修正: player_id_map カラムを追加
     await db.execute('''
       CREATE TABLE teams(
         id TEXT PRIMARY KEY,
         name TEXT,
-        view_hidden_fields TEXT
+        view_hidden_fields TEXT,
+        player_id_map TEXT
       )
     ''');
 
@@ -101,7 +103,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★修正: 勝敗・スコア関連のカラムを追加
     await db.execute('''
       CREATE TABLE matches(
         id TEXT PRIMARY KEY,
@@ -158,7 +159,6 @@ class DatabaseHelper {
     if (oldVersion < 3) {
       await db.execute("ALTER TABLE fields ADD COLUMN is_required INTEGER DEFAULT 0");
     }
-    // ★追加: v4への移行 (勝敗・スコア)
     if (oldVersion < 4) {
       await db.execute("ALTER TABLE matches ADD COLUMN result INTEGER DEFAULT 0");
       await db.execute("ALTER TABLE matches ADD COLUMN score_own INTEGER");
@@ -166,6 +166,10 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE matches ADD COLUMN is_extra_time INTEGER DEFAULT 0");
       await db.execute("ALTER TABLE matches ADD COLUMN extra_score_own INTEGER");
       await db.execute("ALTER TABLE matches ADD COLUMN extra_score_opponent INTEGER");
+    }
+    // ★追加: v5への移行 (名寄せマップ)
+    if (oldVersion < 5) {
+      await db.execute("ALTER TABLE teams ADD COLUMN player_id_map TEXT");
     }
   }
 

@@ -18,12 +18,21 @@ class TeamDao {
         'id': team.id,
         'name': team.name,
         'view_hidden_fields': jsonEncode(team.viewHiddenFields),
+        'player_id_map': jsonEncode(team.playerIdMap), // ★追加
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       for (var field in team.schema) await _insertField(txn, team.id, field, RosterCategory.player);
       for (var field in team.opponentSchema) await _insertField(txn, team.id, field, RosterCategory.opponent);
       for (var field in team.venueSchema) await _insertField(txn, team.id, field, RosterCategory.venue);
     });
+  }
+
+  // ★追加: マップ更新用
+  Future<void> updatePlayerIdMap(String teamId, Map<String, String> map) async {
+    final db = await _dbHelper.database;
+    await db.update('teams', {
+      'player_id_map': jsonEncode(map)
+    }, where: 'id = ?', whereArgs: [teamId]);
   }
 
   Future<void> updateTeamName(String teamId, String name) async {
@@ -60,23 +69,32 @@ class TeamDao {
       final opponentItems = allItems.where((i) => (i['category'] as int? ?? 0) == RosterCategory.opponent.id).map((i) => _mapToItem(i)).toList();
       final venueItems = allItems.where((i) => (i['category'] as int? ?? 0) == RosterCategory.venue.id).map((i) => _mapToItem(i)).toList();
 
-      final hiddenFields = (jsonDecode(map['view_hidden_fields'] as String) as List).cast<String>();
+      final hiddenFields = map['view_hidden_fields'] != null
+          ? (jsonDecode(map['view_hidden_fields'] as String) as List).cast<String>()
+          : <String>[];
+
+      // ★追加: 読み込み
+      final playerIdMap = map['player_id_map'] != null
+          ? Map<String, String>.from(jsonDecode(map['player_id_map'] as String))
+          : <String, String>{};
 
       teams.add(Team(
-          id: teamId,
-          name: map['name'] as String,
-          schema: playerSchema,
-          items: playerItems,
-          opponentSchema: opponentSchema,
-          opponentItems: opponentItems,
-          venueSchema: venueSchema,
-          venueItems: venueItems,
-          viewHiddenFields: hiddenFields
+        id: teamId,
+        name: map['name'] as String,
+        schema: playerSchema,
+        items: playerItems,
+        opponentSchema: opponentSchema,
+        opponentItems: opponentItems,
+        venueSchema: venueSchema,
+        venueItems: venueItems,
+        viewHiddenFields: hiddenFields,
+        playerIdMap: playerIdMap, // ★追加
       ));
     }
     return teams;
   }
 
+  // Schema & Items
   Future<void> _insertField(Transaction txn, String teamId, FieldDefinition field, RosterCategory category) async {
     await txn.insert('fields', {
       'id': field.id, 'team_id': teamId, 'label': field.label, 'type': field.type.index,
