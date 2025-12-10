@@ -319,7 +319,10 @@ mixin _$LogEntry {
   String get gameTime => throw _privateConstructorUsedError;
   set gameTime(String value) => throw _privateConstructorUsedError;
   String get playerNumber => throw _privateConstructorUsedError;
-  set playerNumber(String value) => throw _privateConstructorUsedError;
+  set playerNumber(String value) =>
+      throw _privateConstructorUsedError; // ★追加: 選手ID
+  String? get playerId => throw _privateConstructorUsedError; // ★追加: 選手ID
+  set playerId(String? value) => throw _privateConstructorUsedError;
   String get action => throw _privateConstructorUsedError;
   set action(String value) => throw _privateConstructorUsedError;
   String? get subAction => throw _privateConstructorUsedError;
@@ -354,6 +357,7 @@ abstract class $LogEntryCopyWith<$Res> {
     String opponent,
     String gameTime,
     String playerNumber,
+    String? playerId,
     String action,
     String? subAction,
     @LogTypeConverter() LogType type,
@@ -381,6 +385,7 @@ class _$LogEntryCopyWithImpl<$Res, $Val extends LogEntry>
     Object? opponent = null,
     Object? gameTime = null,
     Object? playerNumber = null,
+    Object? playerId = freezed,
     Object? action = null,
     Object? subAction = freezed,
     Object? type = null,
@@ -408,6 +413,10 @@ class _$LogEntryCopyWithImpl<$Res, $Val extends LogEntry>
                 ? _value.playerNumber
                 : playerNumber // ignore: cast_nullable_to_non_nullable
                       as String,
+            playerId: freezed == playerId
+                ? _value.playerId
+                : playerId // ignore: cast_nullable_to_non_nullable
+                      as String?,
             action: null == action
                 ? _value.action
                 : action // ignore: cast_nullable_to_non_nullable
@@ -445,6 +454,7 @@ abstract class _$$LogEntryImplCopyWith<$Res>
     String opponent,
     String gameTime,
     String playerNumber,
+    String? playerId,
     String action,
     String? subAction,
     @LogTypeConverter() LogType type,
@@ -471,6 +481,7 @@ class __$$LogEntryImplCopyWithImpl<$Res>
     Object? opponent = null,
     Object? gameTime = null,
     Object? playerNumber = null,
+    Object? playerId = freezed,
     Object? action = null,
     Object? subAction = freezed,
     Object? type = null,
@@ -498,6 +509,10 @@ class __$$LogEntryImplCopyWithImpl<$Res>
             ? _value.playerNumber
             : playerNumber // ignore: cast_nullable_to_non_nullable
                   as String,
+        playerId: freezed == playerId
+            ? _value.playerId
+            : playerId // ignore: cast_nullable_to_non_nullable
+                  as String?,
         action: null == action
             ? _value.action
             : action // ignore: cast_nullable_to_non_nullable
@@ -528,6 +543,7 @@ class _$LogEntryImpl implements _LogEntry {
     required this.opponent,
     required this.gameTime,
     required this.playerNumber,
+    this.playerId,
     required this.action,
     this.subAction,
     @LogTypeConverter() this.type = LogType.action,
@@ -547,6 +563,9 @@ class _$LogEntryImpl implements _LogEntry {
   String gameTime;
   @override
   String playerNumber;
+  // ★追加: 選手ID
+  @override
+  String? playerId;
   @override
   String action;
   @override
@@ -562,7 +581,7 @@ class _$LogEntryImpl implements _LogEntry {
 
   @override
   String toString() {
-    return 'LogEntry(id: $id, matchDate: $matchDate, opponent: $opponent, gameTime: $gameTime, playerNumber: $playerNumber, action: $action, subAction: $subAction, type: $type, result: $result)';
+    return 'LogEntry(id: $id, matchDate: $matchDate, opponent: $opponent, gameTime: $gameTime, playerNumber: $playerNumber, playerId: $playerId, action: $action, subAction: $subAction, type: $type, result: $result)';
   }
 
   /// Create a copy of LogEntry
@@ -586,6 +605,7 @@ abstract class _LogEntry implements LogEntry {
     required String opponent,
     required String gameTime,
     required String playerNumber,
+    String? playerId,
     required String action,
     String? subAction,
     @LogTypeConverter() LogType type,
@@ -609,7 +629,10 @@ abstract class _LogEntry implements LogEntry {
   set gameTime(String value);
   @override
   String get playerNumber;
-  set playerNumber(String value);
+  set playerNumber(String value); // ★追加: 選手ID
+  @override
+  String? get playerId; // ★追加: 選手ID
+  set playerId(String? value);
   @override
   String get action;
   set action(String value);
@@ -649,7 +672,7 @@ mixin _$MatchRecord {
   String? get venueId => throw _privateConstructorUsedError;
   List<LogEntry> get logs => throw _privateConstructorUsedError;
   @MatchTypeConverter()
-  MatchType get matchType => throw _privateConstructorUsedError; // ★追加: 勝敗・スコア情報
+  MatchType get matchType => throw _privateConstructorUsedError;
   @MatchResultConverter()
   MatchResult get result => throw _privateConstructorUsedError;
   int? get scoreOwn => throw _privateConstructorUsedError;
@@ -953,7 +976,6 @@ class _$MatchRecordImpl implements _MatchRecord {
   @JsonKey()
   @MatchTypeConverter()
   final MatchType matchType;
-  // ★追加: 勝敗・スコア情報
   @override
   @JsonKey()
   @MatchResultConverter()
@@ -1076,7 +1098,7 @@ abstract class _MatchRecord implements MatchRecord {
   List<LogEntry> get logs;
   @override
   @MatchTypeConverter()
-  MatchType get matchType; // ★追加: 勝敗・スコア情報
+  MatchType get matchType;
   @override
   @MatchResultConverter()
   MatchResult get result;
@@ -1380,10 +1402,8 @@ mixin _$AppSettings {
   int get gridColumns => throw _privateConstructorUsedError;
   set gridColumns(int value) => throw _privateConstructorUsedError;
   String get lastOpponent => throw _privateConstructorUsedError;
-  set lastOpponent(String value) =>
-      throw _privateConstructorUsedError; // ★追加: 記録オプション設定
-  bool get isResultRecordingEnabled =>
-      throw _privateConstructorUsedError; // ★追加: 記録オプション設定
+  set lastOpponent(String value) => throw _privateConstructorUsedError;
+  bool get isResultRecordingEnabled => throw _privateConstructorUsedError;
   set isResultRecordingEnabled(bool value) =>
       throw _privateConstructorUsedError;
   bool get isScoreRecordingEnabled => throw _privateConstructorUsedError;
@@ -1582,7 +1602,6 @@ class _$AppSettingsImpl implements _AppSettings {
   @override
   @JsonKey()
   String lastOpponent;
-  // ★追加: 記録オプション設定
   @override
   @JsonKey()
   bool isResultRecordingEnabled;
@@ -1637,9 +1656,9 @@ abstract class _AppSettings implements AppSettings {
   set gridColumns(int value);
   @override
   String get lastOpponent;
-  set lastOpponent(String value); // ★追加: 記録オプション設定
+  set lastOpponent(String value);
   @override
-  bool get isResultRecordingEnabled; // ★追加: 記録オプション設定
+  bool get isResultRecordingEnabled;
   set isResultRecordingEnabled(bool value);
   @override
   bool get isScoreRecordingEnabled;

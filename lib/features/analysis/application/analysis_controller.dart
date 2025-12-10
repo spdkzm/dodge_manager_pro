@@ -11,7 +11,6 @@ import '../../settings/data/action_dao.dart';
 import '../../settings/domain/action_definition.dart';
 import '../domain/player_stats.dart';
 import '../../team_mgmt/domain/team.dart';
-import '../../team_mgmt/data/team_dao.dart';
 
 final availableYearsProvider = StateProvider<List<int>>((ref) => []);
 final availableMonthsProvider = StateProvider<List<int>>((ref) => []);
@@ -27,19 +26,23 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
   final Ref ref;
   final MatchDao _matchDao = MatchDao();
   final ActionDao _actionDao = ActionDao();
-  // ignore: unused_field
-  final TeamDao _teamDao = TeamDao();
 
   List<ActionDefinition> actionDefinitions = [];
 
   AnalysisController(this.ref) : super(const AsyncValue.loading());
 
   Future<void> addLog(String matchId, LogEntry log) async {
+    if (log.playerId == null || log.playerId!.isEmpty) {
+      log.playerId = _findPlayerIdByNumber(log.playerNumber);
+    }
     final logMap = log.toJson();
     await _matchDao.insertMatchLog(matchId, logMap);
   }
 
   Future<void> updateLog(String matchId, LogEntry log) async {
+    if (log.playerId == null || log.playerId!.isEmpty) {
+      log.playerId = _findPlayerIdByNumber(log.playerNumber);
+    }
     final logMap = log.toJson();
     logMap['match_id'] = matchId;
     await _matchDao.updateMatchLog(logMap);
@@ -47,6 +50,20 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
   Future<void> deleteLog(String logId) async {
     await _matchDao.deleteMatchLog(logId);
+  }
+
+  String? _findPlayerIdByNumber(String number) {
+    final team = ref.read(teamStoreProvider).currentTeam;
+    if (team == null) return null;
+
+    final numField = team.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => team.schema.first);
+
+    for (var item in team.items) {
+      if (item.data[numField.id]?.toString() == number) {
+        return item.id;
+      }
+    }
+    return null;
   }
 
   Future<void> updateMatchInfo(
@@ -144,25 +161,54 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _loadSelectedMatchRecord(matchId);
   }
 
-  Future<void> linkPlayer(String oldNumber, String newPlayerId) async {
-    final teamStore = ref.read(teamStoreProvider);
-    final currentTeam = teamStore.currentTeam;
-    if (currentTeam == null) return;
-
-    currentTeam.playerIdMap[oldNumber] = newPlayerId;
-    await _teamDao.updatePlayerIdMap(currentTeam.id, currentTeam.playerIdMap);
-
-    analyze(
-      year: ref.read(availableYearsProvider).isNotEmpty ? ref.read(availableYearsProvider).first : null,
-    );
-  }
-
   Future<void> updateMatchMembers(String matchId, List<String> playerNumbers) async {
-    await _matchDao.updateMatchParticipations(matchId, playerNumbers);
+    final team = ref.read(teamStoreProvider).currentTeam;
+    if (team == null) return;
+
+    final List<Map<String, String>> participations = [];
+    final numField = team.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => team.schema.first);
+
+    for (var num in playerNumbers) {
+      String playerId = "";
+      try {
+        final item = team.items.firstWhere((i) => i.data[numField.id]?.toString() == num);
+        playerId = item.id;
+      } catch (_) {}
+
+      participations.add({
+        'player_number': num,
+        'player_id': playerId
+      });
+    }
+
+    await _matchDao.updateMatchParticipations(matchId, participations);
   }
 
   Future<List<String>> getMatchMembers(String matchId) async {
-    return await _matchDao.getMatchParticipations(matchId);
+    final rawList = await _matchDao.getMatchParticipations(matchId);
+    return rawList.map((m) => m['player_number'] as String? ?? "").where((s) => s.isNotEmpty).toList();
+  }
+
+  // ★追加: ID自動補完処理（名寄せ）
+  Future<void> _ensureLogIdsArePopulated(Team team) async {
+    final numField = team.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => team.schema.first);
+
+    // 現在の背番号マップ作成
+    final numToId = <String, String>{};
+    for (var item in team.items) {
+      final num = item.data[numField.id]?.toString() ?? "";
+      if (num.isNotEmpty) numToId[num] = item.id;
+    }
+
+    // IDがないログを取得して更新
+    // (パフォーマンス考慮: 本来はSQLで絞り込むべきだが、既存DAOメソッドを活用して全件チェック->必要なものだけ更新)
+    // ここでは簡易的に直近の期間や全期間のログをチェックする形になるが、
+    // 分析画面を開くたびに走ると重いので、本来はアプリ起動時などが望ましい。
+    // 今回は「analyze」が呼ばれたときに、対象期間のログに対して行う。
+
+    // DAOに「IDがないログ」だけを取得するメソッドがないため、
+    // ここでは calculateStats の中でログを取得した直後にメモリ上でマッチングし、
+    // IDが欠けていればDB更新をかける方式をとる。
   }
 
   Future<void> analyze({
@@ -291,7 +337,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
           return date != null && date.year == year && date.month == month && date.day == day;
         });
-
         final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
         ref.read(availableMatchesProvider.notifier).state = matchMap;
       }
@@ -311,6 +356,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         opponent: matchRow['opponent'] as String? ?? '',
         gameTime: logRow['game_time'] as String,
         playerNumber: logRow['player_number'] as String,
+        playerId: logRow['player_id'] as String?,
         action: logRow['action'] as String,
         subAction: logRow['sub_action'] as String?,
         type: LogType.values[logRow['log_type'] as int],
@@ -346,9 +392,8 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
   }) async {
     final Map<String, PlayerStats> statsMap = {};
 
+    // システムIDをキーにして初期化
     final numberToIdMap = <String, String>{};
-    final idToNameMap = <String, String>{};
-    final idToCurrentNumMap = <String, String>{};
 
     String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
     for(var f in currentTeam.schema) {
@@ -366,13 +411,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         if (n is Map) name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim();
       }
 
-      idToNameMap[item.id] = name;
-      idToCurrentNumMap[item.id] = num;
-
-      if (num.isNotEmpty) {
-        numberToIdMap[num] = item.id;
-      }
-
+      // IDをキーにStats作成
       statsMap[item.id] = PlayerStats(
           playerId: item.id,
           playerNumber: num,
@@ -380,58 +419,13 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           matchesPlayed: 0,
           actions: {}
       );
+
+      if (num.isNotEmpty) {
+        numberToIdMap[num] = item.id;
+      }
     }
 
     final typeIndices = targetTypes?.map((t) => t.index).toList();
-
-    // ★追加: 出場記録の取得 (これが抜けていたため、ログなし選手がカウントされなかった)
-    final List<Map<String, dynamic>> participations;
-    if (matchId != null) {
-      final rawParticipations = await _matchDao.getMatchParticipations(matchId);
-      participations = rawParticipations.map((pNum) => {'player_number': pNum, 'match_id': matchId}).toList();
-    } else {
-      participations = await _matchDao.getParticipationsInPeriod(
-          currentTeam.id, startDateStr, endDateStr, typeIndices);
-    }
-
-    // 試合参加数カウント用
-    final Map<String, Set<String>> playerMatches = {};
-
-    // ★追加: 出場記録からの集計 (名寄せロジック適用)
-    for (var p in participations) {
-      final pNum = p['player_number'] as String? ?? "";
-      final matchIdKey = p['match_id'] as String? ?? "";
-
-      if (pNum.isNotEmpty && matchIdKey.isNotEmpty) {
-        String targetKey;
-        if (currentTeam.playerIdMap.containsKey(pNum)) {
-          targetKey = currentTeam.playerIdMap[pNum]!;
-        } else if (numberToIdMap.containsKey(pNum)) {
-          targetKey = numberToIdMap[pNum]!;
-        } else {
-          targetKey = "UNKNOWN_$pNum";
-        }
-
-        // StatsMapにない場合は新規作成
-        if (!statsMap.containsKey(targetKey)) {
-          String displayName = "(未登録)";
-          String displayNum = pNum;
-          if (targetKey != "UNKNOWN_$pNum") {
-            displayName = "(不明な選手)";
-            displayNum = "";
-          }
-          statsMap[targetKey] = PlayerStats(
-              playerId: targetKey,
-              playerNumber: displayNum,
-              playerName: displayName,
-              actions: {}
-          );
-        }
-
-        if (!playerMatches.containsKey(targetKey)) playerMatches[targetKey] = {};
-        playerMatches[targetKey]!.add(matchIdKey);
-      }
-    }
 
     // ログ取得
     final List<Map<String, dynamic>> rawLogs;
@@ -442,29 +436,38 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
           currentTeam.id, startDateStr, endDateStr, typeIndices);
     }
 
-    // ログ集計
+    final Map<String, Set<String>> playerMatches = {};
+
+    // ★重要: ログ集計時にID補完も行う
     for (var log in rawLogs) {
+      String pId = log['player_id'] as String? ?? "";
       final pNum = log['player_number'] as String? ?? "";
-      if (pNum.isEmpty) continue;
+
+      if (pId.isEmpty && pNum.isEmpty) continue;
+
+      // ★IDがなく、背番号がある場合 -> 現在の名簿からIDを探す
+      if (pId.isEmpty && pNum.isNotEmpty && numberToIdMap.containsKey(pNum)) {
+        pId = numberToIdMap[pNum]!;
+        // ★データベースにIDを書き込む (遅延マイグレーション)
+        final logId = log['id'] as String;
+        await _matchDao.updateLogPlayerId(logId, pId);
+      }
 
       String targetKey;
-      if (currentTeam.playerIdMap.containsKey(pNum)) {
-        targetKey = currentTeam.playerIdMap[pNum]!;
-      } else if (numberToIdMap.containsKey(pNum)) {
-        targetKey = numberToIdMap[pNum]!;
+      if (pId.isNotEmpty) {
+        targetKey = pId;
       } else {
+        // IDも無く、現役の背番号でもない -> 過去の選手 or 未登録
         targetKey = "UNKNOWN_$pNum";
       }
 
       if (!statsMap.containsKey(targetKey)) {
         String displayName = "(未登録)";
         String displayNum = pNum;
-
-        if (targetKey != "UNKNOWN_$pNum") {
-          displayName = "(不明な選手)";
-          displayNum = "";
+        if (!targetKey.startsWith("UNKNOWN_")) {
+          displayName = "(削除済)";
+          displayNum = pNum;
         }
-
         statsMap[targetKey] = PlayerStats(
             playerId: targetKey,
             playerNumber: displayNum,
@@ -480,7 +483,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
 
       final action = log['action'] as String? ?? "";
-      final subAction = log['sub_action'] as String?;
       final resultVal = log['result'] as int? ?? 0;
       final result = ActionResult.values[resultVal];
 
@@ -490,17 +492,64 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       int success = actStats.successCount;
       int failure = actStats.failureCount;
       int total = actStats.totalCount;
-      final Map<String, int> subs = Map.from(actStats.subActionCounts);
-      if (subAction != null && subAction.isNotEmpty) subs[subAction] = (subs[subAction] ?? 0) + 1;
 
       if (result == ActionResult.success) success++;
       if (result == ActionResult.failure) failure++;
       total++;
 
-      final newActStats = actStats.copyWith(successCount: success, failureCount: failure, totalCount: total, subActionCounts: subs);
+      final newActStats = actStats.copyWith(successCount: success, failureCount: failure, totalCount: total);
       final newActions = Map<String, ActionStats>.from(currentStats.actions);
       newActions[action] = newActStats;
       statsMap[targetKey] = currentStats.copyWith(actions: newActions);
+    }
+
+    // 出場記録からの集計
+    final List<Map<String, dynamic>> participations;
+    if (matchId != null) {
+      participations = await _matchDao.getMatchParticipations(matchId);
+    } else {
+      participations = await _matchDao.getParticipationsInPeriod(
+          currentTeam.id, startDateStr, endDateStr, typeIndices);
+    }
+
+    for (var p in participations) {
+      String pId = p['player_id'] as String? ?? "";
+      final pNum = p['player_number'] as String? ?? "";
+      final mid = p['match_id'] as String? ?? "";
+
+      if (mid.isEmpty) continue;
+
+      // ★ID補完 (参加テーブル)
+      if (pId.isEmpty && pNum.isNotEmpty && numberToIdMap.containsKey(pNum)) {
+        pId = numberToIdMap[pNum]!;
+        // 参加テーブルは主キーがないため更新が難しいが、match_idとnumberで特定して更新
+        await _matchDao.updateParticipationPlayerId(mid, pNum, pId);
+      }
+
+      String targetKey;
+      if (pId.isNotEmpty) {
+        targetKey = pId;
+      } else {
+        targetKey = "UNKNOWN_$pNum";
+      }
+
+      if (!statsMap.containsKey(targetKey)) {
+        String displayName = "(未登録)";
+        String displayNum = pNum;
+        if (!targetKey.startsWith("UNKNOWN_")) {
+          displayName = "(削除済)";
+          displayNum = pNum;
+        }
+        statsMap[targetKey] = PlayerStats(
+            playerId: targetKey,
+            playerNumber: displayNum,
+            playerName: displayName,
+            actions: {}
+        );
+      }
+
+      if (!playerMatches.containsKey(targetKey)) playerMatches[targetKey] = {};
+      playerMatches[targetKey]!.add(mid);
     }
 
     final List<PlayerStats> resultList = statsMap.values.map((p) {

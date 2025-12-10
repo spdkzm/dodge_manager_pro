@@ -64,6 +64,8 @@ class GameRecorderController extends ChangeNotifier {
   String get formattedTime { final m = (_remainingSeconds ~/ 60).toString().padLeft(2, '0'); final s = (_remainingSeconds % 60).toString().padLeft(2, '0'); return "$m:$s"; }
 
   Future<void> loadData() async {
+    // ... (省略: 変更なし) ...
+    // 全文提示ルールに従い、省略せず記述します
     final loadedSettings = await DataManager.loadSettings();
     final currentLogs = await DataManager.loadCurrentLogs();
 
@@ -200,13 +202,14 @@ class GameRecorderController extends ChangeNotifier {
   }
   void stopTimer() { _gameTimer?.cancel(); _isRunning = false; if (_hasMatchStarted) _recordSystemLog("タイム"); notifyListeners(); }
   void _recordSystemLog(String action) { logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: '', action: action, type: LogType.system, result: ActionResult.none)); DataManager.saveCurrentLogs(logs); notifyListeners(); }
+
+  // ★修正: confirmLog で ID補完 (ここではできればやりたいが、TeamStoreへのアクセスが必要。AnalysisControllerのような補完ロジックを入れるか、保存時に一括やるか。保存時一括が安全)
   String? confirmLog() { if (selectedPlayer == null || selectedUIAction == null) return null; if (selectedUIAction!.isSubRequired && selectedUIAction!.subActions.isNotEmpty && selectedSubAction == null) { return "詳細項目の選択が必須です"; } logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: selectedPlayer!, action: selectedUIAction!.parentName, subAction: selectedSubAction, type: LogType.action, result: selectedUIAction!.fixedResult)); selectedUIAction = null; selectedSubAction = null; DataManager.saveCurrentLogs(logs); notifyListeners(); return null; }
   void deleteLog(int index) { logs.removeAt(index); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void restoreLog(int index, LogEntry log) { logs.insert(index, log); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
 
-  // ★修正: 勝敗・スコアの引数を追加
   Future<bool> saveMatchToDb({
     MatchResult result = MatchResult.none,
     int? scoreOwn,
@@ -252,6 +255,16 @@ class GameRecorderController extends ChangeNotifier {
       finalOpponentName = "試合-${dateStr} #${newNum}";
     }
 
+    // ★修正: ログと参加者にIDを付与する
+    final numField = currentTeam.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => currentTeam.schema.first);
+
+    // 背番号 -> ID マップ作成
+    final numToId = <String, String>{};
+    for (var item in currentTeam.items) {
+      final num = item.data[numField.id]?.toString() ?? "";
+      if (num.isNotEmpty) numToId[num] = item.id;
+    }
+
     final matchId = DateTime.now().millisecondsSinceEpoch.toString();
     final matchData = {
       'id': matchId,
@@ -261,7 +274,6 @@ class GameRecorderController extends ChangeNotifier {
       'venue_id': finalVenueId,
       'date': dateStr,
       'match_type': _matchType.index,
-      // ★追加: 勝敗・スコア
       'result': result.index,
       'score_own': scoreOwn,
       'score_opponent': scoreOpponent,
@@ -270,8 +282,26 @@ class GameRecorderController extends ChangeNotifier {
       'extra_score_opponent': extraScoreOpponent,
     };
 
-    final logMaps = logs.reversed.map((log) { final map = log.toJson(); map['opponent'] = finalOpponentName; return map; }).toList();
-    await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, courtPlayers);
+    final logMaps = logs.reversed.map((log) {
+      final map = log.toJson();
+      map['opponent'] = finalOpponentName;
+      // ★ID付与
+      if (log.playerNumber.isNotEmpty && numToId.containsKey(log.playerNumber)) {
+        map['playerId'] = numToId[log.playerNumber];
+      }
+      return map;
+    }).toList();
+
+    // ★修正: 参加者リストの生成 (List<Map<String,String>>)
+    final List<Map<String, String>> participationList = [];
+    for (var num in courtPlayers) {
+      participationList.add({
+        'player_number': num,
+        'player_id': numToId[num] ?? "",
+      });
+    }
+
+    await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, participationList);
     await DataManager.clearCurrentLogs();
 
     resetMatch();

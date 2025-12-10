@@ -7,7 +7,6 @@ part 'models.g.dart';
 enum ActionResult { none, success, failure }
 enum LogType { action, system }
 enum MatchType { practiceMatch, official, practice }
-// ★追加: 勝敗Enum
 enum MatchResult { none, win, lose, draw }
 
 class ActionResultConverter implements JsonConverter<ActionResult, int> {
@@ -34,7 +33,6 @@ class MatchTypeConverter implements JsonConverter<MatchType, int> {
   int toJson(MatchType object) => object.index;
 }
 
-// ★追加: MatchResultConverter
 class MatchResultConverter implements JsonConverter<MatchResult, int> {
   const MatchResultConverter();
   @override
@@ -64,6 +62,8 @@ class LogEntry with _$LogEntry {
     required String opponent,
     required String gameTime,
     required String playerNumber,
+    // ★追加: 選手ID
+    String? playerId,
     required String action,
     String? subAction,
     @LogTypeConverter() @Default(LogType.action) LogType type,
@@ -84,7 +84,6 @@ class MatchRecord with _$MatchRecord {
     String? venueId,
     required List<LogEntry> logs,
     @MatchTypeConverter() @Default(MatchType.practiceMatch) MatchType matchType,
-    // ★追加: 勝敗・スコア情報
     @MatchResultConverter() @Default(MatchResult.none) MatchResult result,
     int? scoreOwn,
     int? scoreOpponent,
@@ -117,7 +116,6 @@ class AppSettings with _$AppSettings {
     @Default(5) int matchDurationMinutes,
     @Default(3) int gridColumns,
     @Default("練習試合") String lastOpponent,
-    // ★追加: 記録オプション設定
     @Default(false) bool isResultRecordingEnabled,
     @Default(false) bool isScoreRecordingEnabled,
   }) = _AppSettings;

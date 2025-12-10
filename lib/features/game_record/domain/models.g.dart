@@ -13,6 +13,7 @@ _$LogEntryImpl _$$LogEntryImplFromJson(Map<String, dynamic> json) =>
       opponent: json['opponent'] as String,
       gameTime: json['gameTime'] as String,
       playerNumber: json['playerNumber'] as String,
+      playerId: json['playerId'] as String?,
       action: json['action'] as String,
       subAction: json['subAction'] as String?,
       type: json['type'] == null
@@ -32,6 +33,7 @@ Map<String, dynamic> _$$LogEntryImplToJson(_$LogEntryImpl instance) =>
       'opponent': instance.opponent,
       'gameTime': instance.gameTime,
       'playerNumber': instance.playerNumber,
+      'playerId': instance.playerId,
       'action': instance.action,
       'subAction': instance.subAction,
       'type': const LogTypeConverter().toJson(instance.type),

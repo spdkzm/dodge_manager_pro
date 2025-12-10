@@ -10,8 +10,8 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v7.db';
-  // ★修正: バージョンを5に上げる
-  static const int _dbVersion = 5;
+  // ★修正: バージョンを6に上げる
+  static const int _dbVersion = 6;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -46,7 +46,6 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    // ★修正: player_id_map カラムを追加
     await db.execute('''
       CREATE TABLE teams(
         id TEXT PRIMARY KEY,
@@ -124,12 +123,14 @@ class DatabaseHelper {
       )
     ''');
 
+    // ★修正: player_id カラム追加
     await db.execute('''
       CREATE TABLE match_logs(
         id TEXT PRIMARY KEY,
         match_id TEXT,
         game_time TEXT,
         player_number TEXT,
+        player_id TEXT, 
         action TEXT,
         sub_action TEXT,
         log_type INTEGER,
@@ -138,11 +139,13 @@ class DatabaseHelper {
       )
     ''');
 
+    // ★修正: player_id カラム追加
     await db.execute('''
       CREATE TABLE match_participations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         match_id TEXT,
         player_number TEXT,
+        player_id TEXT,
         FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
       )
     ''');
@@ -167,9 +170,17 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE matches ADD COLUMN extra_score_own INTEGER");
       await db.execute("ALTER TABLE matches ADD COLUMN extra_score_opponent INTEGER");
     }
-    // ★追加: v5への移行 (名寄せマップ)
     if (oldVersion < 5) {
-      await db.execute("ALTER TABLE teams ADD COLUMN player_id_map TEXT");
+      final columns = await db.rawQuery("PRAGMA table_info(teams)");
+      final hasColumn = columns.any((col) => col['name'] == 'player_id_map');
+      if (!hasColumn) {
+        await db.execute("ALTER TABLE teams ADD COLUMN player_id_map TEXT");
+      }
+    }
+    // ★追加: v6への移行 (player_id追加)
+    if (oldVersion < 6) {
+      await db.execute("ALTER TABLE match_logs ADD COLUMN player_id TEXT");
+      await db.execute("ALTER TABLE match_participations ADD COLUMN player_id TEXT");
     }
   }
 

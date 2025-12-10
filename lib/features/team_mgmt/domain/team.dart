@@ -19,10 +19,7 @@ class Team {
 
   List<String> viewHiddenFields;
 
-  // ★追加: 過去の背番号 -> 現在の選手ID のマップ
-  // Key: 過去の背番号 (String)
-  // Value: 現在のRosterItemのID (String)
-  Map<String, String> playerIdMap;
+  // ★修正: playerIdMap を削除
 
   Team({
     String? id,
@@ -34,7 +31,6 @@ class Team {
     List<FieldDefinition>? venueSchema,
     List<RosterItem>? venueItems,
     List<String>? viewHiddenFields,
-    Map<String, String>? playerIdMap, // ★追加
   })  : id = id ?? const Uuid().v4(),
         schema = schema ?? [],
         items = items ?? [],
@@ -42,8 +38,7 @@ class Team {
         opponentItems = opponentItems ?? [],
         venueSchema = venueSchema ?? [],
         venueItems = venueItems ?? [],
-        viewHiddenFields = viewHiddenFields ?? [],
-        playerIdMap = playerIdMap ?? {}; // ★追加
+        viewHiddenFields = viewHiddenFields ?? [];
 
   List<FieldDefinition> getSchema(RosterCategory category) {
     switch (category) {
@@ -81,7 +76,6 @@ class Team {
     'schema': schema.map((e) => e.toJson()).toList(),
     'items': items.map((e) => e.toJson()).toList(),
     'viewHiddenFields': viewHiddenFields,
-    'playerIdMap': playerIdMap, // ★追加
   };
 
   factory Team.fromJson(Map<String, dynamic> json) {
@@ -97,7 +91,6 @@ class Team {
       viewHiddenFields: (json['viewHiddenFields'] as List<dynamic>?)
           ?.map((e) => e.toString())
           .toList() ?? [],
-      playerIdMap: (json['playerIdMap'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())), // ★追加
     );
   }
 }

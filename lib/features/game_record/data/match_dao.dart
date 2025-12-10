@@ -6,11 +6,12 @@ class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   // --- 試合とログの新規作成 ---
+  // ★修正: participations は Map<String, dynamic> のリストを受け取るように変更（IDと番号）
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
       List<Map<String, dynamic>> logs,
-      List<String> participations
+      List<Map<String, String>> participations // ★変更: 番号とIDのペア
       ) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -23,7 +24,6 @@ class MatchDao {
         'venue_id': matchData['venue_id'],
         'date': matchData['date'],
         'match_type': matchData['match_type'] ?? 0,
-        // ★追加: 勝敗・スコア
         'result': matchData['result'] ?? 0,
         'score_own': matchData['score_own'],
         'score_opponent': matchData['score_opponent'],
@@ -39,6 +39,7 @@ class MatchDao {
           'match_id': matchData['id'],
           'game_time': log['gameTime'],
           'player_number': log['playerNumber'],
+          'player_id': log['playerId'], // ★追加
           'action': log['action'] ?? '',
           'sub_action': log['subAction'],
           'log_type': log['type'],
@@ -46,10 +47,11 @@ class MatchDao {
         });
       }
 
-      for (var playerNum in participations) {
+      for (var p in participations) {
         await txn.insert('match_participations', {
           'match_id': matchData['id'],
-          'player_number': playerNum,
+          'player_number': p['player_number'],
+          'player_id': p['player_id'], // ★追加
         });
       }
     });
@@ -64,14 +66,29 @@ class MatchDao {
         'match_id': matchId,
         'game_time': logMap['gameTime'],
         'player_number': logMap['playerNumber'],
+        'player_id': logMap['playerId'], // ★追加
         'action': logMap['action'],
         'sub_action': logMap['subAction'],
         'log_type': logMap['type'],
         'result': logMap['result'],
       });
-      final existing = await txn.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, logMap['playerNumber']]);
+      // 参加テーブルへの追加判定は、IDがあればIDで、なければ番号で
+      final pid = logMap['playerId'];
+      final pNum = logMap['playerNumber'];
+
+      List<Map<String, Object?>> existing;
+      if (pid != null && pid.isNotEmpty) {
+        existing = await txn.query('match_participations', where: 'match_id = ? AND player_id = ?', whereArgs: [matchId, pid]);
+      } else {
+        existing = await txn.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, pNum]);
+      }
+
       if (existing.isEmpty) {
-        await txn.insert('match_participations', {'match_id': matchId, 'player_number': logMap['playerNumber']});
+        await txn.insert('match_participations', {
+          'match_id': matchId,
+          'player_number': pNum,
+          'player_id': pid, // ★追加
+        });
       }
     });
   }
@@ -81,16 +98,32 @@ class MatchDao {
     await db.update('match_logs', {
       'game_time': logMap['gameTime'],
       'player_number': logMap['playerNumber'],
+      'player_id': logMap['playerId'], // ★追加
       'action': logMap['action'],
       'sub_action': logMap['subAction'],
       'log_type': logMap['type'],
       'result': logMap['result'],
     }, where: 'id = ?', whereArgs: [logMap['id']]);
 
+    // 参加テーブル更新 (簡易的に追加のみチェック)
     if (logMap['match_id'] != null) {
-      final existing = await db.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [logMap['match_id'], logMap['playerNumber']]);
+      final pid = logMap['playerId'];
+      final pNum = logMap['playerNumber'];
+      final mid = logMap['match_id'];
+
+      List<Map<String, Object?>> existing;
+      if (pid != null && pid.isNotEmpty) {
+        existing = await db.query('match_participations', where: 'match_id = ? AND player_id = ?', whereArgs: [mid, pid]);
+      } else {
+        existing = await db.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [mid, pNum]);
+      }
+
       if (existing.isEmpty) {
-        await db.insert('match_participations', {'match_id': logMap['match_id'], 'player_number': logMap['playerNumber']});
+        await db.insert('match_participations', {
+          'match_id': mid,
+          'player_number': pNum,
+          'player_id': pid,
+        });
       }
     }
   }
@@ -100,7 +133,7 @@ class MatchDao {
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
   }
 
-  // --- 試合情報の更新 (引数拡張版) ---
+  // --- 試合情報の更新 ---
   Future<void> updateMatchInfo({
     required String matchId,
     required String newDate,
@@ -109,7 +142,6 @@ class MatchDao {
     String? newVenueName,
     String? newVenueId,
     required int newMatchType,
-    // ★追加: 勝敗・スコア関連
     int result = 0,
     int? scoreOwn,
     int? scoreOpponent,
@@ -125,7 +157,6 @@ class MatchDao {
       'venue_name': newVenueName,
       'venue_id': newVenueId,
       'match_type': newMatchType,
-      // ★追加
       'result': result,
       'score_own': scoreOwn,
       'score_opponent': scoreOpponent,
@@ -135,14 +166,16 @@ class MatchDao {
     }, where: 'id = ?', whereArgs: [matchId]);
   }
 
-  Future<void> updateMatchParticipations(String matchId, List<String> playerNumbers) async {
+  // ★修正: ID対応
+  Future<void> updateMatchParticipations(String matchId, List<Map<String, String>> members) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       await txn.delete('match_participations', where: 'match_id = ?', whereArgs: [matchId]);
-      for (var num in playerNumbers) {
+      for (var m in members) {
         await txn.insert('match_participations', {
           'match_id': matchId,
-          'player_number': num,
+          'player_number': m['player_number'],
+          'player_id': m['player_id'],
         });
       }
     });
@@ -230,15 +263,15 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
-  Future<List<String>> getMatchParticipations(String matchId) async {
+  // ★修正: IDも取得
+  Future<List<Map<String, dynamic>>> getMatchParticipations(String matchId) async {
     final db = await _dbHelper.database;
-    final result = await db.query(
+    return await db.query(
         'match_participations',
-        columns: ['player_number'],
+        columns: ['player_number', 'player_id'],
         where: 'match_id = ?',
         whereArgs: [matchId]
     );
-    return result.map((row) => row['player_number'] as String).toList();
   }
 
   Future<void> deleteMatch(String matchId) async {
@@ -272,6 +305,7 @@ class MatchDao {
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
+  // ★修正: player_id も取得
   Future<List<Map<String, dynamic>>> getParticipationsInPeriod(
       String teamId, String startDate, String endDate,
       [List<int>? matchTypes]) async {
@@ -283,6 +317,7 @@ class MatchDao {
     final sql = '''
       SELECT 
         p.player_number,
+        p.player_id,
         p.match_id,
         m.match_type
       FROM match_participations p
@@ -291,5 +326,18 @@ class MatchDao {
       $typeCondition
     ''';
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
+  }
+
+  // ★追加: 遅延マイグレーション用（ログのID更新）
+  Future<void> updateLogPlayerId(String logId, String playerId) async {
+    final db = await _dbHelper.database;
+    await db.update('match_logs', {'player_id': playerId}, where: 'id = ?', whereArgs: [logId]);
+  }
+
+  // ★追加: 遅延マイグレーション用（参加情報のID更新）
+  // 参加テーブルには主キーがない(AUTOINCREMENT)ので、match_idとnumberで指定
+  Future<void> updateParticipationPlayerId(String matchId, String playerNumber, String playerId) async {
+    final db = await _dbHelper.database;
+    await db.update('match_participations', {'player_id': playerId}, where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, playerNumber]);
   }
 }

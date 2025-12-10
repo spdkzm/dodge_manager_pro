@@ -18,7 +18,7 @@ class TeamDao {
         'id': team.id,
         'name': team.name,
         'view_hidden_fields': jsonEncode(team.viewHiddenFields),
-        'player_id_map': jsonEncode(team.playerIdMap), // ★追加
+        // player_id_map は削除
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       for (var field in team.schema) await _insertField(txn, team.id, field, RosterCategory.player);
@@ -27,13 +27,7 @@ class TeamDao {
     });
   }
 
-  // ★追加: マップ更新用
-  Future<void> updatePlayerIdMap(String teamId, Map<String, String> map) async {
-    final db = await _dbHelper.database;
-    await db.update('teams', {
-      'player_id_map': jsonEncode(map)
-    }, where: 'id = ?', whereArgs: [teamId]);
-  }
+  // ★修正: マップ更新用メソッド削除
 
   Future<void> updateTeamName(String teamId, String name) async {
     final db = await _dbHelper.database;
@@ -73,10 +67,7 @@ class TeamDao {
           ? (jsonDecode(map['view_hidden_fields'] as String) as List).cast<String>()
           : <String>[];
 
-      // ★追加: 読み込み
-      final playerIdMap = map['player_id_map'] != null
-          ? Map<String, String>.from(jsonDecode(map['player_id_map'] as String))
-          : <String, String>{};
+      // ★修正: マップ読み込み削除
 
       teams.add(Team(
         id: teamId,
@@ -88,7 +79,6 @@ class TeamDao {
         venueSchema: venueSchema,
         venueItems: venueItems,
         viewHiddenFields: hiddenFields,
-        playerIdMap: playerIdMap, // ★追加
       ));
     }
     return teams;
