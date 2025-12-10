@@ -16,6 +16,7 @@ _$LogEntryImpl _$$LogEntryImplFromJson(Map<String, dynamic> json) =>
       playerId: json['playerId'] as String?,
       action: json['action'] as String,
       subAction: json['subAction'] as String?,
+      subActionId: json['subActionId'] as String?,
       type: json['type'] == null
           ? LogType.action
           : const LogTypeConverter().fromJson((json['type'] as num).toInt()),
@@ -36,6 +37,7 @@ Map<String, dynamic> _$$LogEntryImplToJson(_$LogEntryImpl instance) =>
       'playerId': instance.playerId,
       'action': instance.action,
       'subAction': instance.subAction,
+      'subActionId': instance.subActionId,
       'type': const LogTypeConverter().toJson(instance.type),
       'result': const ActionResultConverter().toJson(instance.result),
     };

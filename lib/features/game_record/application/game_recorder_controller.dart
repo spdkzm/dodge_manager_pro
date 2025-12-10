@@ -8,6 +8,7 @@ import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
 import '../../team_mgmt/domain/roster_category.dart';
 import '../../settings/data/action_dao.dart';
+import '../../settings/domain/action_definition.dart'; // SubActionDefinition
 import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
@@ -26,6 +27,8 @@ class GameRecorderController extends ChangeNotifier {
 
   AppSettings settings = AppSettings(squadNumbers: [], actions: []);
   List<UIActionItem?> uiActions = [];
+  // ★追加: ログ編集用に定義リストを保持
+  List<ActionDefinition> actionDefinitions = [];
 
   Map<String, String> playerNames = {};
   List<String> courtPlayers = [];
@@ -47,8 +50,9 @@ class GameRecorderController extends ChangeNotifier {
   String? selectedPlayer;
   Set<String> selectedForMove = {};
   bool isMultiSelectMode = false;
+
   UIActionItem? selectedUIAction;
-  String? selectedSubAction;
+  SubActionDefinition? selectedSubAction;
   ActionResult selectedResult = ActionResult.none;
 
   DateTime get matchDate => _matchDate;
@@ -64,8 +68,6 @@ class GameRecorderController extends ChangeNotifier {
   String get formattedTime { final m = (_remainingSeconds ~/ 60).toString().padLeft(2, '0'); final s = (_remainingSeconds % 60).toString().padLeft(2, '0'); return "$m:$s"; }
 
   Future<void> loadData() async {
-    // ... (省略: 変更なし) ...
-    // 全文提示ルールに従い、省略せず記述します
     final loadedSettings = await DataManager.loadSettings();
     final currentLogs = await DataManager.loadCurrentLogs();
 
@@ -127,6 +129,9 @@ class GameRecorderController extends ChangeNotifier {
 
   Future<List<UIActionItem?>> _buildUIActionList(String teamId) async {
     final dbActions = await _actionDao.getActionDefinitions(teamId);
+    // ★修正: 定義リストをクラス変数に保存
+    actionDefinitions = dbActions.map((d) => ActionDefinition.fromMap(d)).toList();
+
     Map<int, UIActionItem> gridMap = {};
     int maxIndex = 0;
 
@@ -142,28 +147,44 @@ class GameRecorderController extends ChangeNotifier {
       }
     }
 
-    for (var map in dbActions) {
-      final name = map['name'] as String;
-      final isSubReq = map['isSubRequired'] == true;
-      final hasSuccess = map['hasSuccess'] == true;
-      final hasFailure = map['hasFailure'] == true;
-      final posIndex = map['positionIndex'] as int? ?? 0;
-      final successPos = map['successPositionIndex'] as int? ?? 0;
-      final failurePos = map['failurePositionIndex'] as int? ?? 0;
-      final subMap = map['subActionsMap'] as Map<String, dynamic>? ?? {};
-      List<String> getSubs(String key) => (subMap[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    for (var def in actionDefinitions) {
+      final isSubReq = def.isSubRequired;
 
-      if (hasSuccess) {
-        final item = UIActionItem(name: "${name}成功", parentName: name, fixedResult: ActionResult.success, subActions: getSubs('success'), isSubRequired: isSubReq, hasSuccess: true, hasFailure: false);
-        placeSafe(successPos, item);
+      if (def.hasSuccess) {
+        final item = UIActionItem(
+            name: "${def.name}成功",
+            parentName: def.name,
+            fixedResult: ActionResult.success,
+            subActions: def.getSubActions('success'),
+            isSubRequired: isSubReq,
+            hasSuccess: true,
+            hasFailure: false
+        );
+        placeSafe(def.successPositionIndex, item);
       }
-      if (hasFailure) {
-        final item = UIActionItem(name: "${name}失敗", parentName: name, fixedResult: ActionResult.failure, subActions: getSubs('failure'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: true);
-        placeSafe(failurePos, item);
+      if (def.hasFailure) {
+        final item = UIActionItem(
+            name: "${def.name}失敗",
+            parentName: def.name,
+            fixedResult: ActionResult.failure,
+            subActions: def.getSubActions('failure'),
+            isSubRequired: isSubReq,
+            hasSuccess: false,
+            hasFailure: true
+        );
+        placeSafe(def.failurePositionIndex, item);
       }
-      if (!hasSuccess && !hasFailure) {
-        final item = UIActionItem(name: name, parentName: name, fixedResult: ActionResult.none, subActions: getSubs('default'), isSubRequired: isSubReq, hasSuccess: false, hasFailure: false);
-        placeSafe(posIndex, item);
+      if (!def.hasSuccess && !def.hasFailure) {
+        final item = UIActionItem(
+            name: def.name,
+            parentName: def.name,
+            fixedResult: ActionResult.none,
+            subActions: def.getSubActions('default'),
+            isSubRequired: isSubReq,
+            hasSuccess: false,
+            hasFailure: false
+        );
+        placeSafe(def.positionIndex, item);
       }
     }
 
@@ -191,7 +212,7 @@ class GameRecorderController extends ChangeNotifier {
   void _sortList(List<String> list) { list.sort((a, b) { final numA = int.tryParse(a); final numB = int.tryParse(b); if (numA != null && numB != null) { return numA.compareTo(numB); } if (numA != null) return -1; if (numB != null) return 1; return a.compareTo(b); }); }
   void selectAction(UIActionItem action) { selectedUIAction = action; selectedSubAction = null; selectedResult = action.fixedResult; notifyListeners(); }
   void selectResult(ActionResult result) { selectedResult = result; notifyListeners(); }
-  void selectSubAction(String sub) { selectedSubAction = sub; notifyListeners(); }
+  void selectSubAction(SubActionDefinition sub) { selectedSubAction = sub; notifyListeners(); }
 
   void startTimer() {
     if (!_hasMatchStarted) { _hasMatchStarted = true; _recordSystemLog("試合開始"); } else if (!_isRunning) { _recordSystemLog("試合再開"); }
@@ -203,11 +224,44 @@ class GameRecorderController extends ChangeNotifier {
   void stopTimer() { _gameTimer?.cancel(); _isRunning = false; if (_hasMatchStarted) _recordSystemLog("タイム"); notifyListeners(); }
   void _recordSystemLog(String action) { logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: '', action: action, type: LogType.system, result: ActionResult.none)); DataManager.saveCurrentLogs(logs); notifyListeners(); }
 
-  // ★修正: confirmLog で ID補完 (ここではできればやりたいが、TeamStoreへのアクセスが必要。AnalysisControllerのような補完ロジックを入れるか、保存時に一括やるか。保存時一括が安全)
-  String? confirmLog() { if (selectedPlayer == null || selectedUIAction == null) return null; if (selectedUIAction!.isSubRequired && selectedUIAction!.subActions.isNotEmpty && selectedSubAction == null) { return "詳細項目の選択が必須です"; } logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: selectedPlayer!, action: selectedUIAction!.parentName, subAction: selectedSubAction, type: LogType.action, result: selectedUIAction!.fixedResult)); selectedUIAction = null; selectedSubAction = null; DataManager.saveCurrentLogs(logs); notifyListeners(); return null; }
+  String? confirmLog() {
+    if (selectedPlayer == null || selectedUIAction == null) return null;
+    if (selectedUIAction!.isSubRequired && selectedUIAction!.subActions.isNotEmpty && selectedSubAction == null) {
+      return "詳細項目の選択が必須です";
+    }
+
+    logs.insert(0, LogEntry(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        matchDate: DateFormat('yyyy-MM-dd').format(_matchDate),
+        opponent: '記録中',
+        gameTime: formattedTime,
+        playerNumber: selectedPlayer!,
+        action: selectedUIAction!.parentName,
+        subAction: selectedSubAction?.name,
+        subActionId: selectedSubAction?.id,
+        type: LogType.action,
+        result: selectedUIAction!.fixedResult
+    ));
+
+    selectedUIAction = null;
+    selectedSubAction = null;
+    DataManager.saveCurrentLogs(logs);
+    notifyListeners();
+    return null;
+  }
+
   void deleteLog(int index) { logs.removeAt(index); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void restoreLog(int index, LogEntry log) { logs.insert(index, log); DataManager.saveCurrentLogs(logs); notifyListeners(); }
-  void updateLog(LogEntry log, String number, String actionName, String? subAction) { log.playerNumber = number; log.action = actionName; log.subAction = subAction; DataManager.saveCurrentLogs(logs); notifyListeners(); }
+
+  // ★修正: ログ編集用メソッドを強化（オブジェクト全体を更新）
+  void updateLog(int index, LogEntry newLog) {
+    if (index >= 0 && index < logs.length) {
+      logs[index] = newLog;
+      DataManager.saveCurrentLogs(logs);
+      notifyListeners();
+    }
+  }
+
   void endMatch() { _gameTimer?.cancel(); _isRunning = false; _recordSystemLog("試合終了"); }
 
   Future<bool> saveMatchToDb({
@@ -255,10 +309,7 @@ class GameRecorderController extends ChangeNotifier {
       finalOpponentName = "試合-${dateStr} #${newNum}";
     }
 
-    // ★修正: ログと参加者にIDを付与する
     final numField = currentTeam.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => currentTeam.schema.first);
-
-    // 背番号 -> ID マップ作成
     final numToId = <String, String>{};
     for (var item in currentTeam.items) {
       final num = item.data[numField.id]?.toString() ?? "";
@@ -285,14 +336,12 @@ class GameRecorderController extends ChangeNotifier {
     final logMaps = logs.reversed.map((log) {
       final map = log.toJson();
       map['opponent'] = finalOpponentName;
-      // ★ID付与
       if (log.playerNumber.isNotEmpty && numToId.containsKey(log.playerNumber)) {
         map['playerId'] = numToId[log.playerNumber];
       }
       return map;
     }).toList();
 
-    // ★修正: 参加者リストの生成 (List<Map<String,String>>)
     final List<Map<String, String>> participationList = [];
     for (var num in courtPlayers) {
       participationList.add({

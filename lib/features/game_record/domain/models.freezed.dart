@@ -19,8 +19,10 @@ final _privateConstructorUsedError = UnsupportedError(
 mixin _$UIActionItem {
   String get name => throw _privateConstructorUsedError;
   String get parentName => throw _privateConstructorUsedError;
-  ActionResult get fixedResult => throw _privateConstructorUsedError;
-  List<String> get subActions => throw _privateConstructorUsedError;
+  ActionResult get fixedResult =>
+      throw _privateConstructorUsedError; // ★修正: 文字列ではなく定義オブジェクトを持つ
+  List<SubActionDefinition> get subActions =>
+      throw _privateConstructorUsedError;
   bool get isSubRequired => throw _privateConstructorUsedError;
   bool get hasSuccess => throw _privateConstructorUsedError;
   bool get hasFailure => throw _privateConstructorUsedError;
@@ -43,7 +45,7 @@ abstract class $UIActionItemCopyWith<$Res> {
     String name,
     String parentName,
     ActionResult fixedResult,
-    List<String> subActions,
+    List<SubActionDefinition> subActions,
     bool isSubRequired,
     bool hasSuccess,
     bool hasFailure,
@@ -90,7 +92,7 @@ class _$UIActionItemCopyWithImpl<$Res, $Val extends UIActionItem>
             subActions: null == subActions
                 ? _value.subActions
                 : subActions // ignore: cast_nullable_to_non_nullable
-                      as List<String>,
+                      as List<SubActionDefinition>,
             isSubRequired: null == isSubRequired
                 ? _value.isSubRequired
                 : isSubRequired // ignore: cast_nullable_to_non_nullable
@@ -122,7 +124,7 @@ abstract class _$$UIActionItemImplCopyWith<$Res>
     String name,
     String parentName,
     ActionResult fixedResult,
-    List<String> subActions,
+    List<SubActionDefinition> subActions,
     bool isSubRequired,
     bool hasSuccess,
     bool hasFailure,
@@ -168,7 +170,7 @@ class __$$UIActionItemImplCopyWithImpl<$Res>
         subActions: null == subActions
             ? _value._subActions
             : subActions // ignore: cast_nullable_to_non_nullable
-                  as List<String>,
+                  as List<SubActionDefinition>,
         isSubRequired: null == isSubRequired
             ? _value.isSubRequired
             : isSubRequired // ignore: cast_nullable_to_non_nullable
@@ -193,7 +195,7 @@ class _$UIActionItemImpl implements _UIActionItem {
     required this.name,
     required this.parentName,
     required this.fixedResult,
-    required final List<String> subActions,
+    required final List<SubActionDefinition> subActions,
     required this.isSubRequired,
     this.hasSuccess = false,
     this.hasFailure = false,
@@ -205,9 +207,11 @@ class _$UIActionItemImpl implements _UIActionItem {
   final String parentName;
   @override
   final ActionResult fixedResult;
-  final List<String> _subActions;
+  // ★修正: 文字列ではなく定義オブジェクトを持つ
+  final List<SubActionDefinition> _subActions;
+  // ★修正: 文字列ではなく定義オブジェクトを持つ
   @override
-  List<String> get subActions {
+  List<SubActionDefinition> get subActions {
     if (_subActions is EqualUnmodifiableListView) return _subActions;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(_subActions);
@@ -275,7 +279,7 @@ abstract class _UIActionItem implements UIActionItem {
     required final String name,
     required final String parentName,
     required final ActionResult fixedResult,
-    required final List<String> subActions,
+    required final List<SubActionDefinition> subActions,
     required final bool isSubRequired,
     final bool hasSuccess,
     final bool hasFailure,
@@ -286,9 +290,9 @@ abstract class _UIActionItem implements UIActionItem {
   @override
   String get parentName;
   @override
-  ActionResult get fixedResult;
+  ActionResult get fixedResult; // ★修正: 文字列ではなく定義オブジェクトを持つ
   @override
-  List<String> get subActions;
+  List<SubActionDefinition> get subActions;
   @override
   bool get isSubRequired;
   @override
@@ -319,14 +323,15 @@ mixin _$LogEntry {
   String get gameTime => throw _privateConstructorUsedError;
   set gameTime(String value) => throw _privateConstructorUsedError;
   String get playerNumber => throw _privateConstructorUsedError;
-  set playerNumber(String value) =>
-      throw _privateConstructorUsedError; // ★追加: 選手ID
-  String? get playerId => throw _privateConstructorUsedError; // ★追加: 選手ID
+  set playerNumber(String value) => throw _privateConstructorUsedError;
+  String? get playerId => throw _privateConstructorUsedError;
   set playerId(String? value) => throw _privateConstructorUsedError;
   String get action => throw _privateConstructorUsedError;
   set action(String value) => throw _privateConstructorUsedError;
   String? get subAction => throw _privateConstructorUsedError;
-  set subAction(String? value) => throw _privateConstructorUsedError;
+  set subAction(String? value) => throw _privateConstructorUsedError; // ★追加: ID
+  String? get subActionId => throw _privateConstructorUsedError; // ★追加: ID
+  set subActionId(String? value) => throw _privateConstructorUsedError;
   @LogTypeConverter()
   LogType get type => throw _privateConstructorUsedError;
   @LogTypeConverter()
@@ -360,6 +365,7 @@ abstract class $LogEntryCopyWith<$Res> {
     String? playerId,
     String action,
     String? subAction,
+    String? subActionId,
     @LogTypeConverter() LogType type,
     @ActionResultConverter() ActionResult result,
   });
@@ -388,6 +394,7 @@ class _$LogEntryCopyWithImpl<$Res, $Val extends LogEntry>
     Object? playerId = freezed,
     Object? action = null,
     Object? subAction = freezed,
+    Object? subActionId = freezed,
     Object? type = null,
     Object? result = null,
   }) {
@@ -425,6 +432,10 @@ class _$LogEntryCopyWithImpl<$Res, $Val extends LogEntry>
                 ? _value.subAction
                 : subAction // ignore: cast_nullable_to_non_nullable
                       as String?,
+            subActionId: freezed == subActionId
+                ? _value.subActionId
+                : subActionId // ignore: cast_nullable_to_non_nullable
+                      as String?,
             type: null == type
                 ? _value.type
                 : type // ignore: cast_nullable_to_non_nullable
@@ -457,6 +468,7 @@ abstract class _$$LogEntryImplCopyWith<$Res>
     String? playerId,
     String action,
     String? subAction,
+    String? subActionId,
     @LogTypeConverter() LogType type,
     @ActionResultConverter() ActionResult result,
   });
@@ -484,6 +496,7 @@ class __$$LogEntryImplCopyWithImpl<$Res>
     Object? playerId = freezed,
     Object? action = null,
     Object? subAction = freezed,
+    Object? subActionId = freezed,
     Object? type = null,
     Object? result = null,
   }) {
@@ -521,6 +534,10 @@ class __$$LogEntryImplCopyWithImpl<$Res>
             ? _value.subAction
             : subAction // ignore: cast_nullable_to_non_nullable
                   as String?,
+        subActionId: freezed == subActionId
+            ? _value.subActionId
+            : subActionId // ignore: cast_nullable_to_non_nullable
+                  as String?,
         type: null == type
             ? _value.type
             : type // ignore: cast_nullable_to_non_nullable
@@ -546,6 +563,7 @@ class _$LogEntryImpl implements _LogEntry {
     this.playerId,
     required this.action,
     this.subAction,
+    this.subActionId,
     @LogTypeConverter() this.type = LogType.action,
     @ActionResultConverter() this.result = ActionResult.none,
   });
@@ -563,13 +581,15 @@ class _$LogEntryImpl implements _LogEntry {
   String gameTime;
   @override
   String playerNumber;
-  // ★追加: 選手ID
   @override
   String? playerId;
   @override
   String action;
   @override
   String? subAction;
+  // ★追加: ID
+  @override
+  String? subActionId;
   @override
   @JsonKey()
   @LogTypeConverter()
@@ -581,7 +601,7 @@ class _$LogEntryImpl implements _LogEntry {
 
   @override
   String toString() {
-    return 'LogEntry(id: $id, matchDate: $matchDate, opponent: $opponent, gameTime: $gameTime, playerNumber: $playerNumber, playerId: $playerId, action: $action, subAction: $subAction, type: $type, result: $result)';
+    return 'LogEntry(id: $id, matchDate: $matchDate, opponent: $opponent, gameTime: $gameTime, playerNumber: $playerNumber, playerId: $playerId, action: $action, subAction: $subAction, subActionId: $subActionId, type: $type, result: $result)';
   }
 
   /// Create a copy of LogEntry
@@ -608,6 +628,7 @@ abstract class _LogEntry implements LogEntry {
     String? playerId,
     required String action,
     String? subAction,
+    String? subActionId,
     @LogTypeConverter() LogType type,
     @ActionResultConverter() ActionResult result,
   }) = _$LogEntryImpl;
@@ -629,16 +650,19 @@ abstract class _LogEntry implements LogEntry {
   set gameTime(String value);
   @override
   String get playerNumber;
-  set playerNumber(String value); // ★追加: 選手ID
+  set playerNumber(String value);
   @override
-  String? get playerId; // ★追加: 選手ID
+  String? get playerId;
   set playerId(String? value);
   @override
   String get action;
   set action(String value);
   @override
   String? get subAction;
-  set subAction(String? value);
+  set subAction(String? value); // ★追加: ID
+  @override
+  String? get subActionId; // ★追加: ID
+  set subActionId(String? value);
   @override
   @LogTypeConverter()
   LogType get type;

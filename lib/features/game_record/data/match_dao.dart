@@ -5,13 +5,11 @@ import '../../../../core/database/database_helper.dart';
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
-  // --- 試合とログの新規作成 ---
-  // ★修正: participations は Map<String, dynamic> のリストを受け取るように変更（IDと番号）
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
       List<Map<String, dynamic>> logs,
-      List<Map<String, String>> participations // ★変更: 番号とIDのペア
+      List<Map<String, String>> participations
       ) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -39,9 +37,10 @@ class MatchDao {
           'match_id': matchData['id'],
           'game_time': log['gameTime'],
           'player_number': log['playerNumber'],
-          'player_id': log['playerId'], // ★追加
+          'player_id': log['playerId'],
           'action': log['action'] ?? '',
           'sub_action': log['subAction'],
+          'sub_action_id': log['subActionId'],
           'log_type': log['type'],
           'result': log['result'],
         });
@@ -51,13 +50,12 @@ class MatchDao {
         await txn.insert('match_participations', {
           'match_id': matchData['id'],
           'player_number': p['player_number'],
-          'player_id': p['player_id'], // ★追加
+          'player_id': p['player_id'],
         });
       }
     });
   }
 
-  // --- ログ単体の操作 ---
   Future<void> insertMatchLog(String matchId, Map<String, dynamic> logMap) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -66,28 +64,27 @@ class MatchDao {
         'match_id': matchId,
         'game_time': logMap['gameTime'],
         'player_number': logMap['playerNumber'],
-        'player_id': logMap['playerId'], // ★追加
+        'player_id': logMap['playerId'],
         'action': logMap['action'],
         'sub_action': logMap['subAction'],
+        'sub_action_id': logMap['subActionId'],
         'log_type': logMap['type'],
         'result': logMap['result'],
       });
-      // 参加テーブルへの追加判定は、IDがあればIDで、なければ番号で
+
       final pid = logMap['playerId'];
       final pNum = logMap['playerNumber'];
-
       List<Map<String, Object?>> existing;
       if (pid != null && pid.isNotEmpty) {
         existing = await txn.query('match_participations', where: 'match_id = ? AND player_id = ?', whereArgs: [matchId, pid]);
       } else {
         existing = await txn.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, pNum]);
       }
-
       if (existing.isEmpty) {
         await txn.insert('match_participations', {
           'match_id': matchId,
           'player_number': pNum,
-          'player_id': pid, // ★追加
+          'player_id': pid,
         });
       }
     });
@@ -98,34 +95,13 @@ class MatchDao {
     await db.update('match_logs', {
       'game_time': logMap['gameTime'],
       'player_number': logMap['playerNumber'],
-      'player_id': logMap['playerId'], // ★追加
+      'player_id': logMap['playerId'],
       'action': logMap['action'],
       'sub_action': logMap['subAction'],
+      'sub_action_id': logMap['subActionId'],
       'log_type': logMap['type'],
       'result': logMap['result'],
     }, where: 'id = ?', whereArgs: [logMap['id']]);
-
-    // 参加テーブル更新 (簡易的に追加のみチェック)
-    if (logMap['match_id'] != null) {
-      final pid = logMap['playerId'];
-      final pNum = logMap['playerNumber'];
-      final mid = logMap['match_id'];
-
-      List<Map<String, Object?>> existing;
-      if (pid != null && pid.isNotEmpty) {
-        existing = await db.query('match_participations', where: 'match_id = ? AND player_id = ?', whereArgs: [mid, pid]);
-      } else {
-        existing = await db.query('match_participations', where: 'match_id = ? AND player_number = ?', whereArgs: [mid, pNum]);
-      }
-
-      if (existing.isEmpty) {
-        await db.insert('match_participations', {
-          'match_id': mid,
-          'player_number': pNum,
-          'player_id': pid,
-        });
-      }
-    }
   }
 
   Future<void> deleteMatchLog(String logId) async {
@@ -133,7 +109,6 @@ class MatchDao {
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
   }
 
-  // --- 試合情報の更新 ---
   Future<void> updateMatchInfo({
     required String matchId,
     required String newDate,
@@ -166,7 +141,6 @@ class MatchDao {
     }, where: 'id = ?', whereArgs: [matchId]);
   }
 
-  // ★修正: ID対応
   Future<void> updateMatchParticipations(String matchId, List<Map<String, String>> members) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -225,12 +199,7 @@ class MatchDao {
 
   Future<void> updateOpponentName(String teamId, String oldName, String newName) async {
     final db = await _dbHelper.database;
-    await db.update(
-        'matches',
-        {'opponent': newName},
-        where: 'team_id = ? AND opponent = ?',
-        whereArgs: [teamId, oldName]
-    );
+    await db.update('matches', {'opponent': newName}, where: 'team_id = ? AND opponent = ?', whereArgs: [teamId, oldName]);
   }
 
   Future<int> countVenueNameUsage(String teamId, String name) async {
@@ -244,15 +213,9 @@ class MatchDao {
 
   Future<void> updateVenueName(String teamId, String oldName, String newName) async {
     final db = await _dbHelper.database;
-    await db.update(
-        'matches',
-        {'venue_name': newName},
-        where: 'team_id = ? AND venue_name = ?',
-        whereArgs: [teamId, oldName]
-    );
+    await db.update('matches', {'venue_name': newName}, where: 'team_id = ? AND venue_name = ?', whereArgs: [teamId, oldName]);
   }
 
-  // --- 取得系 ---
   Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
     final db = await _dbHelper.database;
     return await db.query('matches', where: 'team_id = ?', orderBy: 'date DESC, created_at DESC', whereArgs: [teamId]);
@@ -263,12 +226,12 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
-  // ★修正: IDも取得
+  // ★修正: 集計時に必要な 'match_id' をカラムに追加
   Future<List<Map<String, dynamic>>> getMatchParticipations(String matchId) async {
     final db = await _dbHelper.database;
     return await db.query(
         'match_participations',
-        columns: ['player_number', 'player_id'],
+        columns: ['player_number', 'player_id', 'match_id'], // match_idを追加
         where: 'match_id = ?',
         whereArgs: [matchId]
     );
@@ -283,9 +246,7 @@ class MatchDao {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getLogsInPeriod(
-      String teamId, String startDate, String endDate,
-      [List<int>? matchTypes]) async {
+  Future<List<Map<String, dynamic>>> getLogsInPeriod(String teamId, String startDate, String endDate, [List<int>? matchTypes]) async {
     final db = await _dbHelper.database;
     String typeCondition = "";
     if (matchTypes != null && matchTypes.isNotEmpty) {
@@ -305,10 +266,7 @@ class MatchDao {
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
-  // ★修正: player_id も取得
-  Future<List<Map<String, dynamic>>> getParticipationsInPeriod(
-      String teamId, String startDate, String endDate,
-      [List<int>? matchTypes]) async {
+  Future<List<Map<String, dynamic>>> getParticipationsInPeriod(String teamId, String startDate, String endDate, [List<int>? matchTypes]) async {
     final db = await _dbHelper.database;
     String typeCondition = "";
     if (matchTypes != null && matchTypes.isNotEmpty) {
@@ -328,14 +286,11 @@ class MatchDao {
     return await db.rawQuery(sql, [teamId, startDate, endDate]);
   }
 
-  // ★追加: 遅延マイグレーション用（ログのID更新）
   Future<void> updateLogPlayerId(String logId, String playerId) async {
     final db = await _dbHelper.database;
     await db.update('match_logs', {'player_id': playerId}, where: 'id = ?', whereArgs: [logId]);
   }
 
-  // ★追加: 遅延マイグレーション用（参加情報のID更新）
-  // 参加テーブルには主キーがない(AUTOINCREMENT)ので、match_idとnumberで指定
   Future<void> updateParticipationPlayerId(String matchId, String playerNumber, String playerId) async {
     final db = await _dbHelper.database;
     await db.update('match_participations', {'player_id': playerId}, where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, playerNumber]);

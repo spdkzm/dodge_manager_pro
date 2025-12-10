@@ -5,17 +5,30 @@ import 'package:uuid/uuid.dart';
 part 'action_definition.freezed.dart';
 part 'action_definition.g.dart';
 
+@freezed
+class SubActionDefinition with _$SubActionDefinition {
+  const factory SubActionDefinition({
+    required String id,
+    required String name,
+    required String category, // 'success', 'failure', 'default'
+    @Default(0) int sortOrder,
+  }) = _SubActionDefinition;
+
+  factory SubActionDefinition.fromJson(Map<String, dynamic> json) => _$SubActionDefinitionFromJson(json);
+}
+
 @unfreezed
 class ActionDefinition with _$ActionDefinition {
   factory ActionDefinition({
     @Default('') String id,
     required String name,
-    @Default({'default': [], 'success': [], 'failure': []}) Map<String, List<String>> subActionsMap,
+    // ★修正: マップ廃止、リスト化
+    @Default([]) List<SubActionDefinition> subActions,
     @Default(false) bool isSubRequired,
     @Default(0) int sortOrder,
-    @Default(0) int positionIndex,        // 通常ボタンの位置
-    @Default(0) int successPositionIndex, // ★追加: 成功ボタンの位置
-    @Default(0) int failurePositionIndex, // ★追加: 失敗ボタンの位置
+    @Default(0) int positionIndex,
+    @Default(0) int successPositionIndex,
+    @Default(0) int failurePositionIndex,
     @Default(false) bool hasSuccess,
     @Default(false) bool hasFailure,
   }) = _ActionDefinition;
@@ -23,24 +36,14 @@ class ActionDefinition with _$ActionDefinition {
   factory ActionDefinition.fromJson(Map<String, dynamic> json) => _$ActionDefinitionFromJson(json);
 
   factory ActionDefinition.fromMap(Map<String, dynamic> map) {
-    Map<String, dynamic> modMap = Map.from(map);
+    // DBのカラム構造とは異なるため、DAO側で結合処理を行うが、
+    // ここでは基本的なマッピングを行う
+    final modMap = Map<String, dynamic>.from(map);
+    if (modMap['id'] == null) modMap['id'] = const Uuid().v4();
+    if (modMap['name'] == null) modMap['name'] = '';
 
-    if (modMap['subActionsMap'] is! Map) {
-      Map<String, List<String>> loadedMap = {'default': [], 'success': [], 'failure': []};
-      if (map['subActions'] is List) {
-        loadedMap['default'] = List<String>.from(map['subActions']);
-      }
-      modMap['subActionsMap'] = loadedMap;
-    }
-
-    if (modMap['id'] == null) {
-      modMap['id'] = const Uuid().v4();
-    }
-
-    // ★修正: nameがNULLだった場合の安全策 (クラッシュ回避)
-    if (modMap['name'] == null) {
-      modMap['name'] = '';
-    }
+    // subActions は DAO側でリストとして注入される想定
+    if (modMap['subActions'] == null) modMap['subActions'] = [];
 
     return ActionDefinition.fromJson(modMap);
   }
@@ -49,5 +52,11 @@ class ActionDefinition with _$ActionDefinition {
 extension ActionDefinitionX on ActionDefinition {
   Map<String, dynamic> toMap() {
     return toJson();
+  }
+
+  // カテゴリごとの取得ヘルパー
+  List<SubActionDefinition> getSubActions(String category) {
+    return subActions.where((s) => s.category == category).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 }

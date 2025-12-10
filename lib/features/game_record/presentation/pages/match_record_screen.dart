@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart'; // UUID追加
 
 import '../widgets/game_timer_bar.dart';
 import '../widgets/player_selection_panel.dart';
@@ -13,6 +14,7 @@ import '../../domain/models.dart';
 import '../../application/game_recorder_controller.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../../team_mgmt/domain/roster_item.dart';
+import '../../../settings/domain/action_definition.dart'; // SubActionDefinition
 
 import '../../../settings/presentation/pages/button_layout_settings_screen.dart';
 import '../../../settings/presentation/pages/action_settings_screen.dart';
@@ -185,15 +187,12 @@ class MatchRecordScreen extends HookConsumerWidget {
       }
     }
 
-    // ★修正: 試合終了ダイアログ（勝敗・スコア入力対応）
     void handleEndMatch() {
       controller.endMatch();
 
-      // 設定値の読み込み
       final bool isResultEnabled = controller.settings.isResultRecordingEnabled;
       final bool isScoreEnabled = controller.settings.isScoreRecordingEnabled;
 
-      // 入力用の一時変数
       MatchResult tempResult = MatchResult.none;
       MatchResult tempExtraResult = MatchResult.none;
       final scoreOwnCtrl = TextEditingController();
@@ -207,7 +206,6 @@ class MatchRecordScreen extends HookConsumerWidget {
         builder: (context) {
           return StatefulBuilder(builder: (context, setStateDialog) {
 
-            // スコア入力ウィジェットビルダー
             Widget buildScoreInput(String label, TextEditingController ctrl1, TextEditingController ctrl2) {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -219,7 +217,6 @@ class MatchRecordScreen extends HookConsumerWidget {
               );
             }
 
-            // 勝敗選択ボタンビルダー
             Widget buildResultToggle(MatchResult current, Function(MatchResult) onSelect) {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -251,7 +248,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                         buildScoreInput("スコア", scoreOwnCtrl, scoreOppCtrl),
                       ],
 
-                      // 引き分け選択時のみ表示
                       if (tempResult == MatchResult.draw) ...[
                         const Divider(height: 24),
                         Container(
@@ -285,8 +281,6 @@ class MatchRecordScreen extends HookConsumerWidget {
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("キャンセル")),
                 ElevatedButton(onPressed: () async {
-                  // 保存処理呼び出し
-                  // 最終的な結果: 延長があれば延長の結果、なければ本戦の結果
                   MatchResult finalResult = tempExtraResult != MatchResult.none ? tempExtraResult : tempResult;
                   bool isExtra = tempExtraResult != MatchResult.none;
 
@@ -312,15 +306,172 @@ class MatchRecordScreen extends HookConsumerWidget {
       );
     }
 
+    // ★修正: ログ編集ダイアログ (システムログ対応)
     void showEditLogDialog(LogEntry log, int index) {
-      controller.deleteLog(index);
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: const Text("ログを削除しました"),
-              action: SnackBarAction(
-                  label: "復元",
-                  onPressed: () => controller.restoreLog(index, log)
-              )
+      final isSystemLog = log.type == LogType.system;
+
+      final definitions = controller.actionDefinitions;
+
+      // 全選手リストを作成 (コート+ベンチ+欠席)
+      final allPlayers = [
+        ...controller.courtPlayers,
+        ...controller.benchPlayers,
+        ...controller.absentPlayers
+      ]..sort((a,b) => (int.tryParse(a)??999).compareTo(int.tryParse(b)??999));
+
+      final actionNames = definitions.map((d) => d.name).toList();
+
+      final timeCtrl = TextEditingController(text: log.gameTime);
+      final actionNameCtrl = TextEditingController(text: log.action); // システムログ用
+
+      String? playerNumVal = allPlayers.contains(log.playerNumber) ? log.playerNumber : null;
+      String? actionNameVal = actionNames.contains(log.action) ? log.action : null;
+      SubActionDefinition? subActionVal;
+      ActionResult resultVal = log.result;
+
+      // アクションログの場合の初期化
+      if (!isSystemLog && actionNameVal != null) {
+        final def = definitions.firstWhere((d) => d.name == actionNameVal, orElse: () => ActionDefinition(name: '', subActions: []));
+        if (log.subActionId != null) {
+          subActionVal = def.subActions.where((s) => s.id == log.subActionId).firstOrNull;
+        }
+      }
+
+      showDialog(
+          context: context,
+          builder: (ctx) => StatefulBuilder(
+              builder: (ctx, setStateDialog) {
+
+                ActionDefinition selectedDef = ActionDefinition(name: '', subActions: []);
+                if (!isSystemLog && actionNameVal != null) {
+                  selectedDef = definitions.firstWhere(
+                          (d) => d.name == actionNameVal,
+                      orElse: () => ActionDefinition(name: '', subActions: [])
+                  );
+                }
+
+                String category = 'default';
+                if (resultVal == ActionResult.success) category = 'success';
+                else if (resultVal == ActionResult.failure) category = 'failure';
+
+                final subActions = selectedDef.getSubActions(category);
+
+                return AlertDialog(
+                    title: Text(isSystemLog ? "システムログ編集" : "ログ編集"),
+                    content: SingleChildScrollView(
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                                controller: timeCtrl,
+                                decoration: const InputDecoration(labelText: "時間 (分:秒)", hintText: "05:30"),
+                                keyboardType: TextInputType.datetime
+                            ),
+                            const SizedBox(height: 16),
+
+                            if (isSystemLog) ...[
+                              // システムログの場合はテキスト入力のみ
+                              TextField(
+                                controller: actionNameCtrl,
+                                decoration: const InputDecoration(labelText: "内容 (試合開始, タイムなど)"),
+                              ),
+                            ] else ...[
+                              // アクションログの場合
+                              DropdownButtonFormField<String>(
+                                  value: playerNumVal,
+                                  decoration: const InputDecoration(labelText: "選手"),
+                                  items: allPlayers.map((p) {
+                                    final name = controller.playerNames[p] ?? "";
+                                    return DropdownMenuItem(value: p, child: Text("#$p $name"));
+                                  }).toList(),
+                                  onChanged: (v) => setStateDialog(() => playerNumVal = v)
+                              ),
+                              const SizedBox(height: 16),
+                              DropdownButtonFormField<String>(
+                                  value: actionNameVal,
+                                  decoration: const InputDecoration(labelText: "アクション"),
+                                  items: actionNames.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+                                  onChanged: (v) => setStateDialog(() {
+                                    actionNameVal = v;
+                                    subActionVal = null; // アクション変更時は詳細リセット
+                                  })
+                              ),
+                              const SizedBox(height: 16),
+                              const Text("結果", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              Row(
+                                  children: [
+                                    Radio<ActionResult>(value: ActionResult.none, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })),
+                                    const Text("なし"),
+                                    Radio<ActionResult>(value: ActionResult.success, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })),
+                                    const Text("成功"),
+                                    Radio<ActionResult>(value: ActionResult.failure, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })),
+                                    const Text("失敗")
+                                  ]
+                              ),
+                              if (subActions.isNotEmpty)
+                                DropdownButtonFormField<SubActionDefinition>(
+                                    value: subActions.any((s) => s.id == subActionVal?.id) ? subActionVal : null,
+                                    decoration: const InputDecoration(labelText: "詳細"),
+                                    items: subActions.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
+                                    onChanged: (v) => setStateDialog(() => subActionVal = v)
+                                )
+                            ]
+                          ]
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (c) => AlertDialog(
+                                    title: const Text("削除確認"),
+                                    content: const Text("このログを削除しますか？"),
+                                    actions: [
+                                      TextButton(onPressed: ()=>Navigator.pop(c, false), child: const Text("キャンセル")),
+                                      ElevatedButton(onPressed: ()=>Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text("削除"))
+                                    ]
+                                )
+                            );
+                            if (confirm == true && context.mounted) {
+                              controller.deleteLog(index);
+                              Navigator.pop(ctx);
+                            }
+                          },
+                          style: TextButton.styleFrom(foregroundColor: Colors.red),
+                          child: const Text("削除")
+                      ),
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")),
+                      ElevatedButton(
+                          onPressed: () {
+                            // 保存処理
+                            final newTime = timeCtrl.text;
+
+                            if (isSystemLog) {
+                              final newAction = actionNameCtrl.text;
+                              if (newAction.isEmpty) return;
+                              final newLog = log.copyWith(gameTime: newTime, action: newAction);
+                              controller.updateLog(index, newLog);
+                            } else {
+                              if (playerNumVal == null || actionNameVal == null) return;
+                              final newLog = log.copyWith(
+                                gameTime: newTime,
+                                playerNumber: playerNumVal!,
+                                action: actionNameVal!,
+                                subAction: subActionVal?.name,
+                                subActionId: subActionVal?.id,
+                                result: resultVal,
+                              );
+                              controller.updateLog(index, newLog);
+                            }
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text("保存")
+                      )
+                    ]
+                );
+              }
           )
       );
     }
@@ -398,8 +549,28 @@ class MatchRecordScreen extends HookConsumerWidget {
       body: Row(children: [
         Expanded(flex: 2, child: PlayerSelectionPanel(tabController: tabController, courtPlayers: controller.courtPlayers, benchPlayers: controller.benchPlayers, absentPlayers: controller.absentPlayers, playerNames: controller.playerNames, selectedPlayer: controller.selectedPlayer, selectedForMove: controller.selectedForMove, isMultiSelectMode: controller.isMultiSelectMode, onPlayerTap: controller.selectPlayer, onPlayerLongPress: controller.startMultiSelect, onMoveSelected: controller.moveSelectedPlayers, onClearMultiSelect: controller.clearMultiSelect)),
         const VerticalDivider(width: 1),
-        Expanded(flex: 6, child: Column(children: [GameTimerBar(isRunning: controller.isRunning, hasMatchStarted: controller.hasMatchStarted, onStart: controller.startTimer, onStop: controller.stopTimer, onEnd: handleEndMatch), Expanded(child: GameOperationPanel(uiActions: controller.uiActions, gridColumns: controller.settings.gridColumns, hasMatchStarted: controller.hasMatchStarted, selectedPlayer: controller.selectedPlayer, playerNames: controller.playerNames, selectedUIAction: controller.selectedUIAction, selectedSubAction: controller.selectedSubAction, selectedResult: controller.selectedResult, onActionSelected: controller.selectAction, onResultSelected: controller.selectResult, onSubActionSelected: controller.selectSubAction, onConfirm: handleLogConfirm))])),
-        Expanded(flex: 2, child: GameLogPanel(logs: controller.logs, onLogTap: showEditLogDialog)),
+        Expanded(flex: 6, child: Column(children: [
+          GameTimerBar(isRunning: controller.isRunning, hasMatchStarted: controller.hasMatchStarted, onStart: controller.startTimer, onStop: controller.stopTimer, onEnd: handleEndMatch),
+          Expanded(child: GameOperationPanel(
+              uiActions: controller.uiActions,
+              gridColumns: controller.settings.gridColumns,
+              hasMatchStarted: controller.hasMatchStarted,
+              selectedPlayer: controller.selectedPlayer,
+              playerNames: controller.playerNames,
+              selectedUIAction: controller.selectedUIAction,
+              selectedSubAction: controller.selectedSubAction,
+              selectedResult: controller.selectedResult,
+              onActionSelected: controller.selectAction,
+              onResultSelected: controller.selectResult,
+              onSubActionSelected: controller.selectSubAction,
+              onConfirm: handleLogConfirm
+          ))
+        ])),
+        Expanded(flex: 2, child: GameLogPanel(
+            logs: controller.logs,
+            // ログタップ時のコールバック (編集ダイアログを開く)
+            onLogTap: showEditLogDialog
+        )),
       ]),
     );
   }

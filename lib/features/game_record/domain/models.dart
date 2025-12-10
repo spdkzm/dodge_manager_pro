@@ -1,5 +1,6 @@
 // lib/features/game_record/domain/models.dart
 import 'package:freezed_annotation/freezed_annotation.dart';
+import '../../settings/domain/action_definition.dart'; // SubActionDefinitionを利用
 
 part 'models.freezed.dart';
 part 'models.g.dart';
@@ -47,7 +48,8 @@ class UIActionItem with _$UIActionItem {
     required String name,
     required String parentName,
     required ActionResult fixedResult,
-    required List<String> subActions,
+    // ★修正: 文字列ではなく定義オブジェクトを持つ
+    required List<SubActionDefinition> subActions,
     required bool isSubRequired,
     @Default(false) bool hasSuccess,
     @Default(false) bool hasFailure,
@@ -62,10 +64,11 @@ class LogEntry with _$LogEntry {
     required String opponent,
     required String gameTime,
     required String playerNumber,
-    // ★追加: 選手ID
     String? playerId,
     required String action,
     String? subAction,
+    // ★追加: ID
+    String? subActionId,
     @LogTypeConverter() @Default(LogType.action) LogType type,
     @ActionResultConverter() @Default(ActionResult.none) ActionResult result,
   }) = _LogEntry;
@@ -95,6 +98,9 @@ class MatchRecord with _$MatchRecord {
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);
 }
 
+// AppSettings内での定義（デフォルト値用など）は簡易的なStringリストのままにするか、
+// 設定画面でActionDefinitionをフルに使うため、ここではActionItemは古い互換用として残すか、削除推奨ですが
+// 既存コード維持のため、ここは影響の少ない範囲で残します。
 @freezed
 class ActionItem with _$ActionItem {
   const factory ActionItem({
@@ -121,18 +127,5 @@ class AppSettings with _$AppSettings {
   }) = _AppSettings;
 
   factory AppSettings.fromJson(Map<String, dynamic> json) =>
-      _$AppSettingsFromJson(_migrateOldData(json));
-
-  static Map<String, dynamic> _migrateOldData(Map<String, dynamic> json) {
-    if (json['actions'] is List && (json['actions'] as List).isNotEmpty) {
-      final list = json['actions'] as List;
-      if (list[0] is String) {
-        final convertedActions = list.map((e) => {'name': e}).toList();
-        final newJson = Map<String, dynamic>.from(json);
-        newJson['actions'] = convertedActions;
-        return newJson;
-      }
-    }
-    return json;
-  }
+      _$AppSettingsFromJson(json);
 }

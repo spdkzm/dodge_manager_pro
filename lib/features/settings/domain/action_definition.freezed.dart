@@ -15,6 +15,227 @@ final _privateConstructorUsedError = UnsupportedError(
   'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
 );
 
+SubActionDefinition _$SubActionDefinitionFromJson(Map<String, dynamic> json) {
+  return _SubActionDefinition.fromJson(json);
+}
+
+/// @nodoc
+mixin _$SubActionDefinition {
+  String get id => throw _privateConstructorUsedError;
+  String get name => throw _privateConstructorUsedError;
+  String get category =>
+      throw _privateConstructorUsedError; // 'success', 'failure', 'default'
+  int get sortOrder => throw _privateConstructorUsedError;
+
+  /// Serializes this SubActionDefinition to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of SubActionDefinition
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $SubActionDefinitionCopyWith<SubActionDefinition> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $SubActionDefinitionCopyWith<$Res> {
+  factory $SubActionDefinitionCopyWith(
+    SubActionDefinition value,
+    $Res Function(SubActionDefinition) then,
+  ) = _$SubActionDefinitionCopyWithImpl<$Res, SubActionDefinition>;
+  @useResult
+  $Res call({String id, String name, String category, int sortOrder});
+}
+
+/// @nodoc
+class _$SubActionDefinitionCopyWithImpl<$Res, $Val extends SubActionDefinition>
+    implements $SubActionDefinitionCopyWith<$Res> {
+  _$SubActionDefinitionCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of SubActionDefinition
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? id = null,
+    Object? name = null,
+    Object? category = null,
+    Object? sortOrder = null,
+  }) {
+    return _then(
+      _value.copyWith(
+            id: null == id
+                ? _value.id
+                : id // ignore: cast_nullable_to_non_nullable
+                      as String,
+            name: null == name
+                ? _value.name
+                : name // ignore: cast_nullable_to_non_nullable
+                      as String,
+            category: null == category
+                ? _value.category
+                : category // ignore: cast_nullable_to_non_nullable
+                      as String,
+            sortOrder: null == sortOrder
+                ? _value.sortOrder
+                : sortOrder // ignore: cast_nullable_to_non_nullable
+                      as int,
+          )
+          as $Val,
+    );
+  }
+}
+
+/// @nodoc
+abstract class _$$SubActionDefinitionImplCopyWith<$Res>
+    implements $SubActionDefinitionCopyWith<$Res> {
+  factory _$$SubActionDefinitionImplCopyWith(
+    _$SubActionDefinitionImpl value,
+    $Res Function(_$SubActionDefinitionImpl) then,
+  ) = __$$SubActionDefinitionImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String id, String name, String category, int sortOrder});
+}
+
+/// @nodoc
+class __$$SubActionDefinitionImplCopyWithImpl<$Res>
+    extends _$SubActionDefinitionCopyWithImpl<$Res, _$SubActionDefinitionImpl>
+    implements _$$SubActionDefinitionImplCopyWith<$Res> {
+  __$$SubActionDefinitionImplCopyWithImpl(
+    _$SubActionDefinitionImpl _value,
+    $Res Function(_$SubActionDefinitionImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of SubActionDefinition
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? id = null,
+    Object? name = null,
+    Object? category = null,
+    Object? sortOrder = null,
+  }) {
+    return _then(
+      _$SubActionDefinitionImpl(
+        id: null == id
+            ? _value.id
+            : id // ignore: cast_nullable_to_non_nullable
+                  as String,
+        name: null == name
+            ? _value.name
+            : name // ignore: cast_nullable_to_non_nullable
+                  as String,
+        category: null == category
+            ? _value.category
+            : category // ignore: cast_nullable_to_non_nullable
+                  as String,
+        sortOrder: null == sortOrder
+            ? _value.sortOrder
+            : sortOrder // ignore: cast_nullable_to_non_nullable
+                  as int,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$SubActionDefinitionImpl implements _SubActionDefinition {
+  const _$SubActionDefinitionImpl({
+    required this.id,
+    required this.name,
+    required this.category,
+    this.sortOrder = 0,
+  });
+
+  factory _$SubActionDefinitionImpl.fromJson(Map<String, dynamic> json) =>
+      _$$SubActionDefinitionImplFromJson(json);
+
+  @override
+  final String id;
+  @override
+  final String name;
+  @override
+  final String category;
+  // 'success', 'failure', 'default'
+  @override
+  @JsonKey()
+  final int sortOrder;
+
+  @override
+  String toString() {
+    return 'SubActionDefinition(id: $id, name: $name, category: $category, sortOrder: $sortOrder)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SubActionDefinitionImpl &&
+            (identical(other.id, id) || other.id == id) &&
+            (identical(other.name, name) || other.name == name) &&
+            (identical(other.category, category) ||
+                other.category == category) &&
+            (identical(other.sortOrder, sortOrder) ||
+                other.sortOrder == sortOrder));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hash(runtimeType, id, name, category, sortOrder);
+
+  /// Create a copy of SubActionDefinition
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SubActionDefinitionImplCopyWith<_$SubActionDefinitionImpl> get copyWith =>
+      __$$SubActionDefinitionImplCopyWithImpl<_$SubActionDefinitionImpl>(
+        this,
+        _$identity,
+      );
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$SubActionDefinitionImplToJson(this);
+  }
+}
+
+abstract class _SubActionDefinition implements SubActionDefinition {
+  const factory _SubActionDefinition({
+    required final String id,
+    required final String name,
+    required final String category,
+    final int sortOrder,
+  }) = _$SubActionDefinitionImpl;
+
+  factory _SubActionDefinition.fromJson(Map<String, dynamic> json) =
+      _$SubActionDefinitionImpl.fromJson;
+
+  @override
+  String get id;
+  @override
+  String get name;
+  @override
+  String get category; // 'success', 'failure', 'default'
+  @override
+  int get sortOrder;
+
+  /// Create a copy of SubActionDefinition
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$SubActionDefinitionImplCopyWith<_$SubActionDefinitionImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
 ActionDefinition _$ActionDefinitionFromJson(Map<String, dynamic> json) {
   return _ActionDefinition.fromJson(json);
 }
@@ -24,27 +245,23 @@ mixin _$ActionDefinition {
   String get id => throw _privateConstructorUsedError;
   set id(String value) => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
-  set name(String value) => throw _privateConstructorUsedError;
-  Map<String, List<String>> get subActionsMap =>
-      throw _privateConstructorUsedError;
-  set subActionsMap(Map<String, List<String>> value) =>
+  set name(String value) =>
+      throw _privateConstructorUsedError; // ★修正: マップ廃止、リスト化
+  List<SubActionDefinition> get subActions =>
+      throw _privateConstructorUsedError; // ★修正: マップ廃止、リスト化
+  set subActions(List<SubActionDefinition> value) =>
       throw _privateConstructorUsedError;
   bool get isSubRequired => throw _privateConstructorUsedError;
   set isSubRequired(bool value) => throw _privateConstructorUsedError;
   int get sortOrder => throw _privateConstructorUsedError;
   set sortOrder(int value) => throw _privateConstructorUsedError;
   int get positionIndex => throw _privateConstructorUsedError;
-  set positionIndex(int value) =>
-      throw _privateConstructorUsedError; // 通常ボタンの位置
-  int get successPositionIndex =>
-      throw _privateConstructorUsedError; // 通常ボタンの位置
-  set successPositionIndex(int value) =>
-      throw _privateConstructorUsedError; // ★追加: 成功ボタンの位置
-  int get failurePositionIndex =>
-      throw _privateConstructorUsedError; // ★追加: 成功ボタンの位置
-  set failurePositionIndex(int value) =>
-      throw _privateConstructorUsedError; // ★追加: 失敗ボタンの位置
-  bool get hasSuccess => throw _privateConstructorUsedError; // ★追加: 失敗ボタンの位置
+  set positionIndex(int value) => throw _privateConstructorUsedError;
+  int get successPositionIndex => throw _privateConstructorUsedError;
+  set successPositionIndex(int value) => throw _privateConstructorUsedError;
+  int get failurePositionIndex => throw _privateConstructorUsedError;
+  set failurePositionIndex(int value) => throw _privateConstructorUsedError;
+  bool get hasSuccess => throw _privateConstructorUsedError;
   set hasSuccess(bool value) => throw _privateConstructorUsedError;
   bool get hasFailure => throw _privateConstructorUsedError;
   set hasFailure(bool value) => throw _privateConstructorUsedError;
@@ -69,7 +286,7 @@ abstract class $ActionDefinitionCopyWith<$Res> {
   $Res call({
     String id,
     String name,
-    Map<String, List<String>> subActionsMap,
+    List<SubActionDefinition> subActions,
     bool isSubRequired,
     int sortOrder,
     int positionIndex,
@@ -97,7 +314,7 @@ class _$ActionDefinitionCopyWithImpl<$Res, $Val extends ActionDefinition>
   $Res call({
     Object? id = null,
     Object? name = null,
-    Object? subActionsMap = null,
+    Object? subActions = null,
     Object? isSubRequired = null,
     Object? sortOrder = null,
     Object? positionIndex = null,
@@ -116,10 +333,10 @@ class _$ActionDefinitionCopyWithImpl<$Res, $Val extends ActionDefinition>
                 ? _value.name
                 : name // ignore: cast_nullable_to_non_nullable
                       as String,
-            subActionsMap: null == subActionsMap
-                ? _value.subActionsMap
-                : subActionsMap // ignore: cast_nullable_to_non_nullable
-                      as Map<String, List<String>>,
+            subActions: null == subActions
+                ? _value.subActions
+                : subActions // ignore: cast_nullable_to_non_nullable
+                      as List<SubActionDefinition>,
             isSubRequired: null == isSubRequired
                 ? _value.isSubRequired
                 : isSubRequired // ignore: cast_nullable_to_non_nullable
@@ -166,7 +383,7 @@ abstract class _$$ActionDefinitionImplCopyWith<$Res>
   $Res call({
     String id,
     String name,
-    Map<String, List<String>> subActionsMap,
+    List<SubActionDefinition> subActions,
     bool isSubRequired,
     int sortOrder,
     int positionIndex,
@@ -193,7 +410,7 @@ class __$$ActionDefinitionImplCopyWithImpl<$Res>
   $Res call({
     Object? id = null,
     Object? name = null,
-    Object? subActionsMap = null,
+    Object? subActions = null,
     Object? isSubRequired = null,
     Object? sortOrder = null,
     Object? positionIndex = null,
@@ -212,10 +429,10 @@ class __$$ActionDefinitionImplCopyWithImpl<$Res>
             ? _value.name
             : name // ignore: cast_nullable_to_non_nullable
                   as String,
-        subActionsMap: null == subActionsMap
-            ? _value.subActionsMap
-            : subActionsMap // ignore: cast_nullable_to_non_nullable
-                  as Map<String, List<String>>,
+        subActions: null == subActions
+            ? _value.subActions
+            : subActions // ignore: cast_nullable_to_non_nullable
+                  as List<SubActionDefinition>,
         isSubRequired: null == isSubRequired
             ? _value.isSubRequired
             : isSubRequired // ignore: cast_nullable_to_non_nullable
@@ -255,7 +472,7 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
   _$ActionDefinitionImpl({
     this.id = '',
     required this.name,
-    this.subActionsMap = const {'default': [], 'success': [], 'failure': []},
+    this.subActions = const [],
     this.isSubRequired = false,
     this.sortOrder = 0,
     this.positionIndex = 0,
@@ -273,9 +490,10 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
   String id;
   @override
   String name;
+  // ★修正: マップ廃止、リスト化
   @override
   @JsonKey()
-  Map<String, List<String>> subActionsMap;
+  List<SubActionDefinition> subActions;
   @override
   @JsonKey()
   bool isSubRequired;
@@ -285,15 +503,12 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
   @override
   @JsonKey()
   int positionIndex;
-  // 通常ボタンの位置
   @override
   @JsonKey()
   int successPositionIndex;
-  // ★追加: 成功ボタンの位置
   @override
   @JsonKey()
   int failurePositionIndex;
-  // ★追加: 失敗ボタンの位置
   @override
   @JsonKey()
   bool hasSuccess;
@@ -303,7 +518,7 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
 
   @override
   String toString() {
-    return 'ActionDefinition(id: $id, name: $name, subActionsMap: $subActionsMap, isSubRequired: $isSubRequired, sortOrder: $sortOrder, positionIndex: $positionIndex, successPositionIndex: $successPositionIndex, failurePositionIndex: $failurePositionIndex, hasSuccess: $hasSuccess, hasFailure: $hasFailure)';
+    return 'ActionDefinition(id: $id, name: $name, subActions: $subActions, isSubRequired: $isSubRequired, sortOrder: $sortOrder, positionIndex: $positionIndex, successPositionIndex: $successPositionIndex, failurePositionIndex: $failurePositionIndex, hasSuccess: $hasSuccess, hasFailure: $hasFailure)';
   }
 
   /// Create a copy of ActionDefinition
@@ -327,7 +542,7 @@ abstract class _ActionDefinition implements ActionDefinition {
   factory _ActionDefinition({
     String id,
     required String name,
-    Map<String, List<String>> subActionsMap,
+    List<SubActionDefinition> subActions,
     bool isSubRequired,
     int sortOrder,
     int positionIndex,
@@ -345,10 +560,10 @@ abstract class _ActionDefinition implements ActionDefinition {
   set id(String value);
   @override
   String get name;
-  set name(String value);
+  set name(String value); // ★修正: マップ廃止、リスト化
   @override
-  Map<String, List<String>> get subActionsMap;
-  set subActionsMap(Map<String, List<String>> value);
+  List<SubActionDefinition> get subActions; // ★修正: マップ廃止、リスト化
+  set subActions(List<SubActionDefinition> value);
   @override
   bool get isSubRequired;
   set isSubRequired(bool value);
@@ -357,15 +572,15 @@ abstract class _ActionDefinition implements ActionDefinition {
   set sortOrder(int value);
   @override
   int get positionIndex;
-  set positionIndex(int value); // 通常ボタンの位置
+  set positionIndex(int value);
   @override
-  int get successPositionIndex; // 通常ボタンの位置
-  set successPositionIndex(int value); // ★追加: 成功ボタンの位置
+  int get successPositionIndex;
+  set successPositionIndex(int value);
   @override
-  int get failurePositionIndex; // ★追加: 成功ボタンの位置
-  set failurePositionIndex(int value); // ★追加: 失敗ボタンの位置
+  int get failurePositionIndex;
+  set failurePositionIndex(int value);
   @override
-  bool get hasSuccess; // ★追加: 失敗ボタンの位置
+  bool get hasSuccess;
   set hasSuccess(bool value);
   @override
   bool get hasFailure;

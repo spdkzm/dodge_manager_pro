@@ -1,6 +1,8 @@
 // lib/core/database/database_helper.dart
+import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -10,8 +12,8 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v7.db';
-  // ★修正: バージョンを6に上げる
-  static const int _dbVersion = 6;
+  // ★修正: バージョンを7に上げる
+  static const int _dbVersion = 7;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -102,6 +104,18 @@ class DatabaseHelper {
       )
     ''');
 
+    // ★追加: サブアクション定義用の新テーブル
+    await db.execute('''
+      CREATE TABLE sub_action_definitions(
+        id TEXT PRIMARY KEY,
+        action_id TEXT,
+        name TEXT,
+        category TEXT,
+        sort_order INTEGER,
+        FOREIGN KEY(action_id) REFERENCES action_definitions(id) ON DELETE CASCADE
+      )
+    ''');
+
     await db.execute('''
       CREATE TABLE matches(
         id TEXT PRIMARY KEY,
@@ -123,7 +137,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★修正: player_id カラム追加
+    // ★修正: sub_action_id カラム追加
     await db.execute('''
       CREATE TABLE match_logs(
         id TEXT PRIMARY KEY,
@@ -133,13 +147,13 @@ class DatabaseHelper {
         player_id TEXT, 
         action TEXT,
         sub_action TEXT,
+        sub_action_id TEXT,
         log_type INTEGER,
         result INTEGER,
         FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
       )
     ''');
 
-    // ★修正: player_id カラム追加
     await db.execute('''
       CREATE TABLE match_participations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,10 +191,77 @@ class DatabaseHelper {
         await db.execute("ALTER TABLE teams ADD COLUMN player_id_map TEXT");
       }
     }
-    // ★追加: v6への移行 (player_id追加)
     if (oldVersion < 6) {
       await db.execute("ALTER TABLE match_logs ADD COLUMN player_id TEXT");
       await db.execute("ALTER TABLE match_participations ADD COLUMN player_id TEXT");
+    }
+    // ★追加: v7への移行 (サブアクションのテーブル化とログのID紐付け)
+    if (oldVersion < 7) {
+      await _migrateToV7(db);
+    }
+  }
+
+  // ★追加: v7マイグレーションロジック
+  Future<void> _migrateToV7(Database db) async {
+    // 1. 新テーブル作成
+    await db.execute('''
+      CREATE TABLE sub_action_definitions(
+        id TEXT PRIMARY KEY,
+        action_id TEXT,
+        name TEXT,
+        category TEXT,
+        sort_order INTEGER,
+        FOREIGN KEY(action_id) REFERENCES action_definitions(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // 2. ログテーブルにカラム追加
+    await db.execute("ALTER TABLE match_logs ADD COLUMN sub_action_id TEXT");
+
+    // 3. データ移行 (JSON -> テーブル & ログ更新)
+    final actions = await db.query('action_definitions');
+
+    for (var action in actions) {
+      final actionId = action['id'] as String;
+      final actionName = action['name'] as String;
+      final subActionsJson = action['sub_actions'] as String?;
+
+      if (subActionsJson == null || subActionsJson.isEmpty) continue;
+
+      Map<String, dynamic> decoded;
+      try {
+        decoded = jsonDecode(subActionsJson);
+      } catch (_) {
+        continue; // パースエラー時はスキップ
+      }
+
+      // JSON構造: {'default': ['A', 'B'], 'success': ['C'], ...}
+      for (var category in decoded.keys) {
+        final names = decoded[category];
+        if (names is List) {
+          for (int i = 0; i < names.length; i++) {
+            final subName = names[i].toString();
+            final subId = const Uuid().v4();
+
+            // 定義を新テーブルに挿入
+            await db.insert('sub_action_definitions', {
+              'id': subId,
+              'action_id': actionId,
+              'name': subName,
+              'category': category,
+              'sort_order': i,
+            });
+
+            // 既存ログの更新
+            // 親アクション名 と サブアクション名 が一致するログにIDを付与
+            await db.rawUpdate('''
+              UPDATE match_logs
+              SET sub_action_id = ?
+              WHERE action = ? AND sub_action = ?
+            ''', [subId, actionName, subName]);
+          }
+        }
+      }
     }
   }
 

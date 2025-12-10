@@ -17,7 +17,7 @@ class ActionSettingsScreen extends ConsumerStatefulWidget {
 
 class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
   final ActionDao _actionDao = ActionDao();
-  final MatchDao _matchDao = MatchDao();
+  final MatchDao _matchDao = MatchDao(); // ignore: unused_field
 
   List<ActionDefinition> _actions = [];
   bool _isLoading = true;
@@ -32,9 +32,7 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
 
   Future<void> _loadActions() async {
     final store = ref.read(teamStoreProvider);
-
     if (!store.isLoaded) await store.loadFromDb();
-
     final currentTeam = store.currentTeam;
     if (currentTeam == null) {
       if (mounted) setState(() => _isLoading = false);
@@ -42,7 +40,6 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
     }
 
     final raw = await _actionDao.getActionDefinitions(currentTeam.id);
-
     if (mounted) {
       setState(() {
         _actions = raw.map((d) => ActionDefinition.fromMap(d)).toList();
@@ -54,53 +51,27 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
   Future<void> _saveAction(ActionDefinition action) async {
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
-
     if (currentTeam == null) return;
 
     if (action.sortOrder == 0 && _actions.isNotEmpty) {
       action.sortOrder = _actions.length;
     }
 
-    await _actionDao.insertActionDefinition(currentTeam.id, action.toMap());
+    await _actionDao.insertActionDefinition(currentTeam.id, action);
     _loadActions();
-  }
-
-  Future<void> _renameActionLogs(String oldName, String newName) async {
-    final store = ref.read(teamStoreProvider);
-    final currentTeam = store.currentTeam;
-    if (currentTeam == null) return;
-    await _matchDao.updateActionNameInLogs(currentTeam.id, oldName, newName);
-  }
-
-  Future<void> _renameSubActionLogs(String actionName, String oldSubName, String newSubName) async {
-    final store = ref.read(teamStoreProvider);
-    final currentTeam = store.currentTeam;
-    if (currentTeam == null) return;
-    await _matchDao.updateSubActionNameInLogs(currentTeam.id, actionName, oldSubName, newSubName);
   }
 
   void _showEditDialog({ActionDefinition? action}) {
     final isNew = action == null;
-
-    final editingAction = action ?? ActionDefinition(
-        id: const Uuid().v4(),
-        name: ''
-    );
-
-    final String originalActionName = editingAction.name;
+    final editingAction = action ?? ActionDefinition(id: const Uuid().v4(), name: '');
 
     final nameCtrl = TextEditingController(text: editingAction.name);
     final successSubCtrl = TextEditingController();
     final failureSubCtrl = TextEditingController();
     final commonSubCtrl = TextEditingController();
 
-    Map<String, List<String>> tempSubsMap = {
-      'default': List<String>.from(editingAction.subActionsMap['default'] ?? []),
-      'success': List<String>.from(editingAction.subActionsMap['success'] ?? []),
-      'failure': List<String>.from(editingAction.subActionsMap['failure'] ?? []),
-    };
-
-    List<Map<String, String>> pendingSubRenames = [];
+    // ★修正: リストをコピーしてローカルで編集する
+    List<SubActionDefinition> tempSubs = List.from(editingAction.subActions);
 
     bool tempRequired = editingAction.isSubRequired;
     bool tempSuccess = editingAction.hasSuccess;
@@ -112,45 +83,18 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            final store = ref.read(teamStoreProvider);
-            final teamId = store.currentTeam?.id;
 
-            Future<void> deleteSub(String key, String subName) async {
-              if (isNew || teamId == null) {
-                setStateDialog(() => tempSubsMap[key]!.remove(subName));
-                return;
-              }
+            // カテゴリごとのリスト取得フィルタ
+            List<SubActionDefinition> getSubs(String category) => tempSubs.where((s) => s.category == category).toList();
 
-              final count = await _matchDao.countSubActionUsage(teamId, originalActionName, subName);
-
-              if (count > 0 && context.mounted) {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (alertCtx) => AlertDialog(
-                    title: const Text("詳細項目の削除"),
-                    content: Text(
-                        "項目「$subName」は過去 $count 件の記録で使用されています。\n"
-                            "削除すると、過去の記録上には名前が残りますが、今後の選択肢からは消えます。\n\n"
-                            "削除してもよろしいですか？"
-                    ),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(alertCtx, false), child: const Text("キャンセル")),
-                      ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                          onPressed: () => Navigator.pop(alertCtx, true),
-                          child: const Text("削除する")
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm != true) return;
-              }
-
-              setStateDialog(() => tempSubsMap[key]!.remove(subName));
+            void deleteSub(String subId) {
+              setStateDialog(() {
+                tempSubs.removeWhere((s) => s.id == subId);
+              });
             }
 
-            Future<void> editSub(String key, String oldSubName) async {
-              final newNameCtrl = TextEditingController(text: oldSubName);
+            void editSub(SubActionDefinition sub) async {
+              final newNameCtrl = TextEditingController(text: sub.name);
               final newName = await showDialog<String>(
                 context: context,
                 builder: (editCtx) => AlertDialog(
@@ -170,66 +114,44 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
                 ),
               );
 
-              if (newName == null || newName.isEmpty || newName == oldSubName) return;
-
-              if (!isNew && teamId != null) {
-                final count = await _matchDao.countSubActionUsage(teamId, originalActionName, oldSubName);
-                if (count > 0 && context.mounted) {
-                  final choice = await showDialog<int>(
-                    context: context,
-                    builder: (alertCtx) => AlertDialog(
-                      title: const Text("名前の変更"),
-                      content: Text(
-                          "「$oldSubName」→「$newName」\n\n"
-                              "この項目は過去 $count 件の記録で使用されています。\n"
-                              "過去の記録も変更しますか？"
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(alertCtx, 0), child: const Text("キャンセル")),
-                        TextButton(onPressed: () => Navigator.pop(alertCtx, 1), child: const Text("変更しない\n(新規として扱う)")),
-                        ElevatedButton(onPressed: () => Navigator.pop(alertCtx, 2), child: const Text("過去の記録も変更")),
-                      ],
-                    ),
-                  );
-
-                  if (choice == null || choice == 0) return;
-
-                  if (choice == 2) {
-                    pendingSubRenames.add({'old': oldSubName, 'new': newName});
-                  }
-                }
-              }
+              if (newName == null || newName.isEmpty || newName == sub.name) return;
 
               setStateDialog(() {
-                final idx = tempSubsMap[key]!.indexOf(oldSubName);
-                if (idx != -1) {
-                  tempSubsMap[key]![idx] = newName;
+                final index = tempSubs.indexWhere((s) => s.id == sub.id);
+                if (index != -1) {
+                  tempSubs[index] = sub.copyWith(name: newName);
                 }
               });
             }
 
-            void addSub(String key, TextEditingController ctrl) {
+            void addSub(String category, TextEditingController ctrl) {
               if (ctrl.text.trim().isNotEmpty) {
                 setStateDialog(() {
-                  tempSubsMap[key]!.add(ctrl.text.trim());
+                  tempSubs.add(SubActionDefinition(
+                    id: const Uuid().v4(),
+                    name: ctrl.text.trim(),
+                    category: category,
+                    sortOrder: tempSubs.where((s) => s.category == category).length,
+                  ));
                   ctrl.clear();
                 });
               }
             }
 
-            Widget buildSubActionList(String key, String label, TextEditingController ctrl) {
+            Widget buildSubActionList(String category, String label, TextEditingController ctrl) {
+              final subs = getSubs(category);
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   Row(children: [
-                    Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()), onSubmitted: (_) => addSub(key, ctrl))),
-                    IconButton(icon: const Icon(Icons.add_circle, color: Colors.blue), onPressed: () => addSub(key, ctrl)),
+                    Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()), onSubmitted: (_) => addSub(category, ctrl))),
+                    IconButton(icon: const Icon(Icons.add_circle, color: Colors.blue), onPressed: () => addSub(category, ctrl)),
                   ]),
-                  Wrap(spacing: 4, children: tempSubsMap[key]!.map((sub) => InputChip(
-                    label: Text(sub),
-                    onPressed: () => editSub(key, sub),
-                    onDeleted: () => deleteSub(key, sub),
+                  Wrap(spacing: 4, children: subs.map((sub) => InputChip(
+                    label: Text(sub.name),
+                    onPressed: () => editSub(sub),
+                    onDeleted: () => deleteSub(sub.id),
                     deleteIcon: const Icon(Icons.close, size: 18),
                   )).toList()),
                   const SizedBox(height: 8),
@@ -279,54 +201,14 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
                 ElevatedButton(onPressed: () async {
                   if (nameCtrl.text.isEmpty) return;
 
-                  final newName = nameCtrl.text.trim();
-
-                  if (!isNew && originalActionName != newName) {
-                    // ★修正: 簡易チェックは省略し、ダイアログだけ出す(Warning解消)
-                    final choice = await showDialog<int>(
-                      context: context,
-                      builder: (dialogCtx) => AlertDialog(
-                        title: const Text("アクション名の変更"),
-                        content: Text(
-                            "アクション名が「$originalActionName」から「$newName」に変更されました。\n"
-                                "過去の記録データも新しい名前に変更しますか？\n\n"
-                                "・変更する: 過去の「$originalActionName」の記録も「$newName」として集計されます。\n"
-                                "・変更しない: 過去の記録は「$originalActionName」のまま残ります（集計は別々になります）。"
-                        ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(dialogCtx, 0), child: const Text("キャンセル")),
-                          TextButton(onPressed: () => Navigator.pop(dialogCtx, 1), child: const Text("変更しない")),
-                          ElevatedButton(onPressed: () => Navigator.pop(dialogCtx, 2), child: const Text("過去の記録も変更する")),
-                        ],
-                      ),
-                    );
-
-                    if (choice == null || choice == 0) return;
-
-                    if (choice == 2) {
-                      await _renameActionLogs(originalActionName, newName);
-                    }
-                  }
-
-                  final targetActionName = newName;
-
-                  for (var rename in pendingSubRenames) {
-                    await _renameSubActionLogs(targetActionName, rename['old']!, rename['new']!);
-                  }
-
-                  editingAction.name = newName;
-                  editingAction.subActionsMap = tempSubsMap;
+                  editingAction.name = nameCtrl.text.trim();
+                  editingAction.subActions = tempSubs;
                   editingAction.isSubRequired = tempRequired;
                   editingAction.hasSuccess = tempSuccess;
                   editingAction.hasFailure = tempFailure;
 
                   await _saveAction(editingAction);
-                  if (context.mounted) {
-                    if (pendingSubRenames.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("詳細項目の名前変更を反映しました")));
-                    }
-                    Navigator.pop(ctx);
-                  }
+                  if (context.mounted) Navigator.pop(ctx);
                 }, child: const Text('保存')),
               ],
             );
@@ -336,7 +218,7 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
     );
   }
 
-  Widget _buildSubActionRow(String label, List<String>? items, Color color) {
+  Widget _buildSubActionRow(String label, List<SubActionDefinition>? items, Color color) {
     if (items == null || items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 4.0),
@@ -355,7 +237,7 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
                   border: Border.all(color: color.withOpacity(0.3)),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(sub, style: const TextStyle(fontSize: 11)),
+                child: Text(sub.name, style: const TextStyle(fontSize: 11)),
               )).toList(),
             ),
           ),
@@ -373,11 +255,9 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
         itemCount: _actions.length,
         onReorder: (oldIndex, newIndex) async {
           if (oldIndex < newIndex) newIndex -= 1;
-
           final item = _actions.removeAt(oldIndex);
           _actions.insert(newIndex, item);
           setState(() {});
-
           await _actionDao.updateActionOrder(_actions);
         },
         itemBuilder: (context, index) {
@@ -399,14 +279,9 @@ class _ActionSettingsScreenState extends ConsumerState<ActionSettingsScreen> {
                     padding: const EdgeInsets.only(bottom: 2.0),
                     child: Text('タイプ: $typeStr', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                   ),
-                _buildSubActionRow('共通', item.subActionsMap['default'], Colors.grey),
-                _buildSubActionRow('成功', item.subActionsMap['success'], Colors.red),
-                _buildSubActionRow('失敗', item.subActionsMap['failure'], Colors.blue),
-
-                if ((item.subActionsMap['default']?.isEmpty ?? true) &&
-                    (item.subActionsMap['success']?.isEmpty ?? true) &&
-                    (item.subActionsMap['failure']?.isEmpty ?? true))
-                  const Text("詳細なし", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                _buildSubActionRow('共通', item.getSubActions('default'), Colors.grey),
+                _buildSubActionRow('成功', item.getSubActions('success'), Colors.red),
+                _buildSubActionRow('失敗', item.getSubActions('failure'), Colors.blue),
               ],
             ),
             trailing: IconButton(icon: const Icon(Icons.edit), onPressed: () => _showEditDialog(action: item)),
