@@ -24,7 +24,7 @@ mixin _$SubActionDefinition {
   String get id => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
   String get category =>
-      throw _privateConstructorUsedError; // 'success', 'failure', 'default'
+      throw _privateConstructorUsedError; // AppConstants.categorySuccess etc.
   int get sortOrder => throw _privateConstructorUsedError;
 
   /// Serializes this SubActionDefinition to a JSON map.
@@ -164,7 +164,7 @@ class _$SubActionDefinitionImpl implements _SubActionDefinition {
   final String name;
   @override
   final String category;
-  // 'success', 'failure', 'default'
+  // AppConstants.categorySuccess etc.
   @override
   @JsonKey()
   final int sortOrder;
@@ -224,7 +224,7 @@ abstract class _SubActionDefinition implements SubActionDefinition {
   @override
   String get name;
   @override
-  String get category; // 'success', 'failure', 'default'
+  String get category; // AppConstants.categorySuccess etc.
   @override
   int get sortOrder;
 
@@ -245,10 +245,9 @@ mixin _$ActionDefinition {
   String get id => throw _privateConstructorUsedError;
   set id(String value) => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
-  set name(String value) =>
-      throw _privateConstructorUsedError; // ★修正: マップ廃止、リスト化
+  set name(String value) => throw _privateConstructorUsedError;
   List<SubActionDefinition> get subActions =>
-      throw _privateConstructorUsedError; // ★修正: マップ廃止、リスト化
+      throw _privateConstructorUsedError;
   set subActions(List<SubActionDefinition> value) =>
       throw _privateConstructorUsedError;
   bool get isSubRequired => throw _privateConstructorUsedError;
@@ -490,7 +489,6 @@ class _$ActionDefinitionImpl implements _ActionDefinition {
   String id;
   @override
   String name;
-  // ★修正: マップ廃止、リスト化
   @override
   @JsonKey()
   List<SubActionDefinition> subActions;
@@ -560,9 +558,9 @@ abstract class _ActionDefinition implements ActionDefinition {
   set id(String value);
   @override
   String get name;
-  set name(String value); // ★修正: マップ廃止、リスト化
+  set name(String value);
   @override
-  List<SubActionDefinition> get subActions; // ★修正: マップ廃止、リスト化
+  List<SubActionDefinition> get subActions;
   set subActions(List<SubActionDefinition> value);
   @override
   bool get isSubRequired;

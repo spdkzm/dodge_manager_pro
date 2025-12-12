@@ -188,7 +188,7 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
           }
 
           if (isEditing) {
-            item!.data = tempData;
+            item.data = tempData;
             store.saveItem(currentTeam.id, item, category: widget.category);
           } else {
             final newItem = RosterItem(data: tempData);

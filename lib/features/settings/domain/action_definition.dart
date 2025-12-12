@@ -2,6 +2,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:uuid/uuid.dart';
 
+
 part 'action_definition.freezed.dart';
 part 'action_definition.g.dart';
 
@@ -10,7 +11,7 @@ class SubActionDefinition with _$SubActionDefinition {
   const factory SubActionDefinition({
     required String id,
     required String name,
-    required String category, // 'success', 'failure', 'default'
+    required String category, // AppConstants.categorySuccess etc.
     @Default(0) int sortOrder,
   }) = _SubActionDefinition;
 
@@ -22,7 +23,6 @@ class ActionDefinition with _$ActionDefinition {
   factory ActionDefinition({
     @Default('') String id,
     required String name,
-    // ★修正: マップ廃止、リスト化
     @Default([]) List<SubActionDefinition> subActions,
     @Default(false) bool isSubRequired,
     @Default(0) int sortOrder,
@@ -36,13 +36,11 @@ class ActionDefinition with _$ActionDefinition {
   factory ActionDefinition.fromJson(Map<String, dynamic> json) => _$ActionDefinitionFromJson(json);
 
   factory ActionDefinition.fromMap(Map<String, dynamic> map) {
-    // DBのカラム構造とは異なるため、DAO側で結合処理を行うが、
-    // ここでは基本的なマッピングを行う
     final modMap = Map<String, dynamic>.from(map);
     if (modMap['id'] == null) modMap['id'] = const Uuid().v4();
     if (modMap['name'] == null) modMap['name'] = '';
 
-    // subActions は DAO側でリストとして注入される想定
+    // subActions が null の場合は空リストで初期化
     if (modMap['subActions'] == null) modMap['subActions'] = [];
 
     return ActionDefinition.fromJson(modMap);
@@ -54,7 +52,7 @@ extension ActionDefinitionX on ActionDefinition {
     return toJson();
   }
 
-  // カテゴリごとの取得ヘルパー
+  // カテゴリごとの取得ヘルパー (定数を使用)
   List<SubActionDefinition> getSubActions(String category) {
     return subActions.where((s) => s.category == category).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));

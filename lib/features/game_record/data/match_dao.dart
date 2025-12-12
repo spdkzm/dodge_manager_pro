@@ -5,6 +5,8 @@ import '../../../../core/database/database_helper.dart';
 class MatchDao {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
+  // --- 既存のCRUDメソッド ---
+
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
@@ -111,6 +113,7 @@ class MatchDao {
 
   Future<void> updateMatchInfo({
     required String matchId,
+    // matchIdParam を削除
     required String newDate,
     required String newOpponent,
     String? newOpponentId,
@@ -226,12 +229,11 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
-  // ★修正: 集計時に必要な 'match_id' をカラムに追加
   Future<List<Map<String, dynamic>>> getMatchParticipations(String matchId) async {
     final db = await _dbHelper.database;
     return await db.query(
         'match_participations',
-        columns: ['player_number', 'player_id', 'match_id'], // match_idを追加
+        columns: ['player_number', 'player_id', 'match_id'],
         where: 'match_id = ?',
         whereArgs: [matchId]
     );
@@ -294,5 +296,124 @@ class MatchDao {
   Future<void> updateParticipationPlayerId(String matchId, String playerNumber, String playerId) async {
     final db = await _dbHelper.database;
     await db.update('match_participations', {'player_id': playerId}, where: 'match_id = ? AND player_number = ?', whereArgs: [matchId, playerNumber]);
+  }
+
+  // --- ★以下、高速集計用メソッド ---
+
+  // 1. 選手ごとの試合数集計
+  Future<List<Map<String, dynamic>>> getPlayerMatchCounts(
+      String teamId, String startDate, String endDate,
+      [List<int>? matchTypes, String? matchId]) async {
+    final db = await _dbHelper.database;
+
+    String whereClause;
+    List<dynamic> args;
+
+    if (matchId != null) {
+      whereClause = "m.id = ?";
+      args = [matchId];
+    } else {
+      whereClause = "m.team_id = ? AND m.date BETWEEN ? AND ?";
+      args = [teamId, startDate, endDate];
+    }
+
+    String typeCondition = "";
+    if (matchTypes != null && matchTypes.isNotEmpty) {
+      typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
+    }
+
+    final sql = '''
+      SELECT
+        p.player_id,
+        p.player_number,
+        COUNT(DISTINCT p.match_id) as match_count
+      FROM match_participations p
+      JOIN matches m ON p.match_id = m.id
+      WHERE $whereClause
+      $typeCondition
+      GROUP BY p.player_id, p.player_number
+    ''';
+    return await db.rawQuery(sql, args);
+  }
+
+  // 2. アクション集計 (成功/失敗/合計)
+  Future<List<Map<String, dynamic>>> getAggregatedActionStats(
+      String teamId, String startDate, String endDate,
+      [List<int>? matchTypes, String? matchId]) async {
+    final db = await _dbHelper.database;
+
+    String whereClause;
+    List<dynamic> args;
+
+    if (matchId != null) {
+      whereClause = "m.id = ?";
+      args = [matchId];
+    } else {
+      whereClause = "m.team_id = ? AND m.date BETWEEN ? AND ?";
+      args = [teamId, startDate, endDate];
+    }
+
+    String typeCondition = "";
+    if (matchTypes != null && matchTypes.isNotEmpty) {
+      typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
+    }
+
+    // ★修正: log_type = 0 (通常ログ) のみ集計
+    final sql = '''
+      SELECT
+        l.player_id,
+        l.player_number,
+        l.action,
+        l.result,
+        COUNT(*) as count
+      FROM match_logs l
+      JOIN matches m ON l.match_id = m.id
+      WHERE $whereClause
+      $typeCondition
+      AND l.log_type = 0
+      GROUP BY l.player_id, l.player_number, l.action, l.result
+    ''';
+    return await db.rawQuery(sql, args);
+  }
+
+  // 3. サブアクション集計
+  Future<List<Map<String, dynamic>>> getAggregatedSubActionStats(
+      String teamId, String startDate, String endDate,
+      [List<int>? matchTypes, String? matchId]) async {
+    final db = await _dbHelper.database;
+
+    String whereClause;
+    List<dynamic> args;
+
+    if (matchId != null) {
+      whereClause = "m.id = ?";
+      args = [matchId];
+    } else {
+      whereClause = "m.team_id = ? AND m.date BETWEEN ? AND ?";
+      args = [teamId, startDate, endDate];
+    }
+
+    String typeCondition = "";
+    if (matchTypes != null && matchTypes.isNotEmpty) {
+      typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
+    }
+
+    // ★修正: log_type = 0 (通常ログ) のみ集計
+    final sql = '''
+      SELECT
+        l.player_id,
+        l.player_number,
+        l.action,
+        l.sub_action,
+        COUNT(*) as count
+      FROM match_logs l
+      JOIN matches m ON l.match_id = m.id
+      WHERE $whereClause
+      $typeCondition
+      AND l.log_type = 0
+      AND l.sub_action IS NOT NULL AND l.sub_action != ''
+      GROUP BY l.player_id, l.player_number, l.action, l.sub_action
+    ''';
+    return await db.rawQuery(sql, args);
   }
 }

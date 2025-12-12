@@ -14,7 +14,7 @@ import '../../../team_mgmt/application/team_store.dart';
 import '../../../team_mgmt/data/csv_export_service.dart';
 import '../../../team_mgmt/domain/schema.dart';
 import '../../../team_mgmt/domain/roster_item.dart';
-import '../../../team_mgmt/domain/roster_category.dart';
+
 
 import '../widgets/player_detail_dialog.dart';
 
@@ -261,7 +261,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final controller = ref.read(analysisControllerProvider.notifier); final definitions = controller.actionDefinitions; final isNew = log == null; final stats = ref.read(analysisControllerProvider).valueOrNull ?? [];
 
     // システムログかどうかの判定
-    final isSystemLog = !isNew && log!.type == LogType.system;
+    final isSystemLog = !isNew && log.type == LogType.system;
 
     final players = stats.map((p) => {'number': p.playerNumber, 'name': p.playerName}).toList(); final actionNames = definitions.map((d) => d.name).toList();
 
@@ -272,7 +272,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     ActionResult resultVal = log?.result ?? ActionResult.none;
 
     final timeCtrl = TextEditingController(text: timeVal);
-    final systemActionCtrl = TextEditingController(text: isSystemLog ? log!.action : "");
+    final systemActionCtrl = TextEditingController(text: isSystemLog ? log.action : "");
 
     if (!isSystemLog && actionNameVal != null && !actionNames.contains(actionNameVal)) actionNames.add(actionNameVal);
     if (isNew && players.isNotEmpty) playerNumVal = players.first['number'];
@@ -303,7 +303,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
               TextButton(
                   onPressed: () async {
                     final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text("削除確認"), content: const Text("このログを削除しますか？"), actions: [TextButton(onPressed: ()=>Navigator.pop(c, false), child: const Text("キャンセル")), ElevatedButton(onPressed: ()=>Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text("削除"))]));
-                    if (confirm == true && mounted) { await controller.deleteLog(log!.id); if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); } }
+                    if (confirm == true && mounted) { await controller.deleteLog(log.id); if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); } }
                   },
                   style: TextButton.styleFrom(foregroundColor: Colors.red),
                   child: const Text("削除")
@@ -312,7 +312,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
               ElevatedButton(
                   onPressed: () async {
                     if (systemActionCtrl.text.isEmpty) return;
-                    final newLog = log!.copyWith(gameTime: timeCtrl.text, action: systemActionCtrl.text);
+                    final newLog = log.copyWith(gameTime: timeCtrl.text, action: systemActionCtrl.text);
                     await controller.updateLog(_selectedMatchId!, newLog);
                     if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); }
                   },
@@ -333,7 +333,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
       final subActions = selectedDef.getSubActions(category);
 
-      return AlertDialog(title: Text(isNew ? "ログ追加" : "ログ編集"), content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [TextField(controller: timeCtrl, decoration: const InputDecoration(labelText: "時間 (分:秒)", hintText: "05:30"), keyboardType: TextInputType.datetime), const SizedBox(height: 16), DropdownButtonFormField<String>(value: playerNumVal, decoration: const InputDecoration(labelText: "選手"), items: players.map((p) => DropdownMenuItem(value: p['number'], child: Text("#${p['number']} ${p['name']}"),)).toList(), onChanged: (v) => setStateDialog(() => playerNumVal = v)), const SizedBox(height: 16), DropdownButtonFormField<String>(value: actionNameVal, decoration: const InputDecoration(labelText: "アクション"), items: actionNames.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(), onChanged: (v) => setStateDialog(() { actionNameVal = v; subActionVal = null; })), const SizedBox(height: 16), const Text("結果", style: TextStyle(fontSize: 12, color: Colors.grey)), Row(children: [Radio<ActionResult>(value: ActionResult.none, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })), const Text("なし"), Radio<ActionResult>(value: ActionResult.success, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })), const Text("成功"), Radio<ActionResult>(value: ActionResult.failure, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })), const Text("失敗")]), if (subActions.isNotEmpty) DropdownButtonFormField<SubActionDefinition>(value: subActions.any((s) => s.id == subActionVal?.id) ? subActionVal : null, decoration: const InputDecoration(labelText: "詳細"), items: subActions.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(), onChanged: (v) => setStateDialog(() => subActionVal = v))])), actions: [if (!isNew) TextButton(onPressed: () async { final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text("削除確認"), content: const Text("このログを削除しますか？"), actions: [TextButton(onPressed: ()=>Navigator.pop(c, false), child: const Text("キャンセル")), ElevatedButton(onPressed: ()=>Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text("削除"))])); if (confirm == true && mounted) { await controller.deleteLog(log!.id); if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); } } }, style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text("削除")), TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")), ElevatedButton(onPressed: () async { if (playerNumVal == null || actionNameVal == null) return; final newLog = LogEntry(id: isNew ? const Uuid().v4() : log!.id, matchDate: "", opponent: "", gameTime: timeCtrl.text, playerNumber: playerNumVal!, action: actionNameVal!, subAction: subActionVal?.name, subActionId: subActionVal?.id, result: resultVal, type: LogType.action); if (isNew) { await controller.addLog(_selectedMatchId!, newLog); } else { await controller.updateLog(_selectedMatchId!, newLog); } if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); } }, child: const Text("保存"))]);
+      return AlertDialog(title: Text(isNew ? "ログ追加" : "ログ編集"), content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [TextField(controller: timeCtrl, decoration: const InputDecoration(labelText: "時間 (分:秒)", hintText: "05:30"), keyboardType: TextInputType.datetime), const SizedBox(height: 16), DropdownButtonFormField<String>(value: playerNumVal, decoration: const InputDecoration(labelText: "選手"), items: players.map((p) => DropdownMenuItem(value: p['number'], child: Text("#${p['number']} ${p['name']}"),)).toList(), onChanged: (v) => setStateDialog(() => playerNumVal = v)), const SizedBox(height: 16), DropdownButtonFormField<String>(value: actionNameVal, decoration: const InputDecoration(labelText: "アクション"), items: actionNames.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(), onChanged: (v) => setStateDialog(() { actionNameVal = v; subActionVal = null; })), const SizedBox(height: 16), const Text("結果", style: TextStyle(fontSize: 12, color: Colors.grey)), Row(children: [Radio<ActionResult>(value: ActionResult.none, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })), const Text("なし"), Radio<ActionResult>(value: ActionResult.success, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })), const Text("成功"), Radio<ActionResult>(value: ActionResult.failure, groupValue: resultVal, onChanged: (v) => setStateDialog(() { resultVal = v!; subActionVal = null; })), const Text("失敗")]), if (subActions.isNotEmpty) DropdownButtonFormField<SubActionDefinition>(value: subActions.any((s) => s.id == subActionVal?.id) ? subActionVal : null, decoration: const InputDecoration(labelText: "詳細"), items: subActions.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(), onChanged: (v) => setStateDialog(() => subActionVal = v))])), actions: [if (!isNew) TextButton(onPressed: () async { final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text("削除確認"), content: const Text("このログを削除しますか？"), actions: [TextButton(onPressed: ()=>Navigator.pop(c, false), child: const Text("キャンセル")), ElevatedButton(onPressed: ()=>Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text("削除"))])); if (confirm == true && mounted) { await controller.deleteLog(log.id); if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); } } }, style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text("削除")), TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")), ElevatedButton(onPressed: () async { if (playerNumVal == null || actionNameVal == null) return; final newLog = LogEntry(id: isNew ? const Uuid().v4() : log.id, matchDate: "", opponent: "", gameTime: timeCtrl.text, playerNumber: playerNumVal!, action: actionNameVal!, subAction: subActionVal?.name, subActionId: subActionVal?.id, result: resultVal, type: LogType.action); if (isNew) { await controller.addLog(_selectedMatchId!, newLog); } else { await controller.updateLog(_selectedMatchId!, newLog); } if (context.mounted) { Navigator.pop(ctx); _runAnalysis(); } }, child: const Text("保存"))]);
     }));
   }
 

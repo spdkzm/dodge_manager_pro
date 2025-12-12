@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart'; // UUID追加
+
 
 import '../widgets/game_timer_bar.dart';
 import '../widgets/player_selection_panel.dart';
@@ -55,8 +55,8 @@ class MatchRecordScreen extends HookConsumerWidget {
     void showMatchInfoDialog() {
       final opponents = currentTeam?.opponentItems ?? [];
       final venues = currentTeam?.venueItems ?? [];
-      final opSchema = currentTeam?.opponentSchema.firstWhere((f) => f.label == 'チーム名', orElse: () => currentTeam!.opponentSchema.first);
-      final veSchema = currentTeam?.venueSchema.firstWhere((f) => f.label == '会場名', orElse: () => currentTeam!.venueSchema.first);
+      final opSchema = currentTeam?.opponentSchema.firstWhere((f) => f.label == 'チーム名', orElse: () => currentTeam.opponentSchema.first);
+      final veSchema = currentTeam?.venueSchema.firstWhere((f) => f.label == '会場名', orElse: () => currentTeam.venueSchema.first);
 
       MatchType tempType = controller.matchType;
       DateTime tempDate = controller.matchDate;
