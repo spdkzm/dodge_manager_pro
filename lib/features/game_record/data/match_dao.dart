@@ -7,11 +7,12 @@ class MatchDao {
 
   // --- 既存のCRUDメソッド ---
 
+  // ★修正: participations に 'status' が含まれることを想定
   Future<void> insertMatchWithLogs(
       String teamId,
       Map<String, dynamic> matchData,
       List<Map<String, dynamic>> logs,
-      List<Map<String, String>> participations
+      List<Map<String, dynamic>> participations
       ) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -30,6 +31,7 @@ class MatchDao {
         'is_extra_time': matchData['is_extra_time'] ?? 0,
         'extra_score_own': matchData['extra_score_own'],
         'extra_score_opponent': matchData['extra_score_opponent'],
+        'note': matchData['note'],
         'created_at': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -53,6 +55,7 @@ class MatchDao {
           'match_id': matchData['id'],
           'player_number': p['player_number'],
           'player_id': p['player_id'],
+          'status': p['status'] ?? 0, // ★追加: 0=Court, 1=Bench, 2=Absent
         });
       }
     });
@@ -87,6 +90,7 @@ class MatchDao {
           'match_id': matchId,
           'player_number': pNum,
           'player_id': pid,
+          'status': 0, // ログがある＝コートに出ているはずなので 0
         });
       }
     });
@@ -113,7 +117,6 @@ class MatchDao {
 
   Future<void> updateMatchInfo({
     required String matchId,
-    // matchIdParam を削除
     required String newDate,
     required String newOpponent,
     String? newOpponentId,
@@ -126,6 +129,7 @@ class MatchDao {
     int isExtraTime = 0,
     int? extraScoreOwn,
     int? extraScoreOpponent,
+    String? note,
   }) async {
     final db = await _dbHelper.database;
     await db.update('matches', {
@@ -141,10 +145,12 @@ class MatchDao {
       'is_extra_time': isExtraTime,
       'extra_score_own': extraScoreOwn,
       'extra_score_opponent': extraScoreOpponent,
+      'note': note,
     }, where: 'id = ?', whereArgs: [matchId]);
   }
 
-  Future<void> updateMatchParticipations(String matchId, List<Map<String, String>> members) async {
+  // ★修正: participations に 'status' を含む想定
+  Future<void> updateMatchParticipations(String matchId, List<Map<String, dynamic>> members) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       await txn.delete('match_participations', where: 'match_id = ?', whereArgs: [matchId]);
@@ -153,6 +159,7 @@ class MatchDao {
           'match_id': matchId,
           'player_number': m['player_number'],
           'player_id': m['player_id'],
+          'status': m['status'] ?? 0, // ★追加
         });
       }
     });
@@ -229,11 +236,12 @@ class MatchDao {
     return await db.query('match_logs', where: 'match_id = ?', orderBy: 'game_time DESC', whereArgs: [matchId]);
   }
 
+  // ★修正: statusも取得する
   Future<List<Map<String, dynamic>>> getMatchParticipations(String matchId) async {
     final db = await _dbHelper.database;
     return await db.query(
         'match_participations',
-        columns: ['player_number', 'player_id', 'match_id'],
+        columns: ['player_number', 'player_id', 'match_id', 'status'], // ★追加
         where: 'match_id = ?',
         whereArgs: [matchId]
     );
@@ -279,7 +287,8 @@ class MatchDao {
         p.player_number,
         p.player_id,
         p.match_id,
-        m.match_type
+        m.match_type,
+        p.status
       FROM match_participations p
       INNER JOIN matches m ON p.match_id = m.id
       WHERE m.team_id = ? AND m.date BETWEEN ? AND ?
@@ -322,6 +331,7 @@ class MatchDao {
       typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
     }
 
+    // ★修正: p.status = 0 (コート出場) のみカウントする
     final sql = '''
       SELECT
         p.player_id,
@@ -331,12 +341,13 @@ class MatchDao {
       JOIN matches m ON p.match_id = m.id
       WHERE $whereClause
       $typeCondition
+      AND (p.status IS NULL OR p.status = 0)
       GROUP BY p.player_id, p.player_number
     ''';
     return await db.rawQuery(sql, args);
   }
 
-  // 2. アクション集計 (成功/失敗/合計)
+  // 2. アクション集計 (変更なし)
   Future<List<Map<String, dynamic>>> getAggregatedActionStats(
       String teamId, String startDate, String endDate,
       [List<int>? matchTypes, String? matchId]) async {
@@ -358,7 +369,6 @@ class MatchDao {
       typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
     }
 
-    // ★修正: log_type = 0 (通常ログ) のみ集計
     final sql = '''
       SELECT
         l.player_id,
@@ -376,7 +386,7 @@ class MatchDao {
     return await db.rawQuery(sql, args);
   }
 
-  // 3. サブアクション集計
+  // 3. サブアクション集計 (変更なし)
   Future<List<Map<String, dynamic>>> getAggregatedSubActionStats(
       String teamId, String startDate, String endDate,
       [List<int>? matchTypes, String? matchId]) async {
@@ -398,7 +408,6 @@ class MatchDao {
       typeCondition = "AND m.match_type IN (${matchTypes.join(',')})";
     }
 
-    // ★修正: log_type = 0 (通常ログ) のみ集計
     final sql = '''
       SELECT
         l.player_id,

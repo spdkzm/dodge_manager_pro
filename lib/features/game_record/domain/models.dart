@@ -93,6 +93,8 @@ class MatchRecord with _$MatchRecord {
     @Default(false) bool isExtraTime,
     int? extraScoreOwn,
     int? extraScoreOpponent,
+    // ★追加: 備考
+    String? note,
   }) = _MatchRecord;
 
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);

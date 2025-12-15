@@ -58,6 +58,10 @@ dependencies:
   flutter_riverpod: ^2.4.9
   hooks_riverpod: ^2.4.9
 
+  # ★追加: 印刷・PDF機能
+  printing: ^5.11.0
+  pdf: ^3.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -72,6 +76,7 @@ dev_dependencies:
   build_runner: ^2.4.8
   freezed: ^2.4.7
   json_serializable: ^6.7.1
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

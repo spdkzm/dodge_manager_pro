@@ -11,7 +11,7 @@ class MatchRepository {
 
   MatchRepository(this._dao);
 
-  // --- 参照系 (AnalysisController等で使用) ---
+  // --- 参照系 ---
 
   Future<List<Map<String, dynamic>>> getMatches(String teamId) async {
     return _dao.getMatches(teamId);
@@ -21,6 +21,7 @@ class MatchRepository {
     return _dao.getMatchLogs(matchId);
   }
 
+  // ★修正: 戻り値にstatusが含まれる
   Future<List<Map<String, dynamic>>> getMatchParticipations(String matchId) async {
     return _dao.getMatchParticipations(matchId);
   }
@@ -45,7 +46,7 @@ class MatchRepository {
     return _dao.getAggregatedSubActionStats(teamId, startDate, endDate, matchTypes, matchId);
   }
 
-  // --- 更新系 (AnalysisController等で使用) ---
+  // --- 更新系 ---
 
   Future<void> insertMatchLog(String matchId, Map<String, dynamic> logMap) async {
     await _dao.insertMatchLog(matchId, logMap);
@@ -73,6 +74,7 @@ class MatchRepository {
     int isExtraTime = 0,
     int? extraScoreOwn,
     int? extraScoreOpponent,
+    String? note,
   }) async {
     await _dao.updateMatchInfo(
       matchId: matchId,
@@ -88,12 +90,12 @@ class MatchRepository {
       isExtraTime: isExtraTime,
       extraScoreOwn: extraScoreOwn,
       extraScoreOpponent: extraScoreOpponent,
+      note: note,
     );
   }
 
-  Future<void> updateMatchParticipations(String matchId, List<Map<String, String>> members) async {
+  // ★修正: 引数を 'Map<String, dynamic>' にして status も受け取れるようにする
+  Future<void> updateMatchParticipations(String matchId, List<Map<String, dynamic>> members) async {
     await _dao.updateMatchParticipations(matchId, members);
   }
-
-// 必要に応じて他のDAOメソッドもここに追加して公開する
 }

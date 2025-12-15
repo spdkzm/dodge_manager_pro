@@ -27,7 +27,6 @@ class GameRecorderController extends ChangeNotifier {
 
   AppSettings settings = AppSettings(squadNumbers: [], actions: []);
   List<UIActionItem?> uiActions = [];
-  // ★追加: ログ編集用に定義リストを保持
   List<ActionDefinition> actionDefinitions = [];
 
   Map<String, String> playerNames = {};
@@ -129,7 +128,6 @@ class GameRecorderController extends ChangeNotifier {
 
   Future<List<UIActionItem?>> _buildUIActionList(String teamId) async {
     final dbActions = await _actionDao.getActionDefinitions(teamId);
-    // ★修正: 定義リストをクラス変数に保存
     actionDefinitions = dbActions.map((d) => ActionDefinition.fromMap(d)).toList();
 
     Map<int, UIActionItem> gridMap = {};
@@ -253,7 +251,6 @@ class GameRecorderController extends ChangeNotifier {
   void deleteLog(int index) { logs.removeAt(index); DataManager.saveCurrentLogs(logs); notifyListeners(); }
   void restoreLog(int index, LogEntry log) { logs.insert(index, log); DataManager.saveCurrentLogs(logs); notifyListeners(); }
 
-  // ★修正: ログ編集用メソッドを強化（オブジェクト全体を更新）
   void updateLog(int index, LogEntry newLog) {
     if (index >= 0 && index < logs.length) {
       logs[index] = newLog;
@@ -342,13 +339,23 @@ class GameRecorderController extends ChangeNotifier {
       return map;
     }).toList();
 
-    final List<Map<String, String>> participationList = [];
-    for (var num in courtPlayers) {
-      participationList.add({
-        'player_number': num,
-        'player_id': numToId[num] ?? "",
-      });
+    // ★修正: コート(0), ベンチ(1), 欠席(2) すべてをDBに保存
+    final List<Map<String, dynamic>> participationList = [];
+
+    // Helper function
+    void addToList(List<String> numbers, int status) {
+      for (var num in numbers) {
+        participationList.add({
+          'player_number': num,
+          'player_id': numToId[num] ?? "",
+          'status': status,
+        });
+      }
     }
+
+    addToList(courtPlayers, 0); // コート
+    addToList(benchPlayers, 1); // ベンチ
+    addToList(absentPlayers, 2); // 欠席
 
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, participationList);
     await DataManager.clearCurrentLogs();

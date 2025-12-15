@@ -11,9 +11,9 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
-  static const String _dbName = 'dodge_manager_v7.db';
-  // ★修正: バージョンを7に上げる
-  static const int _dbVersion = 7;
+  static const String _dbName = 'dodge_manager_v9.db';
+  // ★修正: バージョンを9に上げる
+  static const int _dbVersion = 9;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -104,7 +104,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★追加: サブアクション定義用の新テーブル
     await db.execute('''
       CREATE TABLE sub_action_definitions(
         id TEXT PRIMARY KEY,
@@ -132,12 +131,12 @@ class DatabaseHelper {
         is_extra_time INTEGER DEFAULT 0,
         extra_score_own INTEGER,
         extra_score_opponent INTEGER,
+        note TEXT,
         created_at TEXT,
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
     ''');
 
-    // ★修正: sub_action_id カラム追加
     await db.execute('''
       CREATE TABLE match_logs(
         id TEXT PRIMARY KEY,
@@ -154,12 +153,14 @@ class DatabaseHelper {
       )
     ''');
 
+    // ★修正: statusカラム (0:Court, 1:Bench, 2:Absent) を追加
     await db.execute('''
       CREATE TABLE match_participations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         match_id TEXT,
         player_number TEXT,
         player_id TEXT,
+        status INTEGER DEFAULT 0,
         FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
       )
     ''');
@@ -195,15 +196,24 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE match_logs ADD COLUMN player_id TEXT");
       await db.execute("ALTER TABLE match_participations ADD COLUMN player_id TEXT");
     }
-    // ★追加: v7への移行 (サブアクションのテーブル化とログのID紐付け)
     if (oldVersion < 7) {
       await _migrateToV7(db);
     }
+    if (oldVersion < 8) {
+      await db.execute("ALTER TABLE matches ADD COLUMN note TEXT");
+    }
+    // ★追加: v9への移行 (参加ステータスの追加)
+    if (oldVersion < 9) {
+      // 既存のカラム構成を確認して追加
+      final columns = await db.rawQuery("PRAGMA table_info(match_participations)");
+      final hasStatus = columns.any((col) => col['name'] == 'status');
+      if (!hasStatus) {
+        await db.execute("ALTER TABLE match_participations ADD COLUMN status INTEGER DEFAULT 0");
+      }
+    }
   }
 
-  // ★追加: v7マイグレーションロジック
   Future<void> _migrateToV7(Database db) async {
-    // 1. 新テーブル作成
     await db.execute('''
       CREATE TABLE sub_action_definitions(
         id TEXT PRIMARY KEY,
@@ -215,10 +225,8 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. ログテーブルにカラム追加
     await db.execute("ALTER TABLE match_logs ADD COLUMN sub_action_id TEXT");
 
-    // 3. データ移行 (JSON -> テーブル & ログ更新)
     final actions = await db.query('action_definitions');
 
     for (var action in actions) {
@@ -232,10 +240,9 @@ class DatabaseHelper {
       try {
         decoded = jsonDecode(subActionsJson);
       } catch (_) {
-        continue; // パースエラー時はスキップ
+        continue;
       }
 
-      // JSON構造: {'default': ['A', 'B'], 'success': ['C'], ...}
       for (var category in decoded.keys) {
         final names = decoded[category];
         if (names is List) {
@@ -243,7 +250,6 @@ class DatabaseHelper {
             final subName = names[i].toString();
             final subId = const Uuid().v4();
 
-            // 定義を新テーブルに挿入
             await db.insert('sub_action_definitions', {
               'id': subId,
               'action_id': actionId,
@@ -252,8 +258,6 @@ class DatabaseHelper {
               'sort_order': i,
             });
 
-            // 既存ログの更新
-            // 親アクション名 と サブアクション名 が一致するログにIDを付与
             await db.rawUpdate('''
               UPDATE match_logs
               SET sub_action_id = ?

@@ -703,7 +703,8 @@ mixin _$MatchRecord {
   int? get scoreOpponent => throw _privateConstructorUsedError;
   bool get isExtraTime => throw _privateConstructorUsedError;
   int? get extraScoreOwn => throw _privateConstructorUsedError;
-  int? get extraScoreOpponent => throw _privateConstructorUsedError;
+  int? get extraScoreOpponent => throw _privateConstructorUsedError; // ★追加: 備考
+  String? get note => throw _privateConstructorUsedError;
 
   /// Serializes this MatchRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -737,6 +738,7 @@ abstract class $MatchRecordCopyWith<$Res> {
     bool isExtraTime,
     int? extraScoreOwn,
     int? extraScoreOpponent,
+    String? note,
   });
 }
 
@@ -769,6 +771,7 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
     Object? isExtraTime = null,
     Object? extraScoreOwn = freezed,
     Object? extraScoreOpponent = freezed,
+    Object? note = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -828,6 +831,10 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
                 ? _value.extraScoreOpponent
                 : extraScoreOpponent // ignore: cast_nullable_to_non_nullable
                       as int?,
+            note: freezed == note
+                ? _value.note
+                : note // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -858,6 +865,7 @@ abstract class _$$MatchRecordImplCopyWith<$Res>
     bool isExtraTime,
     int? extraScoreOwn,
     int? extraScoreOpponent,
+    String? note,
   });
 }
 
@@ -889,6 +897,7 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
     Object? isExtraTime = null,
     Object? extraScoreOwn = freezed,
     Object? extraScoreOpponent = freezed,
+    Object? note = freezed,
   }) {
     return _then(
       _$MatchRecordImpl(
@@ -948,6 +957,10 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
             ? _value.extraScoreOpponent
             : extraScoreOpponent // ignore: cast_nullable_to_non_nullable
                   as int?,
+        note: freezed == note
+            ? _value.note
+            : note // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -971,6 +984,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     this.isExtraTime = false,
     this.extraScoreOwn,
     this.extraScoreOpponent,
+    this.note,
   }) : _logs = logs;
 
   factory _$MatchRecordImpl.fromJson(Map<String, dynamic> json) =>
@@ -1015,10 +1029,13 @@ class _$MatchRecordImpl implements _MatchRecord {
   final int? extraScoreOwn;
   @override
   final int? extraScoreOpponent;
+  // ★追加: 備考
+  @override
+  final String? note;
 
   @override
   String toString() {
-    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent)';
+    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent, note: $note)';
   }
 
   @override
@@ -1048,7 +1065,8 @@ class _$MatchRecordImpl implements _MatchRecord {
             (identical(other.extraScoreOwn, extraScoreOwn) ||
                 other.extraScoreOwn == extraScoreOwn) &&
             (identical(other.extraScoreOpponent, extraScoreOpponent) ||
-                other.extraScoreOpponent == extraScoreOpponent));
+                other.extraScoreOpponent == extraScoreOpponent) &&
+            (identical(other.note, note) || other.note == note));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1069,6 +1087,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     isExtraTime,
     extraScoreOwn,
     extraScoreOpponent,
+    note,
   );
 
   /// Create a copy of MatchRecord
@@ -1101,6 +1120,7 @@ abstract class _MatchRecord implements MatchRecord {
     final bool isExtraTime,
     final int? extraScoreOwn,
     final int? extraScoreOpponent,
+    final String? note,
   }) = _$MatchRecordImpl;
 
   factory _MatchRecord.fromJson(Map<String, dynamic> json) =
@@ -1135,7 +1155,9 @@ abstract class _MatchRecord implements MatchRecord {
   @override
   int? get extraScoreOwn;
   @override
-  int? get extraScoreOpponent;
+  int? get extraScoreOpponent; // ★追加: 備考
+  @override
+  String? get note;
 
   /// Create a copy of MatchRecord
   /// with the given fields replaced by the non-null parameter values.
