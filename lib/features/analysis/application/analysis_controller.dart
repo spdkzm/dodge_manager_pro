@@ -71,15 +71,18 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     final teamStore = ref.read(teamStoreProvider);
     final currentTeamId = teamStore.currentTeam?.id;
     if (currentTeamId == null) return;
+
     final dateStr = DateFormat('yyyy-MM-dd').format(newDate);
     String? finalOpponentId = opponentId;
     String? finalVenueId = venueId;
+
     if (opponentName != null && opponentName.isNotEmpty && (finalOpponentId == null || finalOpponentId.isEmpty)) {
       finalOpponentId = await teamStore.ensureItemExists(opponentName, RosterCategory.opponent);
     }
     if (venueName != null && venueName.isNotEmpty && (finalVenueId == null || finalVenueId.isEmpty)) {
       finalVenueId = await teamStore.ensureItemExists(venueName, RosterCategory.venue);
     }
+
     String newOpponentName = opponentName ?? "";
     if (newOpponentName.isEmpty) {
       final allMatches = await _matchRepository.getMatches(currentTeamId);
@@ -96,10 +99,47 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       newOpponentName = "試合-$dateStr #$newNum";
     }
 
+    // 既存のレコードを取得し、勝敗やスコアなどの情報を保持する
     final currentRecord = ref.read(selectedMatchRecordProvider);
+
+    // 現在のプロバイダーが更新対象と一致しているか確認。一致しない場合は安全のため更新しないか、DBからフェッチするべきだが、
+    // ここでは画面フロー上一致している前提で、もしnullならデフォルト値を使わざるを得ないが、基本はありえない。
+    int resultIndex = 0;
+    int? scoreOwn;
+    int? scoreOpponent;
+    int isExtraTime = 0;
+    int? extraScoreOwn;
+    int? extraScoreOpponent;
+
+    if (currentRecord != null && currentRecord.id == matchId) {
+      resultIndex = currentRecord.result.index;
+      scoreOwn = currentRecord.scoreOwn;
+      scoreOpponent = currentRecord.scoreOpponent;
+      isExtraTime = currentRecord.isExtraTime ? 1 : 0;
+      extraScoreOwn = currentRecord.extraScoreOwn;
+      extraScoreOpponent = currentRecord.extraScoreOpponent;
+    }
+
     String? noteToSave = note ?? currentRecord?.note;
 
-    await _matchRepository.updateMatchInfo(matchId: matchId, newDate: dateStr, newOpponent: newOpponentName, newOpponentId: finalOpponentId, newVenueName: venueName, newVenueId: finalVenueId, newMatchType: newType.index, note: noteToSave);
+    await _matchRepository.updateMatchInfo(
+        matchId: matchId,
+        newDate: dateStr,
+        newOpponent: newOpponentName,
+        newOpponentId: finalOpponentId,
+        newVenueName: venueName,
+        newVenueId: finalVenueId,
+        newMatchType: newType.index,
+        // 既存の値を維持して渡す
+        result: resultIndex,
+        scoreOwn: scoreOwn,
+        scoreOpponent: scoreOpponent,
+        isExtraTime: isExtraTime,
+        extraScoreOwn: extraScoreOwn,
+        extraScoreOpponent: extraScoreOpponent,
+        note: noteToSave
+    );
+
     await _loadSelectedMatchRecord(matchId);
   }
 
@@ -110,14 +150,12 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _loadSelectedMatchRecord(matchId);
   }
 
-  // ★修正: 3つのカテゴリを受け取り、ステータス付きで保存
   Future<void> updateMatchMembers(String matchId, List<String> court, List<String> bench, List<String> absent) async {
     final team = ref.read(teamStoreProvider).currentTeam;
     if (team == null) return;
     final List<Map<String, dynamic>> participations = [];
     final numField = team.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => team.schema.first);
 
-    // Helper
     void add(List<String> list, int status) {
       for (var num in list) {
         String playerId = "";
@@ -136,7 +174,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchRepository.updateMatchParticipations(matchId, participations);
   }
 
-  // ★修正: リストではなくマップ(番号->ステータス)を返す
   Future<Map<String, int>> getMatchMemberStatus(String matchId) async {
     final rawList = await _matchRepository.getMatchParticipations(matchId);
     final Map<String, int> result = {};
@@ -150,7 +187,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     return result;
   }
 
-  // 旧メソッドの後方互換 (使わなくなったが念のため残すならこうする)
   Future<List<String>> getMatchMembers(String matchId) async {
     final statusMap = await getMatchMemberStatus(matchId);
     return statusMap.entries.where((e) => e.value == 0).map((e) => e.key).toList();
@@ -282,7 +318,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
     final typeIndices = targetTypes?.map((t) => t.index).toList();
 
-    // 2. 試合数の集計
     final matchCounts = await _matchRepository.getPlayerMatchCounts(
         currentTeam.id, startDateStr, endDateStr, typeIndices, matchId
     );
@@ -301,7 +336,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       }
     }
 
-    // 3. アクション統計
     final actionStatsRows = await _matchRepository.getAggregatedActionStats(
         currentTeam.id, startDateStr, endDateStr, typeIndices, matchId
     );
@@ -336,7 +370,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       statsMap[targetKey] = currentStats.copyWith(actions: newActions);
     }
 
-    // 4. サブアクション統計
     final subActionRows = await _matchRepository.getAggregatedSubActionStats(
         currentTeam.id, startDateStr, endDateStr, typeIndices, matchId
     );
