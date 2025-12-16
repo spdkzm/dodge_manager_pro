@@ -216,6 +216,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final yearTabs = [null, ...availableYears]; final monthTabs = [null, ...availableMonths]; final dayTabs = [null, ...availableDays]; final matchTabs = [null, ...availableMatches.keys];
     final isLogTabVisible = _selectedMatchId != null && _tabController.index == 1;
 
+    final isStatsTabVisible =
+        _selectedMatchId == null || _tabController.index == 0;
+
     final canPrint = asyncStats.valueOrNull?.isNotEmpty == true;
 
     return Scaffold(
@@ -223,7 +226,13 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [if (_selectedMatchId != null && matchRecord != null) Row(children: [Icon(_getMatchTypeIcon(matchRecord.matchType), size: 16, color: Colors.black54), const SizedBox(width: 4), Text(availableMatches[_selectedMatchId] ?? "試合", style: const TextStyle(fontSize: 16)), const SizedBox(width: 8), const Icon(Icons.calendar_today, size: 14, color: Colors.black54), const SizedBox(width: 4), Text(matchRecord.date, style: const TextStyle(fontSize: 12, color: Colors.black54))]) else ...[const Text("データ分析", style: TextStyle(fontSize: 16)), Text(currentTeam?.name ?? "", style: const TextStyle(fontSize: 12, color: Colors.black54))]]),
         actions: [
           IconButton(icon: Icon(Icons.filter_alt, color: _selectedMatchTypes.isNotEmpty ? Colors.indigo : Colors.grey), tooltip: "種別フィルタ", onPressed: _showFilterDialog),
-          IconButton(icon: const Icon(Icons.print), tooltip: "集計表を印刷", onPressed: canPrint ? _handlePrint : null),
+          if (isStatsTabVisible)
+            IconButton(
+              icon: const Icon(Icons.print),
+              tooltip: "集計表を印刷",
+              onPressed: canPrint ? _handlePrint : null,
+            ),
+
           IconButton(icon: const Icon(Icons.refresh), onPressed: _runAnalysis)
         ],
       ),
