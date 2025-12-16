@@ -8,8 +8,13 @@ import '../../../team_mgmt/domain/schema.dart';
 
 class AnalysisMembersTab extends ConsumerStatefulWidget {
   final String matchId;
+  final VoidCallback onUpdate; // ★追加: 更新完了時のコールバック
 
-  const AnalysisMembersTab({super.key, required this.matchId});
+  const AnalysisMembersTab({
+    super.key,
+    required this.matchId,
+    required this.onUpdate,
+  });
 
   @override
   ConsumerState<AnalysisMembersTab> createState() => _AnalysisMembersTabState();
@@ -104,7 +109,8 @@ class _AnalysisMembersTabState extends ConsumerState<AnalysisMembersTab> {
         _editingBenchMembers,
         _editingAbsentMembers
     );
-    ref.read(analysisControllerProvider.notifier).analyze(matchId: widget.matchId);
+    // ★変更: 親画面の再ロード処理を呼び出す
+    widget.onUpdate();
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("出場メンバーを更新しました")));
   }
 

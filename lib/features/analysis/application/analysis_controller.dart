@@ -99,44 +99,18 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       newOpponentName = "試合-$dateStr #$newNum";
     }
 
-    // 既存のレコードを取得し、勝敗やスコアなどの情報を保持する
     final currentRecord = ref.read(selectedMatchRecordProvider);
-
-    // 現在のプロバイダーが更新対象と一致しているか確認。一致しない場合は安全のため更新しないか、DBからフェッチするべきだが、
-    // ここでは画面フロー上一致している前提で、もしnullならデフォルト値を使わざるを得ないが、基本はありえない。
-    int resultIndex = 0;
-    int? scoreOwn;
-    int? scoreOpponent;
-    int isExtraTime = 0;
-    int? extraScoreOwn;
-    int? extraScoreOpponent;
-
-    if (currentRecord != null && currentRecord.id == matchId) {
-      resultIndex = currentRecord.result.index;
-      scoreOwn = currentRecord.scoreOwn;
-      scoreOpponent = currentRecord.scoreOpponent;
-      isExtraTime = currentRecord.isExtraTime ? 1 : 0;
-      extraScoreOwn = currentRecord.extraScoreOwn;
-      extraScoreOpponent = currentRecord.extraScoreOpponent;
-    }
-
     String? noteToSave = note ?? currentRecord?.note;
 
-    await _matchRepository.updateMatchInfo(
+    // ★修正: updateBasicInfoを使用 (勝敗データには影響しない)
+    await _matchRepository.updateBasicInfo(
         matchId: matchId,
-        newDate: dateStr,
-        newOpponent: newOpponentName,
-        newOpponentId: finalOpponentId,
-        newVenueName: venueName,
-        newVenueId: finalVenueId,
-        newMatchType: newType.index,
-        // 既存の値を維持して渡す
-        result: resultIndex,
-        scoreOwn: scoreOwn,
-        scoreOpponent: scoreOpponent,
-        isExtraTime: isExtraTime,
-        extraScoreOwn: extraScoreOwn,
-        extraScoreOpponent: extraScoreOpponent,
+        date: dateStr,
+        opponent: newOpponentName,
+        opponentId: finalOpponentId,
+        venueName: venueName,
+        venueId: finalVenueId,
+        matchType: newType.index,
         note: noteToSave
     );
 
@@ -144,9 +118,16 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
   }
 
   Future<void> updateMatchResult(String matchId, MatchResult result, int? scoreOwn, int? scoreOpponent, bool isExtraTime, int? extraScoreOwn, int? extraScoreOpponent) async {
-    final currentRecord = ref.read(selectedMatchRecordProvider);
-    if (currentRecord == null || currentRecord.id != matchId) return;
-    await _matchRepository.updateMatchInfo(matchId: matchId, newDate: currentRecord.date, newOpponent: currentRecord.opponent, newOpponentId: currentRecord.opponentId, newVenueName: currentRecord.venueName, newVenueId: currentRecord.venueId, newMatchType: currentRecord.matchType.index, result: result.index, scoreOwn: scoreOwn, scoreOpponent: scoreOpponent, isExtraTime: isExtraTime ? 1 : 0, extraScoreOwn: extraScoreOwn, extraScoreOpponent: extraScoreOpponent, note: currentRecord.note);
+    // ★修正: updateMatchResultを使用 (基本情報には影響しない)
+    await _matchRepository.updateMatchResult(
+        matchId: matchId,
+        result: result.index,
+        scoreOwn: scoreOwn,
+        scoreOpponent: scoreOpponent,
+        isExtraTime: isExtraTime ? 1 : 0,
+        extraScoreOwn: extraScoreOwn,
+        extraScoreOpponent: extraScoreOpponent
+    );
     await _loadSelectedMatchRecord(matchId);
   }
 

@@ -39,7 +39,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     super.initState();
     // タブ数は4つ (集計, ログ, 試合情報, 出場メンバー)
     _tabController = TabController(length: 4, vsync: this);
-    // アクション定義順序のロードはController側で管理されているが、念のため初期化を待つ
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadActionOrder();
     });
@@ -176,7 +175,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   String _getMatchTypeName(MatchType type) { switch (type) { case MatchType.official: return "大会/公式戦"; case MatchType.practiceMatch: return "練習試合"; case MatchType.practice: return "練習"; } }
   IconData _getMatchTypeIcon(MatchType type) { switch (type) { case MatchType.official: return Icons.emoji_events; case MatchType.practiceMatch: return Icons.handshake; case MatchType.practice: return Icons.sports_handball; } }
 
-  // フローティングアクションボタン（ログ追加メニュー）
   void _showAddMenu() {
     showModalBottomSheet(context: context, builder: (ctx) {
       return SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -186,8 +184,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
             onTap: () {
               Navigator.pop(ctx);
               if (_selectedMatchId != null) {
-                // AnalysisLogTab で定義した関数を呼び出し
-                showEditLogDialog(context, ref, _selectedMatchId!);
+                // ★修正: onUpdate引数を追加
+                showEditLogDialog(context, ref, _selectedMatchId!, onUpdate: _runAnalysis);
               }
             }),
         ListTile(
@@ -197,7 +195,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
               Navigator.pop(ctx);
               final record = ref.read(selectedMatchRecordProvider);
               if (record != null) {
-                showResultEditDialog(context, ref, record);
+                // ★修正: onUpdate引数を追加
+                showResultEditDialog(context, ref, record, onUpdate: _runAnalysis);
               }
             })
       ]));
@@ -236,7 +235,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   controller: _tabController,
                   labelColor: Colors.indigo, unselectedLabelColor: Colors.grey, indicatorColor: Colors.indigo,
                   onTap: (idx) {
-                    setState((){}); // FABの表示切り替えのため
+                    setState((){});
                   },
                   tabs: const [
                     Tab(icon: Icon(Icons.analytics, size: 18), text: "集計"),
@@ -250,9 +249,10 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   controller: _tabController,
                   children: [
                     AnalysisStatsTab(asyncStats: asyncStats),
-                    AnalysisLogTab(asyncStats: asyncStats),
-                    AnalysisInfoTab(matchId: _selectedMatchId!),
-                    AnalysisMembersTab(matchId: _selectedMatchId!),
+                    // ★修正: onUpdate引数に_runAnalysisを渡す
+                    AnalysisLogTab(asyncStats: asyncStats, onUpdate: _runAnalysis),
+                    AnalysisInfoTab(matchId: _selectedMatchId!, onUpdate: _runAnalysis),
+                    AnalysisMembersTab(matchId: _selectedMatchId!, onUpdate: _runAnalysis),
                   ]
               ) : AnalysisStatsTab(asyncStats: asyncStats))
             ]))]),

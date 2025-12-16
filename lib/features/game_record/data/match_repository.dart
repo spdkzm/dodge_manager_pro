@@ -21,7 +21,6 @@ class MatchRepository {
     return _dao.getMatchLogs(matchId);
   }
 
-  // ★修正: 戻り値にstatusが含まれる
   Future<List<Map<String, dynamic>>> getMatchParticipations(String matchId) async {
     return _dao.getMatchParticipations(matchId);
   }
@@ -60,41 +59,50 @@ class MatchRepository {
     await _dao.deleteMatchLog(logId);
   }
 
-  Future<void> updateMatchInfo({
+  // ★変更: 基本情報のみ更新
+  Future<void> updateBasicInfo({
     required String matchId,
-    required String newDate,
-    required String newOpponent,
-    String? newOpponentId,
-    String? newVenueName,
-    String? newVenueId,
-    required int newMatchType,
-    int result = 0,
-    int? scoreOwn,
-    int? scoreOpponent,
-    int isExtraTime = 0,
-    int? extraScoreOwn,
-    int? extraScoreOpponent,
+    required String date,
+    required String opponent,
+    String? opponentId,
+    String? venueName,
+    String? venueId,
+    required int matchType,
     String? note,
   }) async {
-    await _dao.updateMatchInfo(
+    await _dao.updateBasicInfo(
       matchId: matchId,
-      newDate: newDate,
-      newOpponent: newOpponent,
-      newOpponentId: newOpponentId,
-      newVenueName: newVenueName,
-      newVenueId: newVenueId,
-      newMatchType: newMatchType,
+      date: date,
+      opponent: opponent,
+      opponentId: opponentId,
+      venueName: venueName,
+      venueId: venueId,
+      matchType: matchType,
+      note: note,
+    );
+  }
+
+  // ★変更: 勝敗結果のみ更新
+  Future<void> updateMatchResult({
+    required String matchId,
+    required int result,
+    int? scoreOwn,
+    int? scoreOpponent,
+    required int isExtraTime,
+    int? extraScoreOwn,
+    int? extraScoreOpponent,
+  }) async {
+    await _dao.updateMatchResult(
+      matchId: matchId,
       result: result,
       scoreOwn: scoreOwn,
       scoreOpponent: scoreOpponent,
       isExtraTime: isExtraTime,
       extraScoreOwn: extraScoreOwn,
       extraScoreOpponent: extraScoreOpponent,
-      note: note,
     );
   }
 
-  // ★修正: 引数を 'Map<String, dynamic>' にして status も受け取れるようにする
   Future<void> updateMatchParticipations(String matchId, List<Map<String, dynamic>> members) async {
     await _dao.updateMatchParticipations(matchId, members);
   }

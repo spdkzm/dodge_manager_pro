@@ -10,8 +10,13 @@ import '../../../team_mgmt/domain/roster_item.dart';
 
 class AnalysisInfoTab extends ConsumerStatefulWidget {
   final String matchId;
+  final VoidCallback onUpdate; // ★追加: 更新完了時のコールバック
 
-  const AnalysisInfoTab({super.key, required this.matchId});
+  const AnalysisInfoTab({
+    super.key,
+    required this.matchId,
+    required this.onUpdate,
+  });
 
   @override
   ConsumerState<AnalysisInfoTab> createState() => _AnalysisInfoTabState();
@@ -73,7 +78,9 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
       note: _noteCtrl.text,
     );
 
-    ref.read(analysisControllerProvider.notifier).analyze(matchId: widget.matchId);
+    // ★変更: 親画面の再ロード処理を呼び出す
+    widget.onUpdate();
+
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("基本情報を更新しました")));
   }
 

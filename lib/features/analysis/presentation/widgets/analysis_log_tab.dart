@@ -11,8 +11,13 @@ import '../../../settings/domain/action_definition.dart';
 /// ログタブのウィジェット
 class AnalysisLogTab extends ConsumerWidget {
   final AsyncValue<List<PlayerStats>> asyncStats;
+  final VoidCallback onUpdate; // ★追加
 
-  const AnalysisLogTab({super.key, required this.asyncStats});
+  const AnalysisLogTab({
+    super.key,
+    required this.asyncStats,
+    required this.onUpdate,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,7 +44,7 @@ class AnalysisLogTab extends ConsumerWidget {
 
         if (log.type == LogType.system) {
           return InkWell(
-            onTap: () => showEditLogDialog(context, ref, matchRecord.id, log: log),
+            onTap: () => showEditLogDialog(context, ref, matchRecord.id, log: log, onUpdate: onUpdate),
             child: Container(
               color: Colors.grey[50],
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -63,7 +68,7 @@ class AnalysisLogTab extends ConsumerWidget {
         }
 
         return InkWell(
-          onTap: () => showEditLogDialog(context, ref, matchRecord.id, log: log),
+          onTap: () => showEditLogDialog(context, ref, matchRecord.id, log: log, onUpdate: onUpdate),
           child: Container(
             color: bgColor,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -104,7 +109,7 @@ class AnalysisLogTab extends ConsumerWidget {
       }
     }
     return InkWell(
-      onTap: () => showResultEditDialog(context, ref, record),
+      onTap: () => showResultEditDialog(context, ref, record, onUpdate: onUpdate),
       child: Container(
         color: bgColor,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
@@ -123,9 +128,9 @@ class AnalysisLogTab extends ConsumerWidget {
   }
 }
 
-// --- 公開用ダイアログ関数 ---
+// --- 公開用ダイアログ関数 (onUpdate引数を追加) ---
 
-void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {LogEntry? log}) {
+void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {LogEntry? log, required VoidCallback onUpdate}) {
   final controller = ref.read(analysisControllerProvider.notifier);
   final definitions = controller.actionDefinitions;
   final isNew = log == null;
@@ -169,7 +174,7 @@ void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {Log
                         await controller.deleteLog(log.id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ref.read(analysisControllerProvider.notifier).analyze(matchId: matchId);
+                          onUpdate(); // ★変更: コールバック呼び出し
                         }
                       }
                     },
@@ -183,7 +188,7 @@ void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {Log
                       await controller.updateLog(matchId, newLog);
                       if (context.mounted) {
                         Navigator.pop(ctx);
-                        ref.read(analysisControllerProvider.notifier).analyze(matchId: matchId);
+                        onUpdate(); // ★変更: コールバック呼び出し
                       }
                     },
                     child: const Text("保存"))
@@ -236,7 +241,7 @@ void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {Log
                         await controller.deleteLog(log.id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ref.read(analysisControllerProvider.notifier).analyze(matchId: matchId);
+                          onUpdate(); // ★変更: コールバック呼び出し
                         }
                       }
                     },
@@ -264,7 +269,7 @@ void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {Log
                     }
                     if (context.mounted) {
                       Navigator.pop(ctx);
-                      ref.read(analysisControllerProvider.notifier).analyze(matchId: matchId);
+                      onUpdate(); // ★変更: コールバック呼び出し
                     }
                   },
                   child: const Text("保存"))
@@ -272,7 +277,7 @@ void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId, {Log
       }));
 }
 
-void showResultEditDialog(BuildContext context, WidgetRef ref, MatchRecord record) {
+void showResultEditDialog(BuildContext context, WidgetRef ref, MatchRecord record, {required VoidCallback onUpdate}) {
   MatchResult tempResult = record.result;
   MatchResult tempExtraResult = record.isExtraTime ? record.result : MatchResult.none;
   if (record.isExtraTime) tempResult = MatchResult.draw;
@@ -339,7 +344,10 @@ void showResultEditDialog(BuildContext context, WidgetRef ref, MatchRecord recor
                       MatchResult finalResult = tempExtraResult != MatchResult.none ? tempExtraResult : tempResult;
                       bool isExtra = tempExtraResult != MatchResult.none;
                       await ref.read(analysisControllerProvider.notifier).updateMatchResult(record.id, finalResult, int.tryParse(scoreOwnCtrl.text), int.tryParse(scoreOppCtrl.text), isExtra, int.tryParse(extraScoreOwnCtrl.text), int.tryParse(extraScoreOppCtrl.text));
-                      if (context.mounted) Navigator.pop(context);
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        onUpdate(); // ★変更: コールバック呼び出し
+                      }
                     },
                     child: const Text("保存"))
               ]);
