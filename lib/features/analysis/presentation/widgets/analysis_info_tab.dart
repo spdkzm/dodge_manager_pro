@@ -30,18 +30,23 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   String? _venueId;
   DateTime _editingDate = DateTime.now();
   MatchType _editingMatchType = MatchType.practiceMatch;
+  String? _lastLoadedMatchId; // ★修正: 最後にデータをロードして成功したMatch IDを追加
 
   @override
   void initState() {
     super.initState();
-    _loadMatchData();
+    // initStateではref.readで初期ロードを試みる
+    _loadMatchData(readOnly: true);
   }
 
   @override
   void didUpdateWidget(covariant AnalysisInfoTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matchId != widget.matchId) {
-      _loadMatchData();
+      // matchId が変わったら、最後にロードしたIDをリセットし、_loadMatchDataを実行
+      // buildメソッドのwatchが新しいデータの到着を待って更新を行う
+      _lastLoadedMatchId = null;
+      _loadMatchData(readOnly: true);
     }
   }
 
@@ -53,16 +58,34 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     super.dispose();
   }
 
-  void _loadMatchData() {
+  // ★修正: readOnly引数を追加し、setStateを条件付きで実行するように変更
+  void _loadMatchData({bool readOnly = false}) {
     final matchRecord = ref.read(selectedMatchRecordProvider);
-    if (matchRecord != null && matchRecord.id == widget.matchId) {
+
+    // 現在のmatchIdに対応するデータが来ており、かつ、まだロードされていない場合のみ処理を実行
+    if (matchRecord != null && matchRecord.id == widget.matchId && _lastLoadedMatchId != widget.matchId) {
       _opponentCtrl.text = matchRecord.opponent;
       _venueCtrl.text = matchRecord.venueName ?? "";
       _noteCtrl.text = matchRecord.note ?? "";
       _opponentId = matchRecord.opponentId;
       _venueId = matchRecord.venueId;
-      _editingDate = DateTime.tryParse(matchRecord.date) ?? DateTime.now();
-      _editingMatchType = matchRecord.matchType;
+
+      final newEditingDate = DateTime.tryParse(matchRecord.date.replaceAll('/', '-')) ?? DateTime.now();
+
+      // readOnlyでない（watch経由の正式な更新）場合、または初期ロード（initState）の場合にsetState
+      if (!readOnly) {
+        // buildから呼ばれた正式なデータ更新時にはsetStateで画面を再描画する
+        setState(() {
+          _editingDate = newEditingDate;
+          _editingMatchType = matchRecord.matchType;
+          _lastLoadedMatchId = widget.matchId; // 成功したIDを記録
+        });
+      } else {
+        // initState/didUpdateWidgetからの呼び出しの場合、setStateは不要（または安全ではない）
+        _editingDate = newEditingDate;
+        _editingMatchType = matchRecord.matchType;
+        _lastLoadedMatchId = widget.matchId;
+      }
     }
   }
 
@@ -90,9 +113,22 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   Widget build(BuildContext context) {
     final store = ref.watch(teamStoreProvider);
     final team = store.currentTeam;
+    // ★修正: selectedMatchRecordProvider を watch する
     final matchRecord = ref.watch(selectedMatchRecordProvider);
 
-    if (team == null || matchRecord == null) return const Center(child: CircularProgressIndicator());
+    // Provider のデータが更新されたときに、現在のウィジェットの matchId と一致するかをチェックし、
+    // まだロードされていない場合はロード処理を実行する
+    if (matchRecord != null && matchRecord.id == widget.matchId && _lastLoadedMatchId != widget.matchId) {
+      // build完了後のマイクロタスクで_loadMatchDataを呼び出す（_loadMatchData内でsetStateが呼ばれるため）
+      Future.microtask(() => _loadMatchData());
+      // この時点で matchRecord を利用すると古いデータが表示される可能性があるため、matchRecordが null/古い状態であればローディングを表示
+    }
+
+    // 最初にロードが完了するまでローディングを表示、またはデータがない場合は何も表示しない
+    if (team == null || matchRecord == null || _lastLoadedMatchId != widget.matchId) {
+      // 試合IDは来ているがデータがまだ来ていない、または古いIDの場合
+      return const Center(child: CircularProgressIndicator());
+    }
 
     final opponents = team.opponentItems;
     final venues = team.venueItems;
