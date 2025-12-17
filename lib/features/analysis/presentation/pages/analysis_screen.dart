@@ -16,6 +16,8 @@ import '../widgets/analysis_log_tab.dart';
 import '../widgets/analysis_info_tab.dart';
 import '../widgets/analysis_members_tab.dart';
 import '../widgets/analysis_print_view.dart';
+// ★追加: ログ印刷用ウィジェットのインポート
+import '../widgets/analysis_log_print_view.dart';
 
 class AnalysisScreen extends ConsumerStatefulWidget {
   const AnalysisScreen({super.key});
@@ -41,6 +43,12 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadActionOrder();
+    });
+    // ★追加: タブ切り替え時（スワイプ含む）にUIを再描画してプリントボタンの状態を更新する
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {});
+      }
     });
   }
 
@@ -107,14 +115,27 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final asyncStats = ref.read(analysisControllerProvider);
     final stats = asyncStats.valueOrNull;
 
-    if (currentTeam == null || stats == null || stats.isEmpty) {
+    // ★変更: 印刷対象の判定をタブごとに分岐
+    final isLogTab = _selectedMatchId != null && _tabController.index == 1;
+    final matchRecord = ref.read(selectedMatchRecordProvider);
+
+    if (currentTeam == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するデータがありません")));
       return;
     }
 
-    if (!stats.any((s) => s.matchesPlayed > 0)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("試合に出場した選手がいません")));
-      return;
+    if (isLogTab) {
+      // ログタブの場合のチェック
+      if (matchRecord == null || matchRecord.logs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するログがありません")));
+        return;
+      }
+    } else {
+      // 集計タブの場合のチェック
+      if (stats == null || stats.isEmpty || !stats.any((s) => s.matchesPlayed > 0)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するデータがありません")));
+        return;
+      }
     }
 
     try {
@@ -130,7 +151,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       final pngBytes = byteData!.buffer.asUint8List();
 
       await PdfExportService().printStatsImage(
-        teamName: currentTeam.name,
+        teamName: currentTeam.name, // ここでログの場合はファイル名を工夫することも可能ですが、既存流用のためそのままとします
         imageBytes: pngBytes,
       );
 
@@ -184,7 +205,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
             onTap: () {
               Navigator.pop(ctx);
               if (_selectedMatchId != null) {
-                // ★修正: onUpdate引数を追加
                 showEditLogDialog(context, ref, _selectedMatchId!, onUpdate: _runAnalysis);
               }
             }),
@@ -195,7 +215,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
               Navigator.pop(ctx);
               final record = ref.read(selectedMatchRecordProvider);
               if (record != null) {
-                // ★修正: onUpdate引数を追加
                 showResultEditDialog(context, ref, record, onUpdate: _runAnalysis);
               }
             })
@@ -216,20 +235,26 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final yearTabs = [null, ...availableYears]; final monthTabs = [null, ...availableMonths]; final dayTabs = [null, ...availableDays]; final matchTabs = [null, ...availableMatches.keys];
     final isLogTabVisible = _selectedMatchId != null && _tabController.index == 1;
 
-    final isStatsTabVisible =
-        _selectedMatchId == null || _tabController.index == 0;
+    // ★変更: 印刷可能なタブかどうかを判定（集計タブ(0) または 試合選択時のログタブ(1)）
+    final isStatsTab = _selectedMatchId == null || _tabController.index == 0;
+    final isLogTab = _selectedMatchId != null && _tabController.index == 1;
+    final isPrintableTab = isStatsTab || isLogTab;
 
-    final canPrint = asyncStats.valueOrNull?.isNotEmpty == true;
+    // ★変更: 印刷ボタンが押せるかどうかの判定
+    final bool canPrint = isStatsTab
+        ? (asyncStats.valueOrNull?.isNotEmpty == true)
+        : (isLogTab && matchRecord != null && matchRecord.logs.isNotEmpty);
 
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [if (_selectedMatchId != null && matchRecord != null) Row(children: [Icon(_getMatchTypeIcon(matchRecord.matchType), size: 16, color: Colors.black54), const SizedBox(width: 4), Text(availableMatches[_selectedMatchId] ?? "試合", style: const TextStyle(fontSize: 16)), const SizedBox(width: 8), const Icon(Icons.calendar_today, size: 14, color: Colors.black54), const SizedBox(width: 4), Text(matchRecord.date, style: const TextStyle(fontSize: 12, color: Colors.black54))]) else ...[const Text("データ分析", style: TextStyle(fontSize: 16)), Text(currentTeam?.name ?? "", style: const TextStyle(fontSize: 12, color: Colors.black54))]]),
         actions: [
           IconButton(icon: Icon(Icons.filter_alt, color: _selectedMatchTypes.isNotEmpty ? Colors.indigo : Colors.grey), tooltip: "種別フィルタ", onPressed: _showFilterDialog),
-          if (isStatsTabVisible)
+          // ★変更: 印刷可能なタブの場合にボタンを表示
+          if (isPrintableTab)
             IconButton(
               icon: const Icon(Icons.print),
-              tooltip: "集計表を印刷",
+              tooltip: "印刷",
               onPressed: canPrint ? _handlePrint : null,
             ),
 
@@ -258,7 +283,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   controller: _tabController,
                   children: [
                     AnalysisStatsTab(asyncStats: asyncStats),
-                    // ★修正: onUpdate引数に_runAnalysisを渡す
                     AnalysisLogTab(asyncStats: asyncStats, onUpdate: _runAnalysis),
                     AnalysisInfoTab(matchId: _selectedMatchId!, onUpdate: _runAnalysis),
                     AnalysisMembersTab(matchId: _selectedMatchId!, onUpdate: _runAnalysis),
@@ -276,7 +300,17 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   key: _printKey,
                   child: Material(
                     color: Colors.white,
-                    child: Container(
+                    child: isLogTab
+                        ? (matchRecord != null && asyncStats.hasValue
+                        ? AnalysisLogPrintView(
+                      matchRecord: matchRecord,
+                      playerStats: asyncStats.value!,
+                      // ★追加: パラメータを渡す
+                      teamName: currentTeam?.name ?? "",
+                      periodLabel: _getCurrentPeriodLabel(),
+                    )
+                        : const SizedBox())
+                        : Container(
                       color: Colors.white,
                       child: AnalysisPrintView(
                         asyncStats: asyncStats,
