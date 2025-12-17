@@ -10,6 +10,8 @@ import '../../application/analysis_controller.dart';
 import '../../../game_record/domain/models.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../../settings/data/action_dao.dart';
+import '../../../settings/domain/action_definition.dart'; // ActionDefinition用
+import '../../domain/player_stats.dart'; // PlayerStats, ActionStats用
 import '../../data/pdf_export_service.dart';
 
 import '../widgets/analysis_stats_tab.dart';
@@ -18,6 +20,7 @@ import '../widgets/analysis_info_tab.dart';
 import '../widgets/analysis_members_tab.dart';
 import '../widgets/analysis_print_view.dart';
 import '../widgets/analysis_log_print_view.dart';
+import '../widgets/action_detail_column.dart'; // 詳細印刷用
 
 class AnalysisScreen extends ConsumerStatefulWidget {
   const AnalysisScreen({super.key});
@@ -36,8 +39,13 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   List<MatchType> _selectedMatchTypes = [];
   final GlobalKey _printKey = GlobalKey();
 
-  // 連続印刷中に表示する用の一時的なMatchRecord
+  // 連続印刷中に表示する用の一時的なMatchRecord (ログ印刷用)
   MatchRecord? _printingMatchRecord;
+
+  // 全選手詳細一括印刷用の状態管理
+  bool _isPrintingAllPlayers = false;
+  PlayerStats? _currentPrintingPlayer;
+  MapEntry<ActionDefinition, ActionStats?>? _currentPrintingEntry;
 
   @override
   void initState() {
@@ -84,7 +92,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     );
   }
 
-  // ★追加: 試合情報のラベル生成ロジックを共通化
+  // 試合情報のラベル生成ロジックを共通化
   String _formatMatchLabel(MatchRecord record) {
     String dateStr = record.date;
     try {
@@ -106,7 +114,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     if (_selectedMatchId != null) {
       final record = ref.read(selectedMatchRecordProvider);
       if (record != null) {
-        // ★変更: 共通メソッドを使用
         return _formatMatchLabel(record);
       }
       return "試合集計";
@@ -119,6 +126,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   }
 
   Future<void> _handlePrint() async {
+    if (_isPrintingAllPlayers) return; // 処理中なら何もしない
+
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
     final asyncStats = ref.read(analysisControllerProvider);
@@ -134,53 +143,83 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       return;
     }
 
+    // ログタブでデータがない場合
     if (isLogTab) {
       if (matchRecord == null || matchRecord.logs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するログがありません")));
         return;
       }
-    } else {
+    }
+    // 集計タブでデータがない場合
+    else {
       if (stats == null || stats.isEmpty || !stats.any((s) => s.matchesPlayed > 0)) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するデータがありません")));
         return;
       }
     }
 
-    // 日計画面かつボタン押下時にダイアログで分岐
-    if (isDailyView) {
+    // ログタブ表示中はこれまで通り即ログ印刷
+    if (isLogTab) {
+      // ログ印刷のフローへ（UI変更なし）
+    }
+    // それ以外（集計タブ、または日計ビュー）の場合はメニューを表示
+    else {
+      final List<SimpleDialogOption> options = [
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, 'stats'),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text("成績集計表を印刷", style: TextStyle(fontSize: 16)),
+          ),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, 'players_details'),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text("全選手の詳細を印刷", style: TextStyle(fontSize: 16)),
+          ),
+        ),
+      ];
+
+      // 日計の場合はログ一括印刷も追加
+      if (isDailyView) {
+        options.add(
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'daily_logs'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text("全試合のログを印刷", style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        );
+      }
+
       final selectedType = await showDialog<String>(
         context: context,
         builder: (ctx) => SimpleDialog(
           title: const Text("印刷メニュー"),
-          children: [
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, 'stats'),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text("成績集計表を印刷", style: TextStyle(fontSize: 16)),
-              ),
-            ),
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, 'logs'),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text("全試合のログを印刷", style: TextStyle(fontSize: 16)),
-              ),
-            ),
-          ],
+          children: options,
         ),
       );
 
       if (selectedType == null) return;
 
-      if (selectedType == 'logs') {
+      if (selectedType == 'daily_logs') {
         await _handlePrintDailyLogs(currentTeam.name);
         return;
       }
+
+      if (selectedType == 'players_details') {
+        if (stats != null) {
+          await _handlePrintAllPlayerDetails(stats);
+        }
+        return;
+      }
+
       // 'stats' の場合はそのまま下の処理へ進む
     }
 
-    // --- 以下、通常の1枚印刷処理 ---
+    // --- 以下、通常の1枚印刷（集計表または単一ログ）処理 ---
     try {
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -201,6 +240,108 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("印刷エラー: $e"), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // 全選手の詳細を一括印刷する処理
+  Future<void> _handlePrintAllPlayerDetails(List<PlayerStats> stats) async {
+    try {
+      setState(() {
+        _isPrintingAllPlayers = true;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("選手詳細データを生成中..."), duration: Duration(seconds: 2)),
+        );
+      }
+
+      // 試合数が0の選手を除外
+      final targetPlayers = stats.where((p) => p.matchesPlayed > 0).toList();
+      // 背番号順などでソート
+      targetPlayers.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
+
+      if (targetPlayers.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷対象の選手がいません")));
+        }
+        return;
+      }
+
+      final definitions = ref.read(analysisControllerProvider.notifier).actionDefinitions;
+      final List<Map<String, dynamic>> allPlayersData = [];
+
+      // 1人ずつループ
+      for (final player in targetPlayers) {
+        if (!mounted) break;
+
+        setState(() {
+          _currentPrintingPlayer = player;
+        });
+
+        final List<Uint8List> playerImages = [];
+
+        // 印刷対象のアクションを抽出（実績あり かつ サブアクション定義あり）
+        final printingActions = definitions.map((def) {
+          final stat = player.actions[def.name];
+          return MapEntry(def, stat);
+        }).where((entry) {
+          final def = entry.key;
+          final stat = entry.value;
+          return (stat != null && stat.totalCount > 0) && def.subActions.isNotEmpty;
+        }).toList();
+
+        // アクションごとにループしてキャプチャ
+        for (final entry in printingActions) {
+          if (!mounted) break;
+
+          setState(() {
+            _currentPrintingEntry = entry;
+          });
+
+          // 描画完了を待機
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          final boundary = _printKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+          if (boundary != null) {
+            // 高解像度でキャプチャ
+            final image = await boundary.toImage(pixelRatio: 3.0);
+            final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+            if (byteData != null) {
+              playerImages.add(byteData.buffer.asUint8List());
+            }
+          }
+        }
+
+        // ★修正: 画像があってもなくても（試合出場があれば）データに追加する
+        // imagesが空リストなら、PDF側で「表示するデータがありません」と出力される
+        allPlayersData.add({
+          'name': "${player.playerNumber} ${player.playerName}",
+          'matchCount': player.matchesPlayed,
+          'images': playerImages,
+        });
+      }
+
+      if (allPlayersData.isNotEmpty && mounted) {
+        await PdfExportService().printMultiplePlayersDetails(playersData: allPlayersData);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷可能なデータがありません")));
+        }
+      }
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("印刷エラー: $e"), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPrintingAllPlayers = false;
+          _currentPrintingPlayer = null;
+          _currentPrintingEntry = null;
+        });
       }
     }
   }
@@ -412,16 +553,31 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   child: Material(
                     color: Colors.white,
                     // 印刷用データの切り替えロジック
-                    child: _printingMatchRecord != null
-                        ? (asyncStats.hasValue // 連続印刷中に使うStatsは、その日の集計データ(全選手リスト用)で代用
+                    child:
+                    // 1. 全選手詳細一括印刷
+                    _isPrintingAllPlayers && _currentPrintingEntry != null && _currentPrintingPlayer != null
+                        ? SizedBox(
+                      width: 350, // ActionDetailColumnの規定幅
+                      height: 800, // 高さを固定してUnbounded heightエラー回避
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: ActionDetailColumn(
+                          definition: _currentPrintingEntry!.key,
+                          stats: _currentPrintingEntry!.value,
+                        ),
+                      ),
+                    )
+                    // 2. 日計ログ一括印刷
+                        : _printingMatchRecord != null
+                        ? (asyncStats.hasValue
                         ? AnalysisLogPrintView(
                       matchRecord: _printingMatchRecord!,
                       playerStats: asyncStats.value!,
                       teamName: currentTeam?.name ?? "",
-                      // ★変更: 共通メソッドで詳細なラベルを生成
                       periodLabel: _formatMatchLabel(_printingMatchRecord!),
                     )
                         : const SizedBox())
+                    // 3. 通常の印刷（集計表 or 1試合ログ）
                         : (isLogTab
                         ? (matchRecord != null && asyncStats.hasValue
                         ? AnalysisLogPrintView(

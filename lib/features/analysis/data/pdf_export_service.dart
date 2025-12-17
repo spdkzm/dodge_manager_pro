@@ -66,7 +66,7 @@ class PdfExportService {
   /// 選手詳細の画像を並べて印刷（A4横、横5列）
   Future<void> printPlayerDetailImages({
     required String playerName,
-    required int matchCount, // ★追加: 試合数を受け取る
+    required int matchCount,
     required List<Uint8List> images,
   }) async {
     // 日本語フォントをロード
@@ -98,8 +98,6 @@ class PdfExportService {
             pw.Header(
               level: 0,
               child: pw.Text(
-                // ★修正: 「#背番号 コートネーム 〇試合出場」の形式に変更
-                // playerNameには "背番号 コートネーム" が入ってくる想定
                 "#$playerName  ${matchCount}試合出場",
                 style: pw.TextStyle(
                   fontSize: 18,
@@ -110,19 +108,24 @@ class PdfExportService {
             ),
             pw.SizedBox(height: 10),
             // 画像一覧をWrapで配置
-            pw.Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              crossAxisAlignment: pw.WrapCrossAlignment.start,
-              children: images.map((imgBytes) {
-                final image = pw.MemoryImage(imgBytes);
-                return pw.Container(
-                  width: itemWidth,
-                  // 画像のアスペクト比を維持しつつ幅に合わせる
-                  child: pw.Image(image, fit: pw.BoxFit.contain),
-                );
-              }).toList(),
-            ),
+            if (images.isNotEmpty)
+              pw.Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                crossAxisAlignment: pw.WrapCrossAlignment.start,
+                children: images.map((imgBytes) {
+                  final image = pw.MemoryImage(imgBytes);
+                  return pw.Container(
+                    width: itemWidth,
+                    // 画像のアスペクト比を維持しつつ幅に合わせる
+                    child: pw.Image(image, fit: pw.BoxFit.contain),
+                  );
+                }).toList(),
+              )
+            else
+              pw.Center(
+                child: pw.Text("表示するデータがありません"),
+              ),
           ];
         },
       ),
@@ -131,6 +134,80 @@ class PdfExportService {
     await Printing.layoutPdf(
       onLayout: (format) async => doc.save(),
       name: '${playerName}_詳細',
+    );
+  }
+
+  /// 複数選手分の詳細を一括印刷
+  /// playersData: List<Map<String, dynamic>>
+  /// 各Mapには 'name' (String), 'matchCount' (int), 'images' (List<Uint8List>) が含まれる想定
+  Future<void> printMultiplePlayersDetails({
+    required List<Map<String, dynamic>> playersData,
+  }) async {
+    final font = await PdfGoogleFonts.notoSansJPRegular();
+    final doc = pw.Document();
+
+    final pageFormat = PdfPageFormat.a4.landscape;
+    const double margin = 20.0;
+    final double contentWidth = pageFormat.width - (margin * 2);
+    const double spacing = 10.0;
+    final double itemWidth = (contentWidth - (spacing * 4)) / 5;
+
+    for (var player in playersData) {
+      final playerName = player['name'] as String;
+      final matchCount = player['matchCount'] as int;
+      final images = player['images'] as List<Uint8List>;
+
+      doc.addPage(
+        pw.MultiPage(
+          pageFormat: pageFormat,
+          margin: const pw.EdgeInsets.all(margin),
+          theme: pw.ThemeData.withFont(
+            base: font,
+          ),
+          build: (pw.Context context) {
+            return [
+              pw.Header(
+                level: 0,
+                child: pw.Text(
+                  "#$playerName  ${matchCount}試合出場",
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                    font: font,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              // ★修正: 画像がない場合はメッセージを表示
+              if (images.isNotEmpty)
+                pw.Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  crossAxisAlignment: pw.WrapCrossAlignment.start,
+                  children: images.map((imgBytes) {
+                    final image = pw.MemoryImage(imgBytes);
+                    return pw.Container(
+                      width: itemWidth,
+                      child: pw.Image(image, fit: pw.BoxFit.contain),
+                    );
+                  }).toList(),
+                )
+              else
+                pw.Center(
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 50),
+                    child: pw.Text("表示するデータがありません", style: const pw.TextStyle(fontSize: 14)),
+                  ),
+                ),
+            ];
+          },
+        ),
+      );
+    }
+
+    await Printing.layoutPdf(
+      onLayout: (format) async => doc.save(),
+      name: '全選手詳細分析',
     );
   }
 }
