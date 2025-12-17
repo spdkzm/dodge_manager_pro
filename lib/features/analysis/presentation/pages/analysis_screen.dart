@@ -1,5 +1,6 @@
 // lib/features/analysis/presentation/pages/analysis_screen.dart
 import 'dart:ui' as ui;
+import 'dart:typed_data'; // Uint8List用
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +17,6 @@ import '../widgets/analysis_log_tab.dart';
 import '../widgets/analysis_info_tab.dart';
 import '../widgets/analysis_members_tab.dart';
 import '../widgets/analysis_print_view.dart';
-// ★追加: ログ印刷用ウィジェットのインポート
 import '../widgets/analysis_log_print_view.dart';
 
 class AnalysisScreen extends ConsumerStatefulWidget {
@@ -36,6 +36,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   List<MatchType> _selectedMatchTypes = [];
   final GlobalKey _printKey = GlobalKey();
 
+  // 連続印刷中に表示する用の一時的なMatchRecord
+  MatchRecord? _printingMatchRecord;
+
   @override
   void initState() {
     super.initState();
@@ -44,7 +47,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadActionOrder();
     });
-    // ★追加: タブ切り替え時（スワイプ含む）にUIを再描画してプリントボタンの状態を更新する
+    // タブ切り替え時（スワイプ含む）にUIを再描画してプリントボタンの状態を更新する
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {});
@@ -81,24 +84,30 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     );
   }
 
+  // ★追加: 試合情報のラベル生成ロジックを共通化
+  String _formatMatchLabel(MatchRecord record) {
+    String dateStr = record.date;
+    try {
+      final d = DateTime.parse(record.date.replaceAll('/', '-'));
+      dateStr = DateFormat('yyyy年M月d日').format(d);
+    } catch (_) {}
+
+    String label = "$dateStr vs ${record.opponent}";
+    if (record.venueName != null && record.venueName!.isNotEmpty) {
+      label += " @${record.venueName}";
+    }
+    if (record.note != null && record.note!.isNotEmpty) {
+      label += "  ${record.note}";
+    }
+    return label;
+  }
+
   String _getCurrentPeriodLabel() {
     if (_selectedMatchId != null) {
       final record = ref.read(selectedMatchRecordProvider);
       if (record != null) {
-        String dateStr = record.date;
-        try {
-          final d = DateTime.parse(record.date.replaceAll('/', '-'));
-          dateStr = DateFormat('yyyy年M月d日').format(d);
-        } catch (_) {}
-
-        String label = "$dateStr vs ${record.opponent}";
-        if (record.venueName != null && record.venueName!.isNotEmpty) {
-          label += " @${record.venueName}";
-        }
-        if (record.note != null && record.note!.isNotEmpty) {
-          label += "  ${record.note}";
-        }
-        return label;
+        // ★変更: 共通メソッドを使用
+        return _formatMatchLabel(record);
       }
       return "試合集計";
     }
@@ -115,9 +124,10 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final asyncStats = ref.read(analysisControllerProvider);
     final stats = asyncStats.valueOrNull;
 
-    // ★変更: 印刷対象の判定をタブごとに分岐
     final isLogTab = _selectedMatchId != null && _tabController.index == 1;
     final matchRecord = ref.read(selectedMatchRecordProvider);
+    // 日計表示中かどうか
+    final isDailyView = _selectedYear != null && _selectedMonth != null && _selectedDay != null && _selectedMatchId == null;
 
     if (currentTeam == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するデータがありません")));
@@ -125,19 +135,52 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     }
 
     if (isLogTab) {
-      // ログタブの場合のチェック
       if (matchRecord == null || matchRecord.logs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するログがありません")));
         return;
       }
     } else {
-      // 集計タブの場合のチェック
       if (stats == null || stats.isEmpty || !stats.any((s) => s.matchesPlayed > 0)) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するデータがありません")));
         return;
       }
     }
 
+    // 日計画面かつボタン押下時にダイアログで分岐
+    if (isDailyView) {
+      final selectedType = await showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text("印刷メニュー"),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'stats'),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text("成績集計表を印刷", style: TextStyle(fontSize: 16)),
+              ),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'logs'),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text("全試合のログを印刷", style: TextStyle(fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (selectedType == null) return;
+
+      if (selectedType == 'logs') {
+        await _handlePrintDailyLogs(currentTeam.name);
+        return;
+      }
+      // 'stats' の場合はそのまま下の処理へ進む
+    }
+
+    // --- 以下、通常の1枚印刷処理 ---
     try {
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -151,13 +194,81 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       final pngBytes = byteData!.buffer.asUint8List();
 
       await PdfExportService().printStatsImage(
-        teamName: currentTeam.name, // ここでログの場合はファイル名を工夫することも可能ですが、既存流用のためそのままとします
+        teamName: currentTeam.name,
         imageBytes: pngBytes,
       );
 
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("印刷エラー: $e"), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // 日計の全ログを連続印刷する処理
+  Future<void> _handlePrintDailyLogs(String teamName) async {
+    try {
+      if (_selectedYear == null || _selectedMonth == null || _selectedDay == null) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("ログ画像を生成中...しばらくお待ちください")));
+
+      // 1. その日の全試合レコードを取得
+      final records = await ref.read(analysisControllerProvider.notifier).fetchMatchRecordsByDate(
+          _selectedYear!, _selectedMonth!, _selectedDay!
+      );
+
+      if (records.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷対象の試合がありません")));
+        return;
+      }
+
+      final List<Uint8List> images = [];
+
+      // 2. 1試合ずつ表示を切り替えてキャプチャ
+      for (final record in records) {
+        if (!mounted) break;
+        setState(() {
+          _printingMatchRecord = record;
+        });
+
+        // 描画完了を待つ
+        await Future.delayed(const Duration(milliseconds: 150));
+
+        final boundary = _printKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+        if (boundary != null) {
+          final image = await boundary.toImage(pixelRatio: 2.0);
+          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (byteData != null) {
+            images.add(byteData.buffer.asUint8List());
+          }
+        }
+      }
+
+      // 3. 表示を元に戻す
+      if (mounted) {
+        setState(() {
+          _printingMatchRecord = null;
+        });
+      }
+
+      if (images.isEmpty) {
+        throw Exception("画像の生成に失敗しました");
+      }
+
+      // 4. PDF生成サービスへ
+      final dateStr = "${_selectedYear}年${_selectedMonth}月${_selectedDay}日";
+      await PdfExportService().printMultipleImages(
+        baseFileName: "${teamName}_試合ログ_$dateStr",
+        images: images,
+      );
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("印刷エラー: $e"), backgroundColor: Colors.red));
+        // エラー時も表示状態をリセット
+        setState(() {
+          _printingMatchRecord = null;
+        });
       }
     }
   }
@@ -235,13 +346,14 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final yearTabs = [null, ...availableYears]; final monthTabs = [null, ...availableMonths]; final dayTabs = [null, ...availableDays]; final matchTabs = [null, ...availableMatches.keys];
     final isLogTabVisible = _selectedMatchId != null && _tabController.index == 1;
 
-    // ★変更: 印刷可能なタブかどうかを判定（集計タブ(0) または 試合選択時のログタブ(1)）
     final isStatsTab = _selectedMatchId == null || _tabController.index == 0;
     final isLogTab = _selectedMatchId != null && _tabController.index == 1;
-    final isPrintableTab = isStatsTab || isLogTab;
+    // 日計選択時も印刷可能とする
+    final isDailyView = _selectedYear != null && _selectedMonth != null && _selectedDay != null && _selectedMatchId == null;
+    final isPrintableTab = isStatsTab || isLogTab || isDailyView;
 
-    // ★変更: 印刷ボタンが押せるかどうかの判定
-    final bool canPrint = isStatsTab
+    // 印刷ボタンが押せるかどうかの判定（日計の場合はStatsがあればOKとする）
+    final bool canPrint = isStatsTab || isDailyView
         ? (asyncStats.valueOrNull?.isNotEmpty == true)
         : (isLogTab && matchRecord != null && matchRecord.logs.isNotEmpty);
 
@@ -250,7 +362,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [if (_selectedMatchId != null && matchRecord != null) Row(children: [Icon(_getMatchTypeIcon(matchRecord.matchType), size: 16, color: Colors.black54), const SizedBox(width: 4), Text(availableMatches[_selectedMatchId] ?? "試合", style: const TextStyle(fontSize: 16)), const SizedBox(width: 8), const Icon(Icons.calendar_today, size: 14, color: Colors.black54), const SizedBox(width: 4), Text(matchRecord.date, style: const TextStyle(fontSize: 12, color: Colors.black54))]) else ...[const Text("データ分析", style: TextStyle(fontSize: 16)), Text(currentTeam?.name ?? "", style: const TextStyle(fontSize: 12, color: Colors.black54))]]),
         actions: [
           IconButton(icon: Icon(Icons.filter_alt, color: _selectedMatchTypes.isNotEmpty ? Colors.indigo : Colors.grey), tooltip: "種別フィルタ", onPressed: _showFilterDialog),
-          // ★変更: 印刷可能なタブの場合にボタンを表示
           if (isPrintableTab)
             IconButton(
               icon: const Icon(Icons.print),
@@ -300,12 +411,22 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   key: _printKey,
                   child: Material(
                     color: Colors.white,
-                    child: isLogTab
+                    // 印刷用データの切り替えロジック
+                    child: _printingMatchRecord != null
+                        ? (asyncStats.hasValue // 連続印刷中に使うStatsは、その日の集計データ(全選手リスト用)で代用
+                        ? AnalysisLogPrintView(
+                      matchRecord: _printingMatchRecord!,
+                      playerStats: asyncStats.value!,
+                      teamName: currentTeam?.name ?? "",
+                      // ★変更: 共通メソッドで詳細なラベルを生成
+                      periodLabel: _formatMatchLabel(_printingMatchRecord!),
+                    )
+                        : const SizedBox())
+                        : (isLogTab
                         ? (matchRecord != null && asyncStats.hasValue
                         ? AnalysisLogPrintView(
                       matchRecord: matchRecord,
                       playerStats: asyncStats.value!,
-                      // ★追加: パラメータを渡す
                       teamName: currentTeam?.name ?? "",
                       periodLabel: _getCurrentPeriodLabel(),
                     )
@@ -317,7 +438,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                         teamName: currentTeam?.name ?? "",
                         periodLabel: _getCurrentPeriodLabel(),
                       ),
-                    ),
+                    )),
                   ),
                 ),
               ),

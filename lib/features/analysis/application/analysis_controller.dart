@@ -213,6 +213,27 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     return await _calculateStats(currentTeam: currentTeam, startDateStr: period['start']!, endDateStr: period['end']!, matchId: matchId, targetTypes: targetTypes);
   }
 
+  // ★追加: 指定した日付の全試合レコードを取得する（日計印刷用）
+  Future<List<MatchRecord>> fetchMatchRecordsByDate(int year, int month, int day) async {
+    final currentTeam = ref.read(teamStoreProvider).currentTeam;
+    if (currentTeam == null) return [];
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(DateTime(year, month, day));
+    final allMatches = await _matchRepository.getMatches(currentTeam.id);
+    final matchesOnDate = allMatches.where((m) => m['date'] == dateStr).toList();
+
+    // ID順などでソートしたほうが印刷順序として自然だが、getMatchesの順序に依存するか、
+    // ここで作成日時順などでソートするか検討。現状はそのまま処理。
+
+    final List<MatchRecord> records = [];
+    for (var matchRow in matchesOnDate) {
+      final matchId = matchRow['id'] as String;
+      final record = await _buildMatchRecordFromRow(matchId, matchRow);
+      records.add(record);
+    }
+    return records;
+  }
+
   Map<String, String> _determinePeriod(int? year, int? month, int? day, String? matchId) {
     String startDateStr;
     String endDateStr;
@@ -245,6 +266,14 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     final matches = await _matchRepository.getMatches(ref.read(teamStoreProvider).currentTeam!.id);
     final matchRow = matches.firstWhere((m) => m['id'] == matchId, orElse: () => {});
     if (matchRow.isEmpty) return;
+
+    // ★共通処理へ委譲
+    final record = await _buildMatchRecordFromRow(matchId, matchRow);
+    ref.read(selectedMatchRecordProvider.notifier).state = record;
+  }
+
+  // ★追加: DB行データからMatchRecordを構築する共通処理
+  Future<MatchRecord> _buildMatchRecordFromRow(String matchId, Map<String, dynamic> matchRow) async {
     final logRows = await _matchRepository.getMatchLogs(matchId);
     final logs = logRows.map((logRow) {
       return LogEntry(
@@ -261,7 +290,8 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         result: ActionResult.values[logRow['result'] ?? 0],
       );
     }).toList();
-    final record = MatchRecord(
+
+    return MatchRecord(
       id: matchId,
       date: matchRow['date'] as String? ?? '',
       opponent: matchRow['opponent'] as String? ?? '',
@@ -278,7 +308,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       extraScoreOpponent: matchRow['extra_score_opponent'],
       note: matchRow['note'] as String?,
     );
-    ref.read(selectedMatchRecordProvider.notifier).state = record;
   }
 
   Future<List<PlayerStats>> _calculateStats({required Team currentTeam, required String startDateStr, required String endDateStr, String? matchId, List<MatchType>? targetTypes}) async {
