@@ -18,13 +18,16 @@ class PlayerDetailDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 合計数が0より大きい項目のみを表示するようにフィルタリング
+    // フィルタリング条件:
+    // 1. 実績がある (totalCount > 0)
+    // 2. かつ、サブアクション(内訳)の定義がある (subActions.isNotEmpty)
     final displayActions = definitions.map((def) {
       final stat = player.actions[def.name];
       return MapEntry(def, stat);
     }).where((entry) {
+      final def = entry.key;
       final stat = entry.value;
-      return stat != null && stat.totalCount > 0;
+      return (stat != null && stat.totalCount > 0) && def.subActions.isNotEmpty;
     }).toList();
 
     final size = MediaQuery.of(context).size;
