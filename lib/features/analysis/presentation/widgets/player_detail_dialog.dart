@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../domain/player_stats.dart';
 import '../../../settings/domain/action_definition.dart';
-import '../../../../core/theme/app_theme.dart'; // ★追加
+import '../../../../core/theme/app_theme.dart';
 import 'action_detail_column.dart';
 
 class PlayerDetailDialog extends StatelessWidget {
@@ -18,9 +18,13 @@ class PlayerDetailDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 合計数が0より大きい項目のみを表示するようにフィルタリング
     final displayActions = definitions.map((def) {
       final stat = player.actions[def.name];
       return MapEntry(def, stat);
+    }).where((entry) {
+      final stat = entry.value;
+      return stat != null && stat.totalCount > 0;
     }).toList();
 
     final size = MediaQuery.of(context).size;
@@ -35,7 +39,7 @@ class PlayerDetailDialog extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.account_circle, size: 40, color: AppColors.primary), // ★修正
+              const Icon(Icons.account_circle, size: 40, color: AppColors.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -43,11 +47,11 @@ class PlayerDetailDialog extends StatelessWidget {
                   children: [
                     Text(
                       "#${player.playerNumber} ${player.playerName}",
-                      style: AppTextStyles.titleLarge, // ★修正
+                      style: AppTextStyles.titleLarge,
                     ),
                     Text(
                       "${player.matchesPlayed} 試合出場",
-                      style: AppTextStyles.labelSmall, // ★修正
+                      style: AppTextStyles.labelSmall,
                     ),
                   ],
                 ),
@@ -61,7 +65,9 @@ class PlayerDetailDialog extends StatelessWidget {
       content: SizedBox(
         width: double.maxFinite,
         height: 700,
-        child: Scrollbar(
+        child: displayActions.isEmpty
+            ? const Center(child: Text("表示するデータがありません"))
+            : Scrollbar(
           thumbVisibility: true,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
