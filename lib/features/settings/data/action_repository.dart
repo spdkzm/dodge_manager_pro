@@ -34,12 +34,10 @@ class ActionRepository {
     await _dao.insertActionDefinition(teamId, action);
   }
 
-  /*
-  // DAOに削除メソッドがないため、必要であればDAOに追加してから有効化してください
+  // ★追加: 削除
   Future<void> deleteActionDefinition(String actionId) async {
     await _dao.deleteActionDefinition(actionId);
   }
-  */
 
   Future<void> updateActionPositions(List<ActionDefinition> actions) async {
     await _dao.updateActionPositions(actions);

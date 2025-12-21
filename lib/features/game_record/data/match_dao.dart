@@ -114,7 +114,7 @@ class MatchDao {
     await db.delete('match_logs', where: 'id = ?', whereArgs: [logId]);
   }
 
-  // --- ★修正箇所: updateMatchInfoを削除し、以下の2つに分割 ---
+  // --- 基本情報と結果更新の分離 ---
 
   /// 基本情報のみ更新（勝敗・スコアには一切触れない）
   Future<void> updateBasicInfo({
@@ -209,6 +209,108 @@ class MatchDao {
       )
     ''', [newSubName, actionName, oldSubName, teamId]);
   }
+
+  // --- アクション設定変更・マイグレーション用メソッド ---
+
+  /// 指定したアクション名がログで使用されているか確認
+  Future<bool> isActionUsed(String teamId, String actionName) async {
+    final db = await _dbHelper.database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) FROM match_logs
+      WHERE action = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [actionName, teamId]);
+    return (Sqflite.firstIntValue(result) ?? 0) > 0;
+  }
+
+  /// 指定したアクション名のログを一括削除
+  Future<void> deleteLogsByAction(String teamId, String actionName) async {
+    final db = await _dbHelper.database;
+    await db.rawDelete('''
+      DELETE FROM match_logs
+      WHERE action = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [actionName, teamId]);
+  }
+
+  /// ★追加: 指定したサブアクションIDがログで使用されているか確認
+  Future<bool> isSubActionUsed(String teamId, String subActionId) async {
+    final db = await _dbHelper.database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) FROM match_logs
+      WHERE sub_action_id = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [subActionId, teamId]);
+    return (Sqflite.firstIntValue(result) ?? 0) > 0;
+  }
+
+  /// ★追加: 指定したサブアクションIDのログを一括削除
+  Future<void> deleteLogsBySubActionId(String teamId, String subActionId) async {
+    final db = await _dbHelper.database;
+    await db.rawDelete('''
+      DELETE FROM match_logs
+      WHERE sub_action_id = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [subActionId, teamId]);
+  }
+
+  /// ★追加: 指定したサブアクションIDのログの名称を一括更新
+  Future<void> updateSubActionNameById(String teamId, String subActionId, String newName) async {
+    final db = await _dbHelper.database;
+    await db.rawUpdate('''
+      UPDATE match_logs
+      SET sub_action = ?
+      WHERE sub_action_id = ? AND match_id IN (
+        SELECT id FROM matches WHERE team_id = ?
+      )
+    ''', [newName, subActionId, teamId]);
+  }
+
+  /// ログの置換（マイグレーション）
+  /// 条件に一致するログのアクション、結果、詳細項目を一括更新する
+  Future<void> migrateActionLogs({
+    required String teamId,
+    required String targetAction,
+    required int? targetResult, // nullなら結果問わず
+    required String? targetSubAction, // nullならサブ問わず
+    required String newAction,
+    required int newResult,
+    required String? newSubAction,
+    required String? newSubActionId,
+  }) async {
+    final db = await _dbHelper.database;
+
+    // 条件構築
+    List<dynamic> args = [newAction, newResult, newSubAction, newSubActionId];
+    String whereClause = "action = ?";
+    args.add(targetAction);
+
+    if (targetResult != null) {
+      whereClause += " AND result = ?";
+      args.add(targetResult);
+    }
+
+    if (targetSubAction != null) {
+      whereClause += " AND sub_action = ?";
+      args.add(targetSubAction);
+    }
+
+    // チームIDでの絞り込み
+    whereClause += " AND match_id IN (SELECT id FROM matches WHERE team_id = ?)";
+    args.add(teamId);
+
+    await db.rawUpdate('''
+      UPDATE match_logs
+      SET action = ?, result = ?, sub_action = ?, sub_action_id = ?
+      WHERE $whereClause
+    ''', args);
+  }
+
+  // --------------------------------------------------------
 
   Future<int> countOpponentNameUsage(String teamId, String name) async {
     final db = await _dbHelper.database;

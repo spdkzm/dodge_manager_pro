@@ -174,4 +174,13 @@ class ActionDao {
       }
     });
   }
+
+  // ★追加: アクション定義の削除
+  Future<void> deleteActionDefinition(String actionId) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      await txn.delete('sub_action_definitions', where: 'action_id = ?', whereArgs: [actionId]);
+      await txn.delete('action_definitions', where: 'id = ?', whereArgs: [actionId]);
+    });
+  }
 }
