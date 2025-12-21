@@ -9,6 +9,7 @@ import '../../domain/schema.dart';
 import '../../domain/roster_item.dart';
 import '../../domain/team.dart';
 import '../../domain/roster_category.dart';
+import '../../data/uniform_number_dao.dart'; // ★追加
 
 import 'team_management_screen.dart';
 import 'schema_settings_screen.dart';
@@ -28,6 +29,7 @@ class GenericRosterScreen extends ConsumerStatefulWidget {
 }
 
 class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
+  final UniformNumberDao _uniformDao = UniformNumberDao(); // ★追加
   final List<String> _prefectures = [
     '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
     '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
@@ -41,8 +43,57 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
 
+  // ★追加: 選手の現在の背番号を保持するマップ (PlayerID -> 背番号文字列)
+  Map<String, String> _currentUniformMap = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUniforms();
+  }
+
+  @override
+  void didUpdateWidget(covariant GenericRosterScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _fetchUniforms();
+  }
+
+  // ★追加: 背番号情報をDBから取得
+  Future<void> _fetchUniforms() async {
+    if (widget.category != RosterCategory.player) return;
+
+    final store = ref.read(teamStoreProvider);
+    final currentTeam = store.currentTeam;
+    if (currentTeam == null) return;
+
+    final now = DateTime.now();
+    final allUniforms = await _uniformDao.getUniformNumbersByTeam(currentTeam.id);
+    final Map<String, String> newMap = {};
+
+    for (var item in currentTeam.items) {
+      // 現在有効な背番号を探す
+      try {
+        final active = allUniforms.firstWhere((u) =>
+        u.playerId == item.id && u.isActiveAt(now)
+        );
+        newMap[item.id] = active.number;
+      } catch (_) {
+        // なければマップに入れない（未設定）
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _currentUniformMap = newMap;
+      });
+    }
+  }
+
   void _showViewFilterDialog(Team team) {
-    final activeFields = team.getSchema(widget.category).where((f) => f.isVisible).toList();
+    // ★修正: FieldType.uniformNumber は除外（既に削除されているはずだが念のため）
+    final activeFields = team.getSchema(widget.category)
+        .where((f) => f.isVisible && f.type != FieldType.uniformNumber).toList();
+
     showDialog(context: context, builder: (context) {
       return StatefulBuilder(builder: (context, setStateDialog) {
         return AlertDialog(title: const Text('一覧の表示項目'), content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: activeFields.map((field) {
@@ -61,8 +112,9 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     final currentTeam = store.currentTeam;
     if (currentTeam == null) return;
 
+    // ★修正: uniformNumberを除外
     final schema = currentTeam.getSchema(widget.category);
-    final inputFields = schema.where((f) => f.isVisible).toList();
+    final inputFields = schema.where((f) => f.isVisible && f.type != FieldType.uniformNumber).toList();
 
     final isEditing = item != null;
     final String targetId = item?.id ?? const Uuid().v4();
@@ -99,8 +151,8 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     await showDialog(context: context, barrierDismissible: false, builder: (context) {
       return StatefulBuilder(builder: (context, setStateDialog) {
         Future<void> saveProcess() async {
-
-          for(var f in schema) {
+          // 必須チェック（除外した背番号はチェックされない）
+          for(var f in inputFields) { // inputFieldsを使う
             if (f.isRequired) {
               final val = tempData[f.id];
               if (val == null || val.toString().trim().isEmpty) {
@@ -158,6 +210,9 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             store.addItem(currentTeam.id, newItem, category: widget.category);
           }
           if (context.mounted) Navigator.pop(context);
+
+          // 保存後に一覧更新（背番号が変わっている可能性があるため）
+          _fetchUniforms();
         }
 
         Future<void> handleClose() async {
@@ -220,7 +275,7 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
       case FieldType.age: return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), TextFormField(controller: TextEditingController(text: data[field.id]?.toString() ?? ''), decoration: const InputDecoration(suffixText: '歳'), keyboardType: TextInputType.number, onChanged: (v) { data[field.id] = int.tryParse(v); onChange(); })]);
       case FieldType.address: final map = getMap(); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 8), Row(children: [const Icon(Icons.markunread_mailbox_outlined, color: Colors.grey), const SizedBox(width: 8), SizedBox(width: 80, child: TextFormField(initialValue: map['zip1'], decoration: const InputDecoration(hintText: '000', counterText: ''), keyboardType: TextInputType.number, maxLength: 3, onChanged: (v) { map['zip1'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), SizedBox(width: 100, child: TextFormField(initialValue: map['zip2'], decoration: const InputDecoration(hintText: '0000', counterText: ''), keyboardType: TextInputType.number, maxLength: 4, onChanged: (v) { map['zip2'] = v; onChange(); }))]), const SizedBox(height: 8), DropdownButtonFormField<String>(initialValue: _prefectures.contains(map['pref']) ? map['pref'] : null, decoration: const InputDecoration(labelText: '都道府県'), items: _prefectures.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(), onChanged: (v) { map['pref'] = v; onChange(); }), const SizedBox(height: 8), TextFormField(initialValue: map['city'], decoration: const InputDecoration(labelText: '市区町村・番地'), onChanged: (v) { map['city'] = v; onChange(); }), const SizedBox(height: 8), TextFormField(initialValue: map['building'], decoration: const InputDecoration(labelText: '建物名'), onChanged: (v) { map['building'] = v; onChange(); })]);
       case FieldType.phone: final map = getMap(); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("${field.label}${field.isRequired ? ' *' : ''}", style: Theme.of(context).textTheme.bodySmall?.copyWith(color: field.isRequired ? Colors.red : null)), const SizedBox(height: 4), Row(children: [const Icon(Icons.phone, color: Colors.grey), const SizedBox(width: 16), Expanded(child: TextFormField(initialValue: map['part1'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part1'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), Expanded(child: TextFormField(initialValue: map['part2'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part2'] = v; onChange(); })), const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-')), Expanded(child: TextFormField(initialValue: map['part3'], keyboardType: TextInputType.phone, textAlign: TextAlign.center, onChanged: (v) { map['part3'] = v; onChange(); }))])]);
-      case FieldType.uniformNumber: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}", suffixIcon: const Icon(Icons.looks_one)), keyboardType: TextInputType.number, onChanged: (val) { data[field.id] = val; onChange(); });
+      case FieldType.uniformNumber: return const SizedBox.shrink(); // 入力画面には表示しない
       case FieldType.courtName: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}", suffixIcon: const Icon(Icons.sports_handball)), onChanged: (val) { data[field.id] = val; onChange(); });
       case FieldType.number: return TextFormField(initialValue: data[field.id]?.toString(), decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}", suffixIcon: const Icon(Icons.numbers)), keyboardType: TextInputType.number, onChanged: (val) { data[field.id] = num.tryParse(val); onChange(); });
       default: return TextFormField(initialValue: data[field.id] as String?, decoration: InputDecoration(labelText: "${field.label}${field.isRequired ? ' *' : ''}"), onChanged: (val) { data[field.id] = val; onChange(); });
@@ -263,7 +318,33 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     }
   }
 
-  void _sortItems(List<RosterItem> items, FieldDefinition field, bool ascending) { items.sort((a, b) { dynamic valA = a.data[field.id]; dynamic valB = b.data[field.id]; if (valA == null && valB == null) return 0; if (valA == null) return 1; if (valB == null) return -1; int cmp = 0; if (field.type == FieldType.uniformNumber || field.type == FieldType.number || field.type == FieldType.age) { final numA = num.tryParse(valA.toString()) ?? 9999; final numB = num.tryParse(valB.toString()) ?? 9999; cmp = numA.compareTo(numB); } else { cmp = valA.toString().compareTo(valB.toString()); } return ascending ? cmp : -cmp; }); }
+  void _sortItems(List<RosterItem> items, FieldDefinition? field, bool ascending) {
+    items.sort((a, b) {
+      // ★追加: 背番号ソート(fieldがnullの場合は背番号ソートとみなす)
+      if (field == null) {
+        final numAStr = _currentUniformMap[a.id] ?? '';
+        final numBStr = _currentUniformMap[b.id] ?? '';
+        final numA = int.tryParse(numAStr) ?? 9999;
+        final numB = int.tryParse(numBStr) ?? 9999;
+        return ascending ? numA.compareTo(numB) : numB.compareTo(numA);
+      }
+
+      dynamic valA = a.data[field.id];
+      dynamic valB = b.data[field.id];
+      if (valA == null && valB == null) return 0;
+      if (valA == null) return 1;
+      if (valB == null) return -1;
+      int cmp = 0;
+      if (field.type == FieldType.uniformNumber || field.type == FieldType.number || field.type == FieldType.age) {
+        final numA = num.tryParse(valA.toString()) ?? 9999;
+        final numB = num.tryParse(valB.toString()) ?? 9999;
+        cmp = numA.compareTo(numB);
+      } else {
+        cmp = valA.toString().compareTo(valB.toString());
+      }
+      return ascending ? cmp : -cmp;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -278,17 +359,41 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
 
     final schema = currentTeam.getSchema(widget.category);
     final items = currentTeam.getItems(widget.category);
-    final visibleColumns = schema.where((f) => f.isVisible && !currentTeam.viewHiddenFields.contains(f.id)).toList();
+
+    // ★修正: uniformNumberを除外してカラム定義を作成
+    final visibleColumns = schema
+        .where((f) => f.isVisible && !currentTeam.viewHiddenFields.contains(f.id) && f.type != FieldType.uniformNumber)
+        .toList();
 
     final sortedItems = List<RosterItem>.from(items);
-    if (_sortColumnIndex < visibleColumns.length) {
-      _sortItems(sortedItems, visibleColumns[_sortColumnIndex], _sortAscending);
-    } else if (widget.category == RosterCategory.player) {
-      final uIdx = visibleColumns.indexWhere((f) => f.type == FieldType.uniformNumber);
-      if (uIdx != -1) { _sortColumnIndex = uIdx; _sortItems(sortedItems, visibleColumns[uIdx], true); }
+
+    // ソート処理
+    // 0番目を「背番号」列とする (選手リストの場合)
+    final isPlayerCategory = widget.category == RosterCategory.player;
+
+    if (isPlayerCategory && _sortColumnIndex == 0) {
+      _sortItems(sortedItems, null, _sortAscending);
+    } else {
+      // 背番号列がある分、インデックスをずらす
+      final fieldIndex = isPlayerCategory ? _sortColumnIndex - 1 : _sortColumnIndex;
+      if (fieldIndex >= 0 && fieldIndex < visibleColumns.length) {
+        _sortItems(sortedItems, visibleColumns[fieldIndex], _sortAscending);
+      }
     }
 
-    final columns = visibleColumns.map((field) => DataColumn(label: Text(field.label), onSort: (colIdx, asc) => setState(() { _sortColumnIndex = colIdx; _sortAscending = asc; }))).toList();
+    final List<DataColumn> columns = [];
+    if (isPlayerCategory) {
+      columns.add(DataColumn(
+          label: const Text('背番号'),
+          numeric: true,
+          onSort: (colIdx, asc) => setState(() { _sortColumnIndex = colIdx; _sortAscending = asc; })
+      ));
+    }
+
+    columns.addAll(visibleColumns.map((field) => DataColumn(
+        label: Text(field.label),
+        onSort: (colIdx, asc) => setState(() { _sortColumnIndex = colIdx; _sortAscending = asc; })
+    )));
 
     final body = items.isEmpty
         ? const Center(child: Text('データがありません\n右下のボタンから追加してください'))
@@ -304,11 +409,25 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             sortAscending: _sortAscending,
             headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
             columns: columns,
-            rows: sortedItems.map((item) => DataRow(
-              cells: visibleColumns.map((f) => DataCell(Text(_formatCellValue(f, item.data[f.id])))).toList(),
-              onSelectChanged: (_) => _showItemDialog(item: item),
-              onLongPress: () => _deleteItem(item),
-            )).toList(),
+            rows: sortedItems.map((item) {
+              final List<DataCell> cells = [];
+
+              // ★追加: 背番号セル
+              if (isPlayerCategory) {
+                final numStr = _currentUniformMap[item.id];
+                cells.add(DataCell(
+                    Text(numStr != null ? '#$numStr' : '-', style: const TextStyle(fontWeight: FontWeight.bold))
+                ));
+              }
+
+              cells.addAll(visibleColumns.map((f) => DataCell(Text(_formatCellValue(f, item.data[f.id])))));
+
+              return DataRow(
+                cells: cells,
+                onSelectChanged: (_) => _showItemDialog(item: item),
+                onLongPress: () => _deleteItem(item),
+              );
+            }).toList(),
           ),
         ),
       ),

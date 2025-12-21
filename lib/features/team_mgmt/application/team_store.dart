@@ -43,13 +43,14 @@ class TeamStore extends ChangeNotifier {
       if (teams.isNotEmpty) {
         currentTeamId = teams.first.id;
 
-        // ★修正: アプリ起動後、一度もクリーンアップしていなければ実行
         if (!_isCleanupDone) {
           for (var team in teams) {
             await _cleanupDuplicateSystemFields(team, RosterCategory.opponent);
             await _cleanupDuplicateSystemFields(team, RosterCategory.venue);
+            // ★追加: 既存の「背番号」フィールドをスキーマから削除する
+            await _removeLegacyUniformNumberField(team);
           }
-          _isCleanupDone = true; // 実行済みフラグを立てる
+          _isCleanupDone = true;
         }
 
         for (var team in teams) {
@@ -78,6 +79,23 @@ class TeamStore extends ChangeNotifier {
     }
   }
 
+  // ★追加: 旧来の背番号フィールド(FieldType.uniformNumber)を削除する処理
+  Future<void> _removeLegacyUniformNumberField(Team team) async {
+    final schema = team.getSchema(RosterCategory.player);
+    final toRemove = <FieldDefinition>[];
+
+    for (var field in schema) {
+      if (field.type == FieldType.uniformNumber) {
+        toRemove.add(field);
+      }
+    }
+
+    for (var field in toRemove) {
+      team.schema.remove(field);
+      await _teamDao.deleteField(field.id);
+    }
+  }
+
   Future<void> _cleanupDuplicateSystemFields(Team team, RosterCategory category) async {
     final schema = team.getSchema(category);
     final seenLabels = <String>{};
@@ -103,9 +121,34 @@ class TeamStore extends ChangeNotifier {
     }
   }
 
-  // ... (以下、createDefaultTeamなどの既存メソッドはそのまま維持)
-  void _createDefaultTeam() { final defaultSchema = _createSystemFields(); final defaultTeam = Team( id: const Uuid().v4(), name: 'Aチーム', schema: defaultSchema, items: [], ); _initOpponentSchema(defaultTeam); _initVenueSchema(defaultTeam); teams.add(defaultTeam); currentTeamId = defaultTeam.id; _teamDao.insertTeam(defaultTeam); }
-  List<FieldDefinition> _createSystemFields() { return [ FieldDefinition(label: '背番号', type: FieldType.uniformNumber, isSystem: true, isUnique: true, isRequired: true), FieldDefinition(label: 'コートネーム', type: FieldType.courtName, isSystem: true, isRequired: true), FieldDefinition(label: '氏名', type: FieldType.personName, isSystem: true, isRequired: true), FieldDefinition(label: 'フリガナ', type: FieldType.personKana, isSystem: true, isVisible: false), FieldDefinition(label: '生年月日', type: FieldType.date, isSystem: true, isVisible: false), FieldDefinition(label: '年齢', type: FieldType.age, isSystem: true, isVisible: false), FieldDefinition(label: '住所', type: FieldType.address, isSystem: true, isVisible: false), FieldDefinition(label: '電話番号', type: FieldType.phone, isSystem: true, isVisible: false), ]; }
+  void _createDefaultTeam() {
+    final defaultSchema = _createSystemFields();
+    final defaultTeam = Team(
+      id: const Uuid().v4(),
+      name: 'Aチーム',
+      schema: defaultSchema,
+      items: [],
+    );
+    _initOpponentSchema(defaultTeam);
+    _initVenueSchema(defaultTeam);
+    teams.add(defaultTeam);
+    currentTeamId = defaultTeam.id;
+    _teamDao.insertTeam(defaultTeam);
+  }
+
+  List<FieldDefinition> _createSystemFields() {
+    return [
+      // ★修正: 背番号(uniformNumber)を削除
+      FieldDefinition(label: 'コートネーム', type: FieldType.courtName, isSystem: true, isRequired: true),
+      FieldDefinition(label: '氏名', type: FieldType.personName, isSystem: true, isRequired: true),
+      FieldDefinition(label: 'フリガナ', type: FieldType.personKana, isSystem: true, isVisible: false),
+      FieldDefinition(label: '生年月日', type: FieldType.date, isSystem: true, isVisible: false),
+      FieldDefinition(label: '年齢', type: FieldType.age, isSystem: true, isVisible: false),
+      FieldDefinition(label: '住所', type: FieldType.address, isSystem: true, isVisible: false),
+      FieldDefinition(label: '電話番号', type: FieldType.phone, isSystem: true, isVisible: false),
+    ];
+  }
+
   void _initOpponentSchema(Team team) { team.opponentSchema = [ FieldDefinition(label: 'チーム名', type: FieldType.text, isSystem: true, isUnique: true, isRequired: true), ]; }
   void _initVenueSchema(Team team) { team.venueSchema = [ FieldDefinition(label: '会場名', type: FieldType.text, isSystem: true, isUnique: true, isRequired: true), ]; }
   void addTeam(String name) { final newTeam = Team( id: const Uuid().v4(), name: name, schema: _createSystemFields(), ); _initOpponentSchema(newTeam); _initVenueSchema(newTeam); teams.add(newTeam); if (teams.length == 1) currentTeamId = newTeam.id; _teamDao.insertTeam(newTeam); notifyListeners(); }
