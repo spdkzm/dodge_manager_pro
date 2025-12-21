@@ -2,15 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart'; // ★追加: ID生成用
+import 'package:uuid/uuid.dart';
 
 import '../../application/team_store.dart';
 import '../../domain/schema.dart';
 import '../../domain/roster_item.dart';
 import '../../domain/team.dart';
 import '../../domain/roster_category.dart';
-import '../../data/csv_export_service.dart';
-import '../../data/csv_import_service.dart';
 
 import 'team_management_screen.dart';
 import 'schema_settings_screen.dart';
@@ -43,41 +41,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
 
-  Future<void> _handleExport() async {
-    final store = ref.read(teamStoreProvider);
-    if (store.currentTeam != null) {
-      try {
-        await CsvExportService().exportTeamToCsv(store.currentTeam!, category: widget.category);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSVを出力しました')));
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラー: $e'), backgroundColor: Colors.red));
-      }
-    }
-  }
-
-  Future<void> _handleImport() async {
-    final store = ref.read(teamStoreProvider);
-    final currentTeam = store.currentTeam;
-    if (currentTeam == null) return;
-
-    try {
-      if (widget.category != RosterCategory.player) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSVインポートは現在、選手リストのみ対応しています')));
-        return;
-      }
-
-      final stats = await CsvImportService().pickAndImportCsv(currentTeam);
-      if (stats != null) {
-        await store.loadFromDb();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('インポート完了: 追加${stats.inserted} / 更新${stats.updated}')));
-        }
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('インポート失敗: $e'), backgroundColor: Colors.red));
-    }
-  }
-
   void _showViewFilterDialog(Team team) {
     final activeFields = team.getSchema(widget.category).where((f) => f.isVisible).toList();
     showDialog(context: context, builder: (context) {
@@ -102,7 +65,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     final inputFields = schema.where((f) => f.isVisible).toList();
 
     final isEditing = item != null;
-    // ★変更: ここでIDを確定させる
     final String targetId = item?.id ?? const Uuid().v4();
 
     final Map<String, dynamic> tempData = {};
@@ -153,7 +115,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             if (field.isUnique) {
               final newValue = tempData[field.id];
               if (newValue == null || newValue.toString().isEmpty) continue;
-              // ★変更: ID比較部分も targetId を使用
               final conflictItem = currentTeam.getItems(widget.category).cast<RosterItem?>().firstWhere((i) => i!.id != targetId && i.data[field.id].toString() == newValue.toString(), orElse: () => null);
               if (conflictItem != null) {
                 final doSwap = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('値が重複しています'), content: Text('項目「${field.label}」の値「$newValue」は既に使用されています。\n入れ替えますか？'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('入れ替える'))]));
@@ -193,7 +154,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             item.data = tempData;
             store.saveItem(currentTeam.id, item, category: widget.category);
           } else {
-            // ★変更: 生成済みIDを使用してアイテム作成
             final newItem = RosterItem(id: targetId, data: tempData);
             store.addItem(currentTeam.id, newItem, category: widget.category);
           }
@@ -217,7 +177,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
                         child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // ★変更: システムIDの表示フィールドを追加
                               TextFormField(
                                 initialValue: targetId,
                                 decoration: const InputDecoration(
@@ -371,17 +330,12 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             onSelected: (val) {
               if (val == 'team_mgmt') Navigator.push(context, MaterialPageRoute(builder: (_) => const TeamManagementScreen()));
               if (val == 'schema') Navigator.push(context, MaterialPageRoute(builder: (_) => SchemaSettingsScreen(targetCategory: widget.category)));
-              if (val == 'import') _handleImport();
-              if (val == 'export') _handleExport();
             },
             itemBuilder: (context) => [
               if (widget.category == RosterCategory.player) ...[
                 const PopupMenuItem(value: 'team_mgmt', child: Row(children: [Icon(Icons.group_work, color: Colors.grey), SizedBox(width: 8), Text('チーム管理')])),
               ],
               const PopupMenuItem(value: 'schema', child: Row(children: [Icon(Icons.build, color: Colors.grey), SizedBox(width: 8), Text('項目の設計')])),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'import', child: Row(children: [Icon(Icons.file_upload, color: Colors.grey), SizedBox(width: 8), Text('CSVインポート')])),
-              const PopupMenuItem(value: 'export', child: Row(children: [Icon(Icons.file_download, color: Colors.grey), SizedBox(width: 8), Text('CSVエクスポート')])),
             ],
           ),
         ],
