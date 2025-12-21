@@ -90,13 +90,6 @@ class _UniformNumberScreenState extends ConsumerState<UniformNumberScreen> {
         current = history.firstWhere((r) => r.isActiveAt(now));
       } catch (_) {}
 
-      // 履歴リスト（現在は除く？いや、履歴には全部含めるのが表形式として自然だが、
-      // 要件「現在の背番号｜名前｜前の背番号...」に従い、履歴列には「現在以外」を表示するか、
-      // あるいは「履歴1」「履歴2」として機械的に表示するか。
-      // ここでは「履歴1」= 最新の履歴（現在含む）、「履歴2」= その前... と並べるのが一般的。
-      // しかし「現在の背番号」列が別にあるため、重複を避けるなら「履歴列」は「過去の履歴」とすべきだが、
-      // わかりやすさのため、履歴列には「全ての履歴を新しい順」に表示する形をとる。
-
       if (history.length > maxHist) maxHist = history.length;
 
       rows.add(_PlayerRowData(
@@ -166,17 +159,17 @@ class _UniformNumberScreenState extends ConsumerState<UniformNumberScreen> {
             rows: _tableData.map((row) {
               return DataRow(
                 onSelectChanged: (_) async {
-                  // 編集画面へ遷移
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UniformNumberEditScreen(
-                        playerId: row.playerId,
-                        playerName: row.name,
-                      ),
+                  // 編集ダイアログを表示
+                  await showDialog(
+                    context: context,
+                    barrierDismissible: false, // 外側タップで閉じない
+                    builder: (_) => UniformNumberEditDialog(
+                      playerId: row.playerId,
+                      playerName: row.name,
+                      // currentNumber引数は削除済み
                     ),
                   );
-                  _loadData(); // 戻ってきたらリロード
+                  _loadData(); // ダイアログが閉じたらリロード
                 },
                 cells: [
                   // 現在の背番号
