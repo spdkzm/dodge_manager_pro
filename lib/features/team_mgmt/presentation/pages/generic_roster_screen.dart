@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart'; // ★追加: ID生成用
 
 import '../../application/team_store.dart';
 import '../../domain/schema.dart';
@@ -101,6 +102,9 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
     final inputFields = schema.where((f) => f.isVisible).toList();
 
     final isEditing = item != null;
+    // ★変更: ここでIDを確定させる
+    final String targetId = item?.id ?? const Uuid().v4();
+
     final Map<String, dynamic> tempData = {};
     if (item != null) {
       item.data.forEach((key, value) {
@@ -134,8 +138,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
       return StatefulBuilder(builder: (context, setStateDialog) {
         Future<void> saveProcess() async {
 
-          // ★修正: バリデーションロジック
-          // 古い「f.isSystem」チェックを廃止し、「f.isRequired」のみをチェックする
           for(var f in schema) {
             if (f.isRequired) {
               final val = tempData[f.id];
@@ -151,7 +153,8 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             if (field.isUnique) {
               final newValue = tempData[field.id];
               if (newValue == null || newValue.toString().isEmpty) continue;
-              final conflictItem = currentTeam.getItems(widget.category).cast<RosterItem?>().firstWhere((i) => i!.id != (item?.id ?? '') && i.data[field.id].toString() == newValue.toString(), orElse: () => null);
+              // ★変更: ID比較部分も targetId を使用
+              final conflictItem = currentTeam.getItems(widget.category).cast<RosterItem?>().firstWhere((i) => i!.id != targetId && i.data[field.id].toString() == newValue.toString(), orElse: () => null);
               if (conflictItem != null) {
                 final doSwap = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('値が重複しています'), content: Text('項目「${field.label}」の値「$newValue」は既に使用されています。\n入れ替えますか？'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('入れ替える'))]));
                 if (doSwap == true) {
@@ -162,7 +165,6 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             }
           }
 
-          // リネーム時の過去ログ一括更新
           if (widget.category != RosterCategory.player && isEditing && originalName.isNotEmpty) {
             final newName = tempData[nameField.id]?.toString() ?? "";
             if (newName != originalName) {
@@ -191,7 +193,8 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
             item.data = tempData;
             store.saveItem(currentTeam.id, item, category: widget.category);
           } else {
-            final newItem = RosterItem(data: tempData);
+            // ★変更: 生成済みIDを使用してアイテム作成
+            final newItem = RosterItem(id: targetId, data: tempData);
             store.addItem(currentTeam.id, newItem, category: widget.category);
           }
           if (context.mounted) Navigator.pop(context);
@@ -203,7 +206,43 @@ class _GenericRosterScreenState extends ConsumerState<GenericRosterScreen> {
           if (shouldSave == true) await saveProcess(); else if (shouldSave == false && context.mounted) Navigator.pop(context);
         }
 
-        return PopScope(canPop: false, onPopInvoked: (didPop) { if (!didPop) handleClose(); }, child: AlertDialog(title: Text(isEditing ? 'データを編集' : '新規追加'), content: SizedBox(width: double.maxFinite, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: inputFields.map((field) => Padding(padding: const EdgeInsets.only(bottom: 24.0), child: _buildComplexInput(field, tempData, markChanged, (fn) => setStateDialog(fn), tryCalculateAge))).toList()))), actions: [TextButton(onPressed: handleClose, child: const Text('キャンセル')), ElevatedButton(onPressed: saveProcess, child: const Text('保存'))]));
+        return PopScope(
+            canPop: false,
+            onPopInvoked: (didPop) { if (!didPop) handleClose(); },
+            child: AlertDialog(
+                title: Text(isEditing ? 'データを編集' : '新規追加'),
+                content: SizedBox(
+                    width: double.maxFinite,
+                    child: SingleChildScrollView(
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // ★変更: システムIDの表示フィールドを追加
+                              TextFormField(
+                                initialValue: targetId,
+                                decoration: const InputDecoration(
+                                  labelText: 'システムID (自動付与)',
+                                  border: OutlineInputBorder(),
+                                  filled: true,
+                                  fillColor: Colors.black12,
+                                  prefixIcon: Icon(Icons.fingerprint),
+                                ),
+                                readOnly: true,
+                                enabled: false,
+                                style: const TextStyle(color: Colors.black54, fontSize: 12),
+                              ),
+                              const SizedBox(height: 24),
+                              ...inputFields.map((field) => Padding(padding: const EdgeInsets.only(bottom: 24.0), child: _buildComplexInput(field, tempData, markChanged, (fn) => setStateDialog(fn), tryCalculateAge))).toList()
+                            ]
+                        )
+                    )
+                ),
+                actions: [
+                  TextButton(onPressed: handleClose, child: const Text('キャンセル')),
+                  ElevatedButton(onPressed: saveProcess, child: const Text('保存'))
+                ]
+            )
+        );
       });
     });
   }
