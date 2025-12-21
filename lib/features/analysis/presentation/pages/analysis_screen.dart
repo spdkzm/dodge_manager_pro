@@ -9,7 +9,7 @@ import 'package:intl/intl.dart';
 import '../../application/analysis_controller.dart';
 import '../../../game_record/domain/models.dart';
 import '../../../team_mgmt/application/team_store.dart';
-import '../../../settings/data/action_dao.dart';
+
 import '../../../settings/domain/action_definition.dart'; // ActionDefinition用
 import '../../domain/player_stats.dart'; // PlayerStats, ActionStats用
 import '../../data/pdf_export_service.dart';

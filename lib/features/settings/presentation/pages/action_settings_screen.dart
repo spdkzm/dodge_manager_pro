@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../data/action_dao.dart';
 import '../../../game_record/data/match_dao.dart';
-import '../../data/action_repository.dart'; // Repository経由で削除等を行うため
+
 import '../../domain/action_definition.dart';
 import '../../../game_record/domain/models.dart'; // ActionResult
 

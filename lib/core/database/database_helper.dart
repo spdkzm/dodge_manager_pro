@@ -12,8 +12,8 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v9.db';
-  // ★修正: バージョンを9に上げる
-  static const int _dbVersion = 9;
+  // ★修正: バージョンを10に上げる
+  static const int _dbVersion = 10;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -153,7 +153,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★修正: statusカラム (0:Court, 1:Bench, 2:Absent) を追加
     await db.execute('''
       CREATE TABLE match_participations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,6 +161,19 @@ class DatabaseHelper {
         player_id TEXT,
         status INTEGER DEFAULT 0,
         FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // ★追加: 背番号履歴管理テーブル
+    await db.execute('''
+      CREATE TABLE uniform_numbers(
+        id TEXT PRIMARY KEY,
+        team_id TEXT,
+        player_id TEXT,
+        number TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
     ''');
   }
@@ -202,7 +214,6 @@ class DatabaseHelper {
     if (oldVersion < 8) {
       await db.execute("ALTER TABLE matches ADD COLUMN note TEXT");
     }
-    // ★追加: v9への移行 (参加ステータスの追加)
     if (oldVersion < 9) {
       // 既存のカラム構成を確認して追加
       final columns = await db.rawQuery("PRAGMA table_info(match_participations)");
@@ -210,6 +221,20 @@ class DatabaseHelper {
       if (!hasStatus) {
         await db.execute("ALTER TABLE match_participations ADD COLUMN status INTEGER DEFAULT 0");
       }
+    }
+    // ★追加: v10への移行 (背番号テーブルの追加)
+    if (oldVersion < 10) {
+      await db.execute('''
+        CREATE TABLE uniform_numbers(
+          id TEXT PRIMARY KEY,
+          team_id TEXT,
+          player_id TEXT,
+          number TEXT,
+          start_date TEXT,
+          end_date TEXT,
+          FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
+        )
+      ''');
     }
   }
 

@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/analysis_controller.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../../team_mgmt/domain/schema.dart';
+import '../../../team_mgmt/data/uniform_number_dao.dart';
+import '../../../team_mgmt/domain/uniform_number.dart'; // ★追加: これが必要です
 
 class AnalysisMembersTab extends ConsumerStatefulWidget {
   final String matchId;
-  final VoidCallback onUpdate; // ★追加: 更新完了時のコールバック
+  final VoidCallback onUpdate;
 
   const AnalysisMembersTab({
     super.key,
@@ -21,6 +23,8 @@ class AnalysisMembersTab extends ConsumerStatefulWidget {
 }
 
 class _AnalysisMembersTabState extends ConsumerState<AnalysisMembersTab> {
+  final UniformNumberDao _uniformDao = UniformNumberDao();
+
   List<String> _editingCourtMembers = [];
   List<String> _editingBenchMembers = [];
   List<String> _editingAbsentMembers = [];
@@ -48,19 +52,35 @@ class _AnalysisMembersTabState extends ConsumerState<AnalysisMembersTab> {
     final store = ref.read(teamStoreProvider);
     if (!store.isLoaded) await store.loadFromDb();
     final currentTeam = store.currentTeam;
-
     if (currentTeam == null) return;
 
+    // 試合情報の取得（日付のため）
+    final matchRecord = await ref.read(analysisControllerProvider.notifier).fetchMatchRecordById(widget.matchId);
+    if (matchRecord == null) return;
+
+    final matchDate = DateTime.tryParse(matchRecord.date) ?? DateTime.now();
+
+    // 試合日時点の背番号を取得
+    final allUniforms = await _uniformDao.getUniformNumbersByTeam(currentTeam.id);
     final allMembers = <String, String>{};
-    String? numberFieldId; String? courtNameFieldId; String? nameFieldId;
+
+    String? courtNameFieldId; String? nameFieldId;
     for(var f in currentTeam.schema) {
-      if(f.type == FieldType.uniformNumber) numberFieldId = f.id;
       if(f.type == FieldType.courtName) courtNameFieldId = f.id;
       if(f.type == FieldType.personName) nameFieldId = f.id;
     }
+
     for (var item in currentTeam.items) {
-      final num = item.data[numberFieldId]?.toString() ?? "";
-      if (num.isNotEmpty) {
+      // 試合日時点で有効な背番号を探す
+      UniformNumber? activeNum;
+      try {
+        activeNum = allUniforms.firstWhere((u) => u.playerId == item.id && u.isActiveAt(matchDate));
+      } catch (_) {
+        activeNum = null;
+      }
+
+      if (activeNum != null) {
+        final num = activeNum.number;
         String name = "";
         if (courtNameFieldId != null) name = item.data[courtNameFieldId]?.toString() ?? "";
         if (name.isEmpty && nameFieldId != null) { final n = item.data[nameFieldId]; if (n is Map) name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim(); }
@@ -82,7 +102,7 @@ class _AnalysisMembersTabState extends ConsumerState<AnalysisMembersTab> {
 
     final registeredSet = statusMap.keys.toSet();
     final others = allMembers.keys.where((n) => !registeredSet.contains(n)).toList();
-    benchMembers.addAll(others);
+    benchMembers.addAll(others); // 試合に記録されていないが、当時背番号を持っていた選手はベンチ候補へ
 
     int sortFunc(String a, String b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999);
     courtMembers.sort(sortFunc);
@@ -109,7 +129,6 @@ class _AnalysisMembersTabState extends ConsumerState<AnalysisMembersTab> {
         _editingBenchMembers,
         _editingAbsentMembers
     );
-    // ★変更: 親画面の再ロード処理を呼び出す
     widget.onUpdate();
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("出場メンバーを更新しました")));
   }

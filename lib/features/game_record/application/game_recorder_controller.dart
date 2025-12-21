@@ -8,7 +8,9 @@ import '../../team_mgmt/application/team_store.dart';
 import '../../team_mgmt/domain/schema.dart';
 import '../../team_mgmt/domain/roster_category.dart';
 import '../../settings/data/action_dao.dart';
-import '../../settings/domain/action_definition.dart'; // SubActionDefinition
+import '../../settings/domain/action_definition.dart';
+import '../../team_mgmt/data/uniform_number_dao.dart';
+import '../../team_mgmt/domain/uniform_number.dart';
 import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
@@ -34,6 +36,7 @@ class GameRecorderController extends ChangeNotifier {
   final Ref ref;
   final ActionDao _actionDao = ActionDao();
   final MatchDao _matchDao = MatchDao();
+  final UniformNumberDao _uniformDao = UniformNumberDao();
   TeamStore get _teamStore => ref.read(teamStoreProvider);
 
   GameRecorderController(this.ref);
@@ -85,11 +88,7 @@ class GameRecorderController extends ChangeNotifier {
   bool get hasMatchStarted => _hasMatchStarted;
   String get formattedTime { final m = (_remainingSeconds ~/ 60).toString().padLeft(2, '0'); final s = (_remainingSeconds % 60).toString().padLeft(2, '0'); return "$m:$s"; }
 
-  // ★追加: IDから情報を取得するヘルパー
   PlayerDisplayInfo? getPlayerInfo(String id) => _playerInfoMap[id];
-
-  // ★追加: UI入力用ヘルパー (名前解決用マップではなく、ID検索用)
-  // 古いplayerNames (背番号->名前) は削除し、必要な場合は getPlayerInfo を使う
 
   Future<void> loadData() async {
     final loadedSettings = await DataManager.loadSettings();
@@ -98,33 +97,9 @@ class GameRecorderController extends ChangeNotifier {
     if (!_teamStore.isLoaded) await _teamStore.loadFromDb();
     final currentTeam = _teamStore.currentTeam;
 
-    // マップの初期化
-    _playerInfoMap.clear();
-    _numberToIdMap.clear();
-
     if (currentTeam != null) {
-      String? numberFieldId; String? nameFieldId; String? courtNameFieldId;
-      for (var field in currentTeam.schema) {
-        if (field.type == FieldType.uniformNumber) numberFieldId = field.id;
-        else if (field.type == FieldType.personName) nameFieldId = field.id;
-        else if (field.type == FieldType.courtName) courtNameFieldId = field.id;
-      }
-
-      if (numberFieldId != null) {
-        for (var item in currentTeam.items) {
-          final numVal = item.data[numberFieldId]?.toString();
-          if (numVal != null && numVal.isNotEmpty) {
-            String displayName = "";
-            if (courtNameFieldId != null) { final cn = item.data[courtNameFieldId]?.toString(); if (cn != null && cn.isNotEmpty) displayName = cn; }
-            if (displayName.isEmpty && nameFieldId != null) { final nameVal = item.data[nameFieldId]; if (nameVal is Map) displayName = "${nameVal['last'] ?? ''} ${nameVal['first'] ?? ''}".trim(); }
-
-            final info = PlayerDisplayInfo(id: item.id, number: numVal, name: displayName);
-            _playerInfoMap[item.id] = info;
-            _numberToIdMap[numVal] = item.id;
-          }
-        }
-      }
-
+      // 選手情報の構築ロジックを分離し、背番号DBを参照するように変更
+      await _refreshPlayerInfo(currentTeam.id);
       uiActions = await _buildUIActionList(currentTeam.id);
     }
 
@@ -135,28 +110,104 @@ class GameRecorderController extends ChangeNotifier {
     }
 
     // リスト初期化ロジック (IDベース)
-    if (courtPlayerIds.isEmpty && benchPlayerIds.isEmpty && absentPlayerIds.isEmpty) {
-      // 初回ロード時: 全員ベンチへ
-      final allIds = _playerInfoMap.keys.toList();
-      _sortIdList(allIds);
-      benchPlayerIds = List.from(allIds);
-    } else {
-      // 再ロード時: 整合性チェック
-      final currentRegistered = {...courtPlayerIds, ...benchPlayerIds, ...absentPlayerIds};
-      final allIds = _playerInfoMap.keys.toSet();
+    _validateAndSortPlayerLists();
 
-      final newIds = allIds.difference(currentRegistered).toList();
-      if (newIds.isNotEmpty) {
-        benchPlayerIds.addAll(newIds);
-        _sortIdList(benchPlayerIds);
+    notifyListeners();
+  }
+
+  // 試合日などの変更に応じて選手情報を再構築する
+  Future<void> _refreshPlayerInfo(String teamId) async {
+    final currentTeam = _teamStore.currentTeam;
+    if (currentTeam == null) return;
+
+    // マップの初期化
+    _playerInfoMap.clear();
+    _numberToIdMap.clear();
+
+    // 1. スキーマから氏名フィールドを探す
+    String? nameFieldId;
+    String? courtNameFieldId;
+    for (var field in currentTeam.schema) {
+      if (field.type == FieldType.personName) nameFieldId = field.id;
+      else if (field.type == FieldType.courtName) courtNameFieldId = field.id;
+    }
+    // 見つからなければ最初のテキストフィールドなどをフォールバック
+    if (nameFieldId == null && currentTeam.schema.isNotEmpty) {
+      nameFieldId = currentTeam.schema.first.id;
+    }
+
+    // 2. 背番号DBから、指定チームの全履歴を取得
+    final allUniforms = await _uniformDao.getUniformNumbersByTeam(teamId);
+
+    // 3. 選手リストを走査し、試合日時点で有効な背番号を持っている選手のみをマップに追加
+    // ★修正: currentTeam.items は既に選手リストのため、category判定は不要
+    final players = currentTeam.items;
+
+    for (var item in players) {
+      // 試合日時点で有効な背番号を探す
+      UniformNumber? activeNum;
+      try {
+        activeNum = allUniforms.firstWhere((u) =>
+        u.playerId == item.id && u.isActiveAt(_matchDate)
+        );
+      } catch (_) {
+        activeNum = null;
       }
 
+      // 背番号がある場合のみリストに載せる
+      if (activeNum != null) {
+        String displayName = "";
+
+        // コートネーム優先
+        if (courtNameFieldId != null) {
+          final cn = item.data[courtNameFieldId]?.toString();
+          if (cn != null && cn.isNotEmpty) displayName = cn;
+        }
+
+        // なければ氏名
+        if (displayName.isEmpty && nameFieldId != null) {
+          final nameVal = item.data[nameFieldId];
+          if (nameVal is Map) {
+            displayName = "${nameVal['last'] ?? ''} ${nameVal['first'] ?? ''}".trim();
+          } else if (nameVal != null) {
+            displayName = nameVal.toString();
+          }
+        }
+
+        // それでもなければID
+        if (displayName.isEmpty) displayName = "No Name";
+
+        final info = PlayerDisplayInfo(id: item.id, number: activeNum.number, name: displayName);
+        _playerInfoMap[item.id] = info;
+        _numberToIdMap[activeNum.number] = item.id;
+      }
+    }
+  }
+
+  // プレイヤーリストの整合性チェックとソート
+  void _validateAndSortPlayerLists() {
+    final allIds = _playerInfoMap.keys.toSet();
+
+    if (courtPlayerIds.isEmpty && benchPlayerIds.isEmpty && absentPlayerIds.isEmpty) {
+      // 初回ロード時: 全員ベンチへ
+      benchPlayerIds = allIds.toList();
+    } else {
+      // 既存リストのクリーニング（背番号がなくなった選手を除外）
       courtPlayerIds.removeWhere((id) => !allIds.contains(id));
       benchPlayerIds.removeWhere((id) => !allIds.contains(id));
       absentPlayerIds.removeWhere((id) => !allIds.contains(id));
+
+      // 新しく背番号がついた選手を追加（ベンチへ）
+      final currentRegistered = {...courtPlayerIds, ...benchPlayerIds, ...absentPlayerIds};
+      final newIds = allIds.difference(currentRegistered);
+      if (newIds.isNotEmpty) {
+        benchPlayerIds.addAll(newIds);
+      }
     }
 
-    notifyListeners();
+    _sortIdList(courtPlayerIds);
+    _sortIdList(benchPlayerIds);
+    _sortIdList(absentPlayerIds);
   }
 
   Future<List<UIActionItem?>> _buildUIActionList(String teamId) async {
@@ -224,7 +275,22 @@ class GameRecorderController extends ChangeNotifier {
     return finalList;
   }
 
-  void updateMatchDate(DateTime date) { _matchDate = date; notifyListeners(); }
+  // 日付変更時にプレイヤー情報を再ロード
+  void updateMatchDate(DateTime date) {
+    _matchDate = date;
+
+    // 日付が変わったら背番号の適用状況も変わるため再ロード
+    final currentTeam = _teamStore.currentTeam;
+    if (currentTeam != null) {
+      _refreshPlayerInfo(currentTeam.id).then((_) {
+        _validateAndSortPlayerLists();
+        notifyListeners();
+      });
+    } else {
+      notifyListeners();
+    }
+  }
+
   void updateMatchType(MatchType type) { _matchType = type; notifyListeners(); }
 
   void updateMatchInfo({String? opponentName, String? opponentId, String? venueName, String? venueId}) {
@@ -235,7 +301,6 @@ class GameRecorderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ★変更: IDを直接受け取る
   void selectPlayer(String id) {
     if (!_playerInfoMap.containsKey(id)) return;
 

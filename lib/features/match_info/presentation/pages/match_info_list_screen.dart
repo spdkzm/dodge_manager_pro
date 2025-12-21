@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../team_mgmt/domain/roster_category.dart';
 import '../../../team_mgmt/presentation/pages/generic_roster_screen.dart'; // ★共通コンポーネント
 // SchemaSettingsScreenのインポートは一旦未使用になるため削除しても良いですが、後で使う可能性があるため残します
-import '../../../team_mgmt/presentation/pages/schema_settings_screen.dart';
+
 
 class MatchInfoListScreen extends ConsumerWidget {
   const MatchInfoListScreen({super.key});

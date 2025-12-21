@@ -84,8 +84,13 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     FieldType selectedType = field?.type ?? FieldType.text;
 
     // カスタム項目の場合のみプルダウンで選べる型に限定する
-    if (!isSystem && !FieldType.values.contains(selectedType)) {
-      selectedType = FieldType.text;
+    // ★修正: 新規追加の場合、UniformNumberを選ばせないが、既存がUniformNumberなら維持する
+    if (!isSystem) {
+      if (selectedType == FieldType.uniformNumber) {
+        // 既存が背番号なら維持
+      } else if (!FieldType.values.contains(selectedType)) {
+        selectedType = FieldType.text;
+      }
     }
 
     bool useDropdown = field?.useDropdown ?? false;
@@ -171,6 +176,20 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
               return const SizedBox();
             }
 
+            // ★修正: 背番号管理機能への移行に伴い、新規追加リストから背番号を除外
+            final List<DropdownMenuItem<FieldType>> typeItems = [
+              const DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
+              const DropdownMenuItem(value: FieldType.number, child: Text('数値')),
+              const DropdownMenuItem(value: FieldType.date, child: Text('日付')),
+              // const DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')), // 削除
+              const DropdownMenuItem(value: FieldType.courtName, child: Text('コートネーム')),
+            ];
+
+            // 編集中の項目が既に背番号型なら、選択肢に追加しておく（そうしないと値が合わずエラーになる）
+            if (selectedType == FieldType.uniformNumber) {
+              typeItems.add(const DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号 (非推奨)')));
+            }
+
             return AlertDialog(
               title: Text(isEditing ? (isSystem ? '基本項目の設定変更' : '項目を編集') : '項目を追加'),
               content: SizedBox(
@@ -188,7 +207,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // ★修正: 基本項目の場合、プルダウンではなくテキスト表示にする (クラッシュ回避)
                       if (isSystem)
                         TextFormField(
                           initialValue: _getFieldTypeLabel(field!.type),
@@ -200,13 +218,7 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                         DropdownButtonFormField<FieldType>(
                           value: selectedType,
                           decoration: const InputDecoration(labelText: 'データの種類'),
-                          items: const [
-                            DropdownMenuItem(value: FieldType.text, child: Text('自由テキスト')),
-                            DropdownMenuItem(value: FieldType.number, child: Text('数値')),
-                            DropdownMenuItem(value: FieldType.date, child: Text('日付')),
-                            DropdownMenuItem(value: FieldType.uniformNumber, child: Text('背番号')),
-                            DropdownMenuItem(value: FieldType.courtName, child: Text('コートネーム')),
-                          ],
+                          items: typeItems, // ★修正後のリストを使用
                           onChanged: (val) {
                             if (val != null) {
                               setStateDialog(() {
@@ -250,7 +262,7 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                     final newDef = FieldDefinition(
                       id: field?.id,
                       label: nameController.text,
-                      type: isSystem ? field!.type : selectedType, // システム項目の場合は元の型を維持
+                      type: isSystem ? field!.type : selectedType,
                       isSystem: isSystem,
                       isVisible: field?.isVisible ?? true,
                       isRequired: isRequired,
@@ -355,7 +367,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
     }
   }
 
-  // ★追加: 編集ボタン押下時の処理 (表示確認ダイアログ)
   void _onEditPressed(FieldDefinition field, int index) {
     if (field.isSystem && !field.isVisible) {
       showDialog(
@@ -452,7 +463,6 @@ class _SchemaSettingsScreenState extends ConsumerState<SchemaSettingsScreen> {
                           ),
                         IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue),
-                            // ★修正: 新しいハンドラを使用
                             onPressed: () => _onEditPressed(field, index)
                         ),
                         if (!field.isSystem)
