@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'match_deletion_screen.dart';
+import 'player_deletion_screen.dart'; // ★追加
 import '../../data/backup_service.dart';
+import '../../../team_mgmt/presentation/pages/team_management_screen.dart'; // ★追加
 
 class UnifiedSettingsScreen extends ConsumerWidget {
   const UnifiedSettingsScreen({super.key});
@@ -77,7 +79,22 @@ class UnifiedSettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // ★「試合・アクション」セクションを削除しました
+          // ★追加: チーム・選手管理セクション
+          _buildSectionHeader(context, 'チーム・選手管理'),
+          ListTile(
+            leading: const Icon(Icons.group_work, color: Colors.indigo),
+            title: const Text('チームの管理'),
+            subtitle: const Text('チームの追加、切替、名称変更'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TeamManagementScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_remove, color: Colors.red),
+            title: const Text('選手データの削除', style: TextStyle(color: Colors.red)),
+            subtitle: const Text('登録済みの選手データを削除します'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PlayerDeletionScreen())),
+          ),
 
           _buildSectionHeader(context, 'データ管理'),
 
