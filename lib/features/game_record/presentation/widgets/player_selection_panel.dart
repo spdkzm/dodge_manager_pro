@@ -1,33 +1,34 @@
 // lib/features/game_record/presentation/widgets/player_selection_panel.dart
 import 'package:flutter/material.dart';
+import '../../application/game_recorder_controller.dart'; // PlayerDisplayInfo利用のため
 
 class PlayerSelectionPanel extends StatelessWidget {
   final TabController tabController;
-  final List<String> courtPlayers;
-  final List<String> benchPlayers;
-  final List<String> absentPlayers;
-  final Map<String, String> playerNames;
+  // ★変更: IDリストを受け取る
+  final List<String> courtPlayerIds;
+  final List<String> benchPlayerIds;
+  final List<String> absentPlayerIds;
+  // ★変更: 情報取得関数
+  final PlayerDisplayInfo? Function(String) playerInfoGetter;
 
-  // 選択状態
-  final String? selectedPlayer;
-  final Set<String> selectedForMove;
+  final String? selectedPlayerId;
+  final Set<String> selectedForMoveIds;
   final bool isMultiSelectMode;
 
-  // コールバック
-  final Function(String number) onPlayerTap;
-  final Function(String number) onPlayerLongPress;
+  final Function(String id) onPlayerTap;
+  final Function(String id) onPlayerLongPress;
   final Function(String toType) onMoveSelected;
   final VoidCallback onClearMultiSelect;
 
   const PlayerSelectionPanel({
     super.key,
     required this.tabController,
-    required this.courtPlayers,
-    required this.benchPlayers,
-    required this.absentPlayers,
-    required this.playerNames,
-    required this.selectedPlayer,
-    required this.selectedForMove,
+    required this.courtPlayerIds,
+    required this.benchPlayerIds,
+    required this.absentPlayerIds,
+    required this.playerInfoGetter,
+    required this.selectedPlayerId,
+    required this.selectedForMoveIds,
     required this.isMultiSelectMode,
     required this.onPlayerTap,
     required this.onPlayerLongPress,
@@ -44,19 +45,18 @@ class PlayerSelectionPanel extends StatelessWidget {
           labelColor: Colors.indigo,
           unselectedLabelColor: Colors.grey,
           tabs: [
-            Tab(text: 'コート (${courtPlayers.length})'),
-            Tab(text: 'ベンチ (${benchPlayers.length})'),
-            Tab(text: '欠席 (${absentPlayers.length})'),
+            Tab(text: 'コート (${courtPlayerIds.length})'),
+            Tab(text: 'ベンチ (${benchPlayerIds.length})'),
+            Tab(text: '欠席 (${absentPlayerIds.length})'),
           ],
         ),
-        // 複数選択モード時の移動バー
         if (isMultiSelectMode)
           Container(
             color: Colors.orange.shade100,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
-                Text("${selectedForMove.length}人選択中", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("${selectedForMoveIds.length}人選択中", style: const TextStyle(fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(icon: const Icon(Icons.sports_basketball), tooltip: "コートへ", onPressed: () => onMoveSelected('court')),
                 IconButton(icon: const Icon(Icons.chair), tooltip: "ベンチへ", onPressed: () => onMoveSelected('bench')),
@@ -69,10 +69,9 @@ class PlayerSelectionPanel extends StatelessWidget {
           child: TabBarView(
             controller: tabController,
             children: [
-              // ★変更: 第2引数に「アクション選択可能か」フラグを渡す
-              _buildList(courtPlayers, canSelectForAction: true),  // コート: 選択OK
-              _buildList(benchPlayers, canSelectForAction: false), // ベンチ: 選択NG
-              _buildList(absentPlayers, canSelectForAction: false),// 欠席: 選択NG
+              _buildList(courtPlayerIds, canSelectForAction: true),
+              _buildList(benchPlayerIds, canSelectForAction: false),
+              _buildList(absentPlayerIds, canSelectForAction: false),
             ],
           ),
         ),
@@ -80,20 +79,23 @@ class PlayerSelectionPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildList(List<String> players, {required bool canSelectForAction}) {
-    if (players.isEmpty) return const Center(child: Text("なし", style: TextStyle(color: Colors.grey)));
+  Widget _buildList(List<String> playerIds, {required bool canSelectForAction}) {
+    if (playerIds.isEmpty) return const Center(child: Text("なし", style: TextStyle(color: Colors.grey)));
 
     return ListView.builder(
-      itemCount: players.length,
+      itemCount: playerIds.length,
       itemBuilder: (context, index) {
-        final number = players[index];
-        final name = playerNames[number] ?? "";
-        final isSelected = selectedPlayer == number;
-        final isMultiSelected = selectedForMove.contains(number);
+        final id = playerIds[index];
+        // ★修正: IDから表示情報を解決
+        final info = playerInfoGetter(id);
+        final number = info?.number ?? "?";
+        final name = info?.name ?? "";
+
+        final isSelected = selectedPlayerId == id;
+        final isMultiSelected = selectedForMoveIds.contains(id);
 
         return Card(
           color: isMultiSelected ? Colors.orange[200] : (isSelected ? Colors.yellow[100] : Colors.white),
-          // ベンチ・欠席で選択不可の場合は少し薄く表示する（視覚的フィードバック）
           elevation: (canSelectForAction || isMultiSelectMode) ? 1 : 0,
           child: ListTile(
             title: Text(
@@ -101,7 +103,6 @@ class PlayerSelectionPanel extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    // 選択不可モードならグレーアウト（ただしマルチセレクト中は普通に表示）
                     color: (!canSelectForAction && !isMultiSelectMode) ? Colors.grey : Colors.black87
                 ),
                 textAlign: TextAlign.center
@@ -110,20 +111,13 @@ class PlayerSelectionPanel extends StatelessWidget {
                 ? Text(name, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center, overflow: TextOverflow.ellipsis)
                 : null,
             onTap: () {
-              // ★修正: タップ時の挙動分岐
               if (isMultiSelectMode) {
-                // マルチセレクト（移動）モードなら、どこにいても選択可能
-                onPlayerTap(number);
+                onPlayerTap(id);
               } else if (canSelectForAction) {
-                // 通常モードなら、コートの選手のみ選択可能
-                onPlayerTap(number);
-              } else {
-                // 選択不可（ベンチ・欠席）の場合
-                // 必要であればここに「ベンチの選手は記録できません」等のトーストを表示可能
-                // 今回は何もせず無視する
+                onPlayerTap(id);
               }
             },
-            onLongPress: () => onPlayerLongPress(number), // 長押し（移動開始）は常に有効
+            onLongPress: () => onPlayerLongPress(id),
           ),
         );
       },

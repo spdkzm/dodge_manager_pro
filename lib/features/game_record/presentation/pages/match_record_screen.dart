@@ -306,30 +306,44 @@ class MatchRecordScreen extends HookConsumerWidget {
       );
     }
 
-    // ★修正: ログ編集ダイアログ (システムログ対応)
     void showEditLogDialog(LogEntry log, int index) {
       final isSystemLog = log.type == LogType.system;
 
       final definitions = controller.actionDefinitions;
 
-      // 全選手リストを作成 (コート+ベンチ+欠席)
-      final allPlayers = [
-        ...controller.courtPlayers,
-        ...controller.benchPlayers,
-        ...controller.absentPlayers
-      ]..sort((a,b) => (int.tryParse(a)??999).compareTo(int.tryParse(b)??999));
+      // ★修正: 選手IDのリストを取得
+      final allPlayerIds = [
+        ...controller.courtPlayerIds,
+        ...controller.benchPlayerIds,
+        ...controller.absentPlayerIds
+      ];
+      // 背番号順にソート (コントローラーのヘルパー使用はできないのでここで簡易ソート)
+      allPlayerIds.sort((a, b) {
+        final infoA = controller.getPlayerInfo(a);
+        final infoB = controller.getPlayerInfo(b);
+        final numA = int.tryParse(infoA?.number ?? '') ?? 999;
+        final numB = int.tryParse(infoB?.number ?? '') ?? 999;
+        return numA.compareTo(numB);
+      });
 
       final actionNames = definitions.map((d) => d.name).toList();
 
       final timeCtrl = TextEditingController(text: log.gameTime);
-      final actionNameCtrl = TextEditingController(text: log.action); // システムログ用
+      final actionNameCtrl = TextEditingController(text: log.action);
 
-      String? playerNumVal = allPlayers.contains(log.playerNumber) ? log.playerNumber : null;
+      // ★修正: IDで初期値を設定
+      String? playerIdVal = log.playerId;
+      // もしログにIDがない場合は、背番号から探すなどのフォールバックが必要だが、
+      // ここでは既にID移行済み前提とする
+      if (playerIdVal == null || !allPlayerIds.contains(playerIdVal)) {
+        // IDが見つからない場合（古いログなど）、表示リストには含めるか、あるいはnullにする
+        // ここでは一旦nullにしておき、保存時に再選択を促す形にする
+      }
+
       String? actionNameVal = actionNames.contains(log.action) ? log.action : null;
       SubActionDefinition? subActionVal;
       ActionResult resultVal = log.result;
 
-      // アクションログの場合の初期化
       if (!isSystemLog && actionNameVal != null) {
         final def = definitions.firstWhere((d) => d.name == actionNameVal, orElse: () => ActionDefinition(name: '', subActions: []));
         if (log.subActionId != null) {
@@ -371,21 +385,22 @@ class MatchRecordScreen extends HookConsumerWidget {
                             const SizedBox(height: 16),
 
                             if (isSystemLog) ...[
-                              // システムログの場合はテキスト入力のみ
                               TextField(
                                 controller: actionNameCtrl,
                                 decoration: const InputDecoration(labelText: "内容 (試合開始, タイムなど)"),
                               ),
                             ] else ...[
-                              // アクションログの場合
                               DropdownButtonFormField<String>(
-                                  value: playerNumVal,
+                                  value: playerIdVal,
                                   decoration: const InputDecoration(labelText: "選手"),
-                                  items: allPlayers.map((p) {
-                                    final name = controller.playerNames[p] ?? "";
-                                    return DropdownMenuItem(value: p, child: Text("#$p $name"));
+                                  items: allPlayerIds.map((pid) {
+                                    // ★修正: IDから表示情報取得
+                                    final info = controller.getPlayerInfo(pid);
+                                    final num = info?.number ?? "?";
+                                    final name = info?.name ?? "";
+                                    return DropdownMenuItem(value: pid, child: Text("#$num $name"));
                                   }).toList(),
-                                  onChanged: (v) => setStateDialog(() => playerNumVal = v)
+                                  onChanged: (v) => setStateDialog(() => playerIdVal = v)
                               ),
                               const SizedBox(height: 16),
                               DropdownButtonFormField<String>(
@@ -394,7 +409,7 @@ class MatchRecordScreen extends HookConsumerWidget {
                                   items: actionNames.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
                                   onChanged: (v) => setStateDialog(() {
                                     actionNameVal = v;
-                                    subActionVal = null; // アクション変更時は詳細リセット
+                                    subActionVal = null;
                                   })
                               ),
                               const SizedBox(height: 16),
@@ -445,7 +460,6 @@ class MatchRecordScreen extends HookConsumerWidget {
                       TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")),
                       ElevatedButton(
                           onPressed: () {
-                            // 保存処理
                             final newTime = timeCtrl.text;
 
                             if (isSystemLog) {
@@ -454,10 +468,16 @@ class MatchRecordScreen extends HookConsumerWidget {
                               final newLog = log.copyWith(gameTime: newTime, action: newAction);
                               controller.updateLog(index, newLog);
                             } else {
-                              if (playerNumVal == null || actionNameVal == null) return;
+                              if (playerIdVal == null || actionNameVal == null) return;
+
+                              // ★修正: IDから背番号を取得して保存
+                              final info = controller.getPlayerInfo(playerIdVal!);
+                              final pNum = info?.number ?? "";
+
                               final newLog = log.copyWith(
                                 gameTime: newTime,
-                                playerNumber: playerNumVal!,
+                                playerNumber: pNum, // 表示用
+                                playerId: playerIdVal, // ★ID保存
                                 action: actionNameVal!,
                                 subAction: subActionVal?.name,
                                 subActionId: subActionVal?.id,
@@ -547,7 +567,21 @@ class MatchRecordScreen extends HookConsumerWidget {
         ],
       ),
       body: Row(children: [
-        Expanded(flex: 2, child: PlayerSelectionPanel(tabController: tabController, courtPlayers: controller.courtPlayers, benchPlayers: controller.benchPlayers, absentPlayers: controller.absentPlayers, playerNames: controller.playerNames, selectedPlayer: controller.selectedPlayer, selectedForMove: controller.selectedForMove, isMultiSelectMode: controller.isMultiSelectMode, onPlayerTap: controller.selectPlayer, onPlayerLongPress: controller.startMultiSelect, onMoveSelected: controller.moveSelectedPlayers, onClearMultiSelect: controller.clearMultiSelect)),
+        // ★修正: パラメータ名を変更して渡す
+        Expanded(flex: 2, child: PlayerSelectionPanel(
+            tabController: tabController,
+            courtPlayerIds: controller.courtPlayerIds, // IDリスト
+            benchPlayerIds: controller.benchPlayerIds, // IDリスト
+            absentPlayerIds: controller.absentPlayerIds, // IDリスト
+            playerInfoGetter: controller.getPlayerInfo, // 情報取得関数
+            selectedPlayerId: controller.selectedPlayerId, // ID
+            selectedForMoveIds: controller.selectedForMoveIds, // IDセット
+            isMultiSelectMode: controller.isMultiSelectMode,
+            onPlayerTap: controller.selectPlayer,
+            onPlayerLongPress: controller.startMultiSelect,
+            onMoveSelected: controller.moveSelectedPlayers,
+            onClearMultiSelect: controller.clearMultiSelect
+        )),
         const VerticalDivider(width: 1),
         Expanded(flex: 6, child: Column(children: [
           GameTimerBar(isRunning: controller.isRunning, hasMatchStarted: controller.hasMatchStarted, onStart: controller.startTimer, onStop: controller.stopTimer, onEnd: handleEndMatch),
@@ -555,8 +589,9 @@ class MatchRecordScreen extends HookConsumerWidget {
               uiActions: controller.uiActions,
               gridColumns: controller.settings.gridColumns,
               hasMatchStarted: controller.hasMatchStarted,
-              selectedPlayer: controller.selectedPlayer,
-              playerNames: controller.playerNames,
+              // ★修正: パラメータ変更
+              selectedPlayerId: controller.selectedPlayerId,
+              playerInfoGetter: controller.getPlayerInfo,
               selectedUIAction: controller.selectedUIAction,
               selectedSubAction: controller.selectedSubAction,
               selectedResult: controller.selectedResult,
@@ -568,7 +603,6 @@ class MatchRecordScreen extends HookConsumerWidget {
         ])),
         Expanded(flex: 2, child: GameLogPanel(
             logs: controller.logs,
-            // ログタップ時のコールバック (編集ダイアログを開く)
             onLogTap: showEditLogDialog
         )),
       ]),

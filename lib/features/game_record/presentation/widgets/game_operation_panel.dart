@@ -2,14 +2,17 @@
 import 'package:flutter/material.dart';
 import '../../domain/models.dart';
 import '../../../settings/domain/action_definition.dart'; // SubActionDefinition
+import '../../application/game_recorder_controller.dart'; // PlayerDisplayInfo
 
 class GameOperationPanel extends StatelessWidget {
   final List<UIActionItem?> uiActions;
   final int gridColumns;
   final bool hasMatchStarted;
 
-  final String? selectedPlayer;
-  final Map<String, String> playerNames;
+  // ★変更: IDを受け取る
+  final String? selectedPlayerId;
+  final PlayerDisplayInfo? Function(String) playerInfoGetter;
+
   final UIActionItem? selectedUIAction;
   final SubActionDefinition? selectedSubAction;
   final ActionResult selectedResult;
@@ -24,8 +27,8 @@ class GameOperationPanel extends StatelessWidget {
     required this.uiActions,
     required this.gridColumns,
     required this.hasMatchStarted,
-    required this.selectedPlayer,
-    required this.playerNames,
+    required this.selectedPlayerId,
+    required this.playerInfoGetter,
     required this.selectedUIAction,
     required this.selectedSubAction,
     required this.selectedResult,
@@ -45,7 +48,6 @@ class GameOperationPanel extends StatelessWidget {
           Expanded(
             flex: 2,
             child: Opacity(
-              // 試合開始前でも操作可能にするため、IgnorePointerを削除し、不透明度のみ調整
               opacity: 1.0,
               child: GridView.builder(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -110,6 +112,17 @@ class GameOperationPanel extends StatelessWidget {
   }
 
   Widget _buildConfirmBar() {
+    // ★修正: 表示情報を解決
+    String playerText = "-";
+    if (selectedPlayerId != null) {
+      final info = playerInfoGetter(selectedPlayerId!);
+      if (info != null) {
+        playerText = "${info.number} (${info.name})";
+      } else {
+        playerText = "不明な選手";
+      }
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -125,7 +138,7 @@ class GameOperationPanel extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 const Text("選手:", style: TextStyle(color: Colors.grey)),
-                Text(selectedPlayer != null ? "$selectedPlayer ${playerNames[selectedPlayer] != null ? '(${playerNames[selectedPlayer]})' : ''}" : "-", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(playerText, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(width: 16),
                 const Icon(Icons.arrow_right, color: Colors.grey),
                 const SizedBox(width: 16),
@@ -136,9 +149,8 @@ class GameOperationPanel extends StatelessWidget {
               ],
             ),
           ),
-          // hasMatchStarted のチェックを削除し、常に条件が揃えば確定できるように変更
           ElevatedButton.icon(
-              onPressed: (selectedPlayer != null && selectedUIAction != null) ? onConfirm : null,
+              onPressed: (selectedPlayerId != null && selectedUIAction != null) ? onConfirm : null,
               style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
               icon: const Icon(Icons.check_circle),
               label: const Text("確定", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))

@@ -13,6 +13,19 @@ import '../data/match_dao.dart';
 import '../domain/models.dart';
 import '../data/persistence.dart';
 
+/// 選手情報をまとめて管理する内部クラス
+class PlayerDisplayInfo {
+  final String id;
+  final String number;
+  final String name;
+
+  PlayerDisplayInfo({
+    required this.id,
+    required this.number,
+    required this.name,
+  });
+}
+
 final gameRecorderProvider = ChangeNotifierProvider<GameRecorderController>((ref) {
   return GameRecorderController(ref);
 });
@@ -29,10 +42,14 @@ class GameRecorderController extends ChangeNotifier {
   List<UIActionItem?> uiActions = [];
   List<ActionDefinition> actionDefinitions = [];
 
-  Map<String, String> playerNames = {};
-  List<String> courtPlayers = [];
-  List<String> benchPlayers = [];
-  List<String> absentPlayers = [];
+  // ID管理用のマップ
+  Map<String, PlayerDisplayInfo> _playerInfoMap = {}; // Key: PlayerID
+  Map<String, String> _numberToIdMap = {}; // Key: 背番号 -> PlayerID (UI入力用)
+
+  // 状態管理 (IDリスト)
+  List<String> courtPlayerIds = [];
+  List<String> benchPlayerIds = [];
+  List<String> absentPlayerIds = [];
   List<LogEntry> logs = [];
 
   DateTime _matchDate = DateTime.now();
@@ -46,8 +63,10 @@ class GameRecorderController extends ChangeNotifier {
   int _remainingSeconds = 300;
   bool _isRunning = false;
   bool _hasMatchStarted = false;
-  String? selectedPlayer;
-  Set<String> selectedForMove = {};
+
+  // 選択状態 (ID)
+  String? selectedPlayerId;
+  Set<String> selectedForMoveIds = {};
   bool isMultiSelectMode = false;
 
   UIActionItem? selectedUIAction;
@@ -66,6 +85,12 @@ class GameRecorderController extends ChangeNotifier {
   bool get hasMatchStarted => _hasMatchStarted;
   String get formattedTime { final m = (_remainingSeconds ~/ 60).toString().padLeft(2, '0'); final s = (_remainingSeconds % 60).toString().padLeft(2, '0'); return "$m:$s"; }
 
+  // ★追加: IDから情報を取得するヘルパー
+  PlayerDisplayInfo? getPlayerInfo(String id) => _playerInfoMap[id];
+
+  // ★追加: UI入力用ヘルパー (名前解決用マップではなく、ID検索用)
+  // 古いplayerNames (背番号->名前) は削除し、必要な場合は getPlayerInfo を使う
+
   Future<void> loadData() async {
     final loadedSettings = await DataManager.loadSettings();
     final currentLogs = await DataManager.loadCurrentLogs();
@@ -73,8 +98,9 @@ class GameRecorderController extends ChangeNotifier {
     if (!_teamStore.isLoaded) await _teamStore.loadFromDb();
     final currentTeam = _teamStore.currentTeam;
 
-    List<String> rosterNumbers = [];
-    Map<String, String> nameMap = {};
+    // マップの初期化
+    _playerInfoMap.clear();
+    _numberToIdMap.clear();
 
     if (currentTeam != null) {
       String? numberFieldId; String? nameFieldId; String? courtNameFieldId;
@@ -83,18 +109,20 @@ class GameRecorderController extends ChangeNotifier {
         else if (field.type == FieldType.personName) nameFieldId = field.id;
         else if (field.type == FieldType.courtName) courtNameFieldId = field.id;
       }
+
       if (numberFieldId != null) {
         for (var item in currentTeam.items) {
           final numVal = item.data[numberFieldId]?.toString();
           if (numVal != null && numVal.isNotEmpty) {
-            rosterNumbers.add(numVal);
             String displayName = "";
             if (courtNameFieldId != null) { final cn = item.data[courtNameFieldId]?.toString(); if (cn != null && cn.isNotEmpty) displayName = cn; }
             if (displayName.isEmpty && nameFieldId != null) { final nameVal = item.data[nameFieldId]; if (nameVal is Map) displayName = "${nameVal['last'] ?? ''} ${nameVal['first'] ?? ''}".trim(); }
-            nameMap[numVal] = displayName;
+
+            final info = PlayerDisplayInfo(id: item.id, number: numVal, name: displayName);
+            _playerInfoMap[item.id] = info;
+            _numberToIdMap[numVal] = item.id;
           }
         }
-        rosterNumbers.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
       }
 
       uiActions = await _buildUIActionList(currentTeam.id);
@@ -105,22 +133,27 @@ class GameRecorderController extends ChangeNotifier {
     if (_remainingSeconds == 300 && !_hasMatchStarted) {
       _remainingSeconds = settings.matchDurationMinutes * 60;
     }
-    playerNames = nameMap;
 
-    if (courtPlayers.isEmpty && benchPlayers.isEmpty && absentPlayers.isEmpty) {
-      if (rosterNumbers.isNotEmpty) { benchPlayers = List.from(rosterNumbers); }
-      else { benchPlayers = List.from(settings.squadNumbers); }
+    // リスト初期化ロジック (IDベース)
+    if (courtPlayerIds.isEmpty && benchPlayerIds.isEmpty && absentPlayerIds.isEmpty) {
+      // 初回ロード時: 全員ベンチへ
+      final allIds = _playerInfoMap.keys.toList();
+      _sortIdList(allIds);
+      benchPlayerIds = List.from(allIds);
     } else {
-      final currentRegistered = {...courtPlayers, ...benchPlayers, ...absentPlayers};
-      final newNumbers = rosterNumbers.where((n) => !currentRegistered.contains(n)).toList();
-      if (newNumbers.isNotEmpty) {
-        benchPlayers.addAll(newNumbers);
-        _sortList(benchPlayers);
+      // 再ロード時: 整合性チェック
+      final currentRegistered = {...courtPlayerIds, ...benchPlayerIds, ...absentPlayerIds};
+      final allIds = _playerInfoMap.keys.toSet();
+
+      final newIds = allIds.difference(currentRegistered).toList();
+      if (newIds.isNotEmpty) {
+        benchPlayerIds.addAll(newIds);
+        _sortIdList(benchPlayerIds);
       }
-      final validSet = rosterNumbers.toSet();
-      courtPlayers.removeWhere((n) => !validSet.contains(n));
-      benchPlayers.removeWhere((n) => !validSet.contains(n));
-      absentPlayers.removeWhere((n) => !validSet.contains(n));
+
+      courtPlayerIds.removeWhere((id) => !allIds.contains(id));
+      benchPlayerIds.removeWhere((id) => !allIds.contains(id));
+      absentPlayerIds.removeWhere((id) => !allIds.contains(id));
     }
 
     notifyListeners();
@@ -202,12 +235,74 @@ class GameRecorderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectPlayer(String number) { if (isMultiSelectMode) { _toggleMultiSelect(number); } else { selectedPlayer = number; notifyListeners(); } }
-  void startMultiSelect(String number) { _toggleMultiSelect(number); }
-  void _toggleMultiSelect(String number) { if (selectedForMove.contains(number)) { selectedForMove.remove(number); if (selectedForMove.isEmpty) isMultiSelectMode = false; } else { selectedForMove.add(number); isMultiSelectMode = true; selectedPlayer = null; } notifyListeners(); }
-  void clearMultiSelect() { selectedForMove.clear(); isMultiSelectMode = false; notifyListeners(); }
-  void moveSelectedPlayers(String toType) { if (selectedForMove.isEmpty) return; courtPlayers.removeWhere((p) => selectedForMove.contains(p)); benchPlayers.removeWhere((p) => selectedForMove.contains(p)); absentPlayers.removeWhere((p) => selectedForMove.contains(p)); if (toType == 'court') courtPlayers.addAll(selectedForMove); if (toType == 'bench') benchPlayers.addAll(selectedForMove); if (toType == 'absent') absentPlayers.addAll(selectedForMove); _sortList(courtPlayers); _sortList(benchPlayers); _sortList(absentPlayers); selectedForMove.clear(); isMultiSelectMode = false; selectedPlayer = null; notifyListeners(); }
-  void _sortList(List<String> list) { list.sort((a, b) { final numA = int.tryParse(a); final numB = int.tryParse(b); if (numA != null && numB != null) { return numA.compareTo(numB); } if (numA != null) return -1; if (numB != null) return 1; return a.compareTo(b); }); }
+  // ★変更: IDを直接受け取る
+  void selectPlayer(String id) {
+    if (!_playerInfoMap.containsKey(id)) return;
+
+    if (isMultiSelectMode) {
+      _toggleMultiSelect(id);
+    } else {
+      selectedPlayerId = id;
+      notifyListeners();
+    }
+  }
+
+  void startMultiSelect(String id) {
+    if (_playerInfoMap.containsKey(id)) _toggleMultiSelect(id);
+  }
+
+  void _toggleMultiSelect(String id) {
+    if (selectedForMoveIds.contains(id)) {
+      selectedForMoveIds.remove(id);
+      if (selectedForMoveIds.isEmpty) isMultiSelectMode = false;
+    } else {
+      selectedForMoveIds.add(id);
+      isMultiSelectMode = true;
+      selectedPlayerId = null;
+    }
+    notifyListeners();
+  }
+
+  void clearMultiSelect() {
+    selectedForMoveIds.clear();
+    isMultiSelectMode = false;
+    notifyListeners();
+  }
+
+  void moveSelectedPlayers(String toType) {
+    if (selectedForMoveIds.isEmpty) return;
+
+    courtPlayerIds.removeWhere((p) => selectedForMoveIds.contains(p));
+    benchPlayerIds.removeWhere((p) => selectedForMoveIds.contains(p));
+    absentPlayerIds.removeWhere((p) => selectedForMoveIds.contains(p));
+
+    if (toType == 'court') courtPlayerIds.addAll(selectedForMoveIds);
+    if (toType == 'bench') benchPlayerIds.addAll(selectedForMoveIds);
+    if (toType == 'absent') absentPlayerIds.addAll(selectedForMoveIds);
+
+    _sortIdList(courtPlayerIds);
+    _sortIdList(benchPlayerIds);
+    _sortIdList(absentPlayerIds);
+
+    selectedForMoveIds.clear();
+    isMultiSelectMode = false;
+    selectedPlayerId = null;
+    notifyListeners();
+  }
+
+  void _sortIdList(List<String> ids) {
+    ids.sort((a, b) {
+      final numAStr = _playerInfoMap[a]?.number;
+      final numBStr = _playerInfoMap[b]?.number;
+      final numA = int.tryParse(numAStr ?? '');
+      final numB = int.tryParse(numBStr ?? '');
+      if (numA != null && numB != null) { return numA.compareTo(numB); }
+      if (numA != null) return -1;
+      if (numB != null) return 1;
+      return (numAStr ?? '').compareTo(numBStr ?? '');
+    });
+  }
+
   void selectAction(UIActionItem action) { selectedUIAction = action; selectedSubAction = null; selectedResult = action.fixedResult; notifyListeners(); }
   void selectResult(ActionResult result) { selectedResult = result; notifyListeners(); }
   void selectSubAction(SubActionDefinition sub) { selectedSubAction = sub; notifyListeners(); }
@@ -223,17 +318,21 @@ class GameRecorderController extends ChangeNotifier {
   void _recordSystemLog(String action) { logs.insert(0, LogEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), matchDate: DateFormat('yyyy-MM-dd').format(_matchDate), opponent: '記録中', gameTime: formattedTime, playerNumber: '', action: action, type: LogType.system, result: ActionResult.none)); DataManager.saveCurrentLogs(logs); notifyListeners(); }
 
   String? confirmLog() {
-    if (selectedPlayer == null || selectedUIAction == null) return null;
+    if (selectedPlayerId == null || selectedUIAction == null) return null;
     if (selectedUIAction!.isSubRequired && selectedUIAction!.subActions.isNotEmpty && selectedSubAction == null) {
       return "詳細項目の選択が必須です";
     }
+
+    final info = _playerInfoMap[selectedPlayerId];
+    final playerNumber = info?.number ?? "";
 
     logs.insert(0, LogEntry(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         matchDate: DateFormat('yyyy-MM-dd').format(_matchDate),
         opponent: '記録中',
         gameTime: formattedTime,
-        playerNumber: selectedPlayer!,
+        playerNumber: playerNumber,
+        playerId: selectedPlayerId,
         action: selectedUIAction!.parentName,
         subAction: selectedSubAction?.name,
         subActionId: selectedSubAction?.id,
@@ -306,13 +405,6 @@ class GameRecorderController extends ChangeNotifier {
       finalOpponentName = "試合-${dateStr} #${newNum}";
     }
 
-    final numField = currentTeam.schema.firstWhere((f) => f.type == FieldType.uniformNumber, orElse: () => currentTeam.schema.first);
-    final numToId = <String, String>{};
-    for (var item in currentTeam.items) {
-      final num = item.data[numField.id]?.toString() ?? "";
-      if (num.isNotEmpty) numToId[num] = item.id;
-    }
-
     final matchId = DateTime.now().millisecondsSinceEpoch.toString();
     final matchData = {
       'id': matchId,
@@ -333,29 +425,27 @@ class GameRecorderController extends ChangeNotifier {
     final logMaps = logs.reversed.map((log) {
       final map = log.toJson();
       map['opponent'] = finalOpponentName;
-      if (log.playerNumber.isNotEmpty && numToId.containsKey(log.playerNumber)) {
-        map['playerId'] = numToId[log.playerNumber];
-      }
       return map;
     }).toList();
 
-    // ★修正: コート(0), ベンチ(1), 欠席(2) すべてをDBに保存
     final List<Map<String, dynamic>> participationList = [];
 
-    // Helper function
-    void addToList(List<String> numbers, int status) {
-      for (var num in numbers) {
-        participationList.add({
-          'player_number': num,
-          'player_id': numToId[num] ?? "",
-          'status': status,
-        });
+    void addToList(List<String> ids, int status) {
+      for (var id in ids) {
+        final info = _playerInfoMap[id];
+        if (info != null) {
+          participationList.add({
+            'player_number': info.number,
+            'player_id': id,
+            'status': status,
+          });
+        }
       }
     }
 
-    addToList(courtPlayers, 0); // コート
-    addToList(benchPlayers, 1); // ベンチ
-    addToList(absentPlayers, 2); // 欠席
+    addToList(courtPlayerIds, 0); // コート
+    addToList(benchPlayerIds, 1); // ベンチ
+    addToList(absentPlayerIds, 2); // 欠席
 
     await _matchDao.insertMatchWithLogs(currentTeam.id, matchData, logMaps, participationList);
     await DataManager.clearCurrentLogs();
@@ -369,8 +459,8 @@ class GameRecorderController extends ChangeNotifier {
     _hasMatchStarted = false;
     _isRunning = false;
     _remainingSeconds = settings.matchDurationMinutes * 60;
-    selectedForMove.clear();
-    selectedPlayer = null;
+    selectedForMoveIds.clear();
+    selectedPlayerId = null;
     selectedUIAction = null;
     selectedSubAction = null;
     selectedResult = ActionResult.none;
@@ -384,14 +474,15 @@ class GameRecorderController extends ChangeNotifier {
     _remainingSeconds = settings.matchDurationMinutes * 60;
     _hasMatchStarted = false;
     _isRunning = false;
-    courtPlayers.clear();
-    benchPlayers.clear();
-    absentPlayers.clear();
+
+    courtPlayerIds.clear();
+    benchPlayerIds.clear();
+    absentPlayerIds.clear();
     _opponentName = ""; _opponentId = null; _venueName = ""; _venueId = null;
 
     await loadData();
-    selectedForMove.clear();
-    selectedPlayer = null;
+    selectedForMoveIds.clear();
+    selectedPlayerId = null;
     selectedUIAction = null;
     selectedSubAction = null;
     selectedResult = ActionResult.none;
