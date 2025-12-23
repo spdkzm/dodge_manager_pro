@@ -23,13 +23,11 @@ class _LayoutConfig {
   static const double numberNameGap = 4;
   static const double columnWidth = 400;
 
-  // ★追加: ログ1行あたりの推定高さ (パディング上下 + フォントサイズ + Dividerなど)
-  // 実際の実装に合わせて微調整してください (例: 32.0 〜 40.0 程度)
+  // ログ1行あたりの推定高さ
   static const double rowHeight = 30.0;
 
-  // ★追加: カラム上下の矢印やパディングの合計高さ
-  // (上矢印エリア約25px + 下矢印エリア約25px + 上下パディングなど)
-  static const double columnHeaderFooterHeight = 60.0;
+  // 矢印削除に伴い、上下の予約スペースを0にする
+  static const double columnHeaderFooterHeight = 0.0;
 }
 
 /// ログタブのウィジェット
@@ -61,14 +59,14 @@ class AnalysisLogTab extends ConsumerWidget {
     if (matchRecord.result != MatchResult.none) {
       allItems.add('RESULT_FOOTER');
     }
-// ★変更: LayoutBuilderで高さを取得して計算する
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 1. 利用可能な高さを取得 (親のpadding等を考慮する場合はここで引く)
+        // 1. 利用可能な高さを取得
         // ListViewのpaddingが上下16ずつあるので、32を引いています
         final double availableHeight = constraints.maxHeight - 32.0;
 
-        // 2. ログ表示に使える高さを計算 (矢印などの固定スペースを引く)
+        // 2. ログ表示に使える高さを計算
         final double contentHeight = availableHeight - _LayoutConfig.columnHeaderFooterHeight;
 
         // 3. 行数を計算 (高さ ÷ 1行の高さ)
@@ -90,7 +88,6 @@ class AnalysisLogTab extends ConsumerWidget {
           itemCount: chunks.length,
           itemBuilder: (context, index) {
             final items = chunks[index];
-            final isFirst = index == 0;
             final isLast = index == chunks.length - 1;
 
             return Row(
@@ -104,8 +101,6 @@ class AnalysisLogTab extends ConsumerWidget {
                     matchRecord,
                     nameMap,
                     items,
-                    isFirstColumn: isFirst,
-                    isLastColumn: isLast,
                   ),
                 ),
                 if (!isLast)
@@ -123,23 +118,13 @@ class AnalysisLogTab extends ConsumerWidget {
       WidgetRef ref,
       MatchRecord matchRecord,
       Map<String, String> nameMap,
-      List<dynamic> items, {
-        required bool isFirstColumn,
-        required bool isLastColumn,
-      }) {
+      List<dynamic> items,
+      ) {
     return Column(
       mainAxisSize: MainAxisSize.min, // コンテンツの高さに合わせる
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 前の列からの続きを示す矢印（最初の列以外）
-        if (!isFirstColumn) ...[
-          Container(
-            height: 20,
-            alignment: Alignment.center,
-            child: const Icon(Icons.arrow_downward, size: 16, color: Colors.grey),
-          ),
-          const Divider(height: 1),
-        ],
+        // 矢印表示ブロックを削除
 
         // アイテムリスト
         ...items.map((item) {
@@ -156,15 +141,7 @@ class AnalysisLogTab extends ConsumerWidget {
           return const SizedBox.shrink();
         }),
 
-        // 次の列へ続く矢印（最後の列以外）
-        if (!isLastColumn) ...[
-          const SizedBox(height: 4),
-          Container(
-            height: 20,
-            alignment: Alignment.center,
-            child: const Icon(Icons.arrow_downward, size: 16, color: Colors.grey),
-          ),
-        ],
+        // 下部の矢印表示ブロックも削除
       ],
     );
   }
@@ -275,7 +252,7 @@ class AnalysisLogTab extends ConsumerWidget {
   }
 }
 
-/// ログ1行分のレイアウト定義（Row構造の一元化）
+/// ログ1行分のレイアウト定義
 class _LogEntryRow extends StatelessWidget {
   final VoidCallback onTap;
   final Color? backgroundColor;
@@ -346,9 +323,7 @@ class _LogEntryRow extends StatelessWidget {
   }
 }
 
-// --- 以下、showEditLogDialog と showResultEditDialog は変更がないためそのまま利用してください ---
-
-// --- 公開用ダイアログ関数 (onUpdate引数を追加) ---
+// --- 公開用ダイアログ関数 (ここから復元) ---
 
 void showEditLogDialog(BuildContext context, WidgetRef ref, String matchId,
     {LogEntry? log, required VoidCallback onUpdate}) {
@@ -735,4 +710,3 @@ void showResultEditDialog(BuildContext context, WidgetRef ref, MatchRecord recor
         });
       });
 }
-

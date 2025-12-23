@@ -19,7 +19,7 @@ import '../widgets/analysis_log_tab.dart';
 import '../widgets/analysis_info_tab.dart';
 import '../widgets/analysis_members_tab.dart';
 import '../widgets/analysis_print_view.dart';
-import '../widgets/analysis_log_print_view.dart';
+// AnalysisLogPrintView は使用しないため import 削除
 import '../widgets/action_detail_column.dart'; // 詳細印刷用
 
 class AnalysisScreen extends ConsumerStatefulWidget {
@@ -158,25 +158,22 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       }
     }
 
-    // ログタブ表示中はこれまで通り即ログ印刷 (ここは画像キャプチャのまま)
+    // ログタブ表示中は PDFネイティブ出力 (★修正)
     if (isLogTab) {
-      // 既存のログ印刷ロジック (AnalysisLogPrintView を使用)
       try {
-        await Future.delayed(const Duration(milliseconds: 100));
-
-        final boundary = _printKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-        if (boundary == null) {
-          throw Exception("印刷用データの生成に失敗しました");
+        final Map<String, String> nameMap = {};
+        if (stats != null) {
+          for (var p in stats) {
+            nameMap[p.playerNumber] = p.playerName;
+          }
         }
 
-        final image = await boundary.toImage(pixelRatio: 2.0);
-        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        final pngBytes = byteData!.buffer.asUint8List();
-
-        // ログ印刷は1枚画像出力のメソッドを再利用するか、printMultipleImagesに1枚だけ渡す
-        await PdfExportService().printMultipleImages(
-          baseFileName: "${currentTeam.name}_ログ",
-          images: [pngBytes],
+        await PdfExportService().printMatchLogsNative(
+          baseFileName: "${currentTeam.name}_ログ_${matchRecord!.opponent}",
+          printRequests: [{
+            'record': matchRecord,
+            'nameMap': nameMap,
+          }],
         );
 
       } catch (e) {
@@ -239,7 +236,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         return;
       }
 
-      // 'stats' の場合は、画像キャプチャではなくネイティブ表生成を行う (★修正箇所)
+      // 'stats' の場合はネイティブ表生成
       if (selectedType == 'stats' && stats != null) {
         try {
           // 印刷対象（試合数0以外）にフィルタリング、およびソート
@@ -368,15 +365,17 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     }
   }
 
-  // 日計の全ログを連続印刷する処理
+  // 日計の全ログを連続印刷する処理 (★修正: ネイティブPDF化)
   Future<void> _handlePrintDailyLogs(String teamName) async {
     try {
       if (_selectedYear == null || _selectedMonth == null || _selectedDay == null) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("ログ画像を生成中...しばらくお待ちください")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("PDFを生成中...")));
+
+      final controller = ref.read(analysisControllerProvider.notifier);
 
       // 1. その日の全試合レコードを取得
-      final records = await ref.read(analysisControllerProvider.notifier).fetchMatchRecordsByDate(
+      final records = await controller.fetchMatchRecordsByDate(
           _selectedYear!, _selectedMonth!, _selectedDay!
       );
 
@@ -385,53 +384,32 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         return;
       }
 
-      final List<Uint8List> images = [];
-
-      // 2. 1試合ずつ表示を切り替えてキャプチャ
-      for (final record in records) {
-        if (!mounted) break;
-        setState(() {
-          _printingMatchRecord = record;
-        });
-
-        // 描画完了を待つ
-        await Future.delayed(const Duration(milliseconds: 150));
-
-        final boundary = _printKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-        if (boundary != null) {
-          final image = await boundary.toImage(pixelRatio: 2.0);
-          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-          if (byteData != null) {
-            images.add(byteData.buffer.asUint8List());
-          }
-        }
+      // 2. その日の選手Stats（名前解決用）を取得
+      // ログだけだと名前が取れない場合があるので、その日時点の登録名簿(Stats)を使うのが確実
+      final dailyStats = await controller.fetchStatsForExport(
+        year: _selectedYear, month: _selectedMonth, day: _selectedDay,
+      );
+      final Map<String, String> nameMap = {};
+      for (var p in dailyStats) {
+        nameMap[p.playerNumber] = p.playerName;
       }
 
-      // 3. 表示を元に戻す
-      if (mounted) {
-        setState(() {
-          _printingMatchRecord = null;
-        });
-      }
-
-      if (images.isEmpty) {
-        throw Exception("画像の生成に失敗しました");
-      }
+      // 3. 印刷用リクエストを作成
+      final List<Map<String, dynamic>> requests = records.map((r) => {
+        'record': r,
+        'nameMap': nameMap,
+      }).toList();
 
       // 4. PDF生成サービスへ
       final dateStr = "${_selectedYear}年${_selectedMonth}月${_selectedDay}日";
-      await PdfExportService().printMultipleImages(
+      await PdfExportService().printMatchLogsNative(
         baseFileName: "${teamName}_試合ログ_$dateStr",
-        images: images,
+        printRequests: requests,
       );
 
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("印刷エラー: $e"), backgroundColor: Colors.red));
-        // エラー時も表示状態をリセット
-        setState(() {
-          _printingMatchRecord = null;
-        });
       }
     }
   }
@@ -589,28 +567,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                         ),
                       ),
                     )
-                    // 2. 日計ログ一括印刷
-                        : _printingMatchRecord != null
-                        ? (asyncStats.hasValue
-                        ? AnalysisLogPrintView(
-                      matchRecord: _printingMatchRecord!,
-                      playerStats: asyncStats.value!,
-                      teamName: currentTeam?.name ?? "",
-                      periodLabel: _formatMatchLabel(_printingMatchRecord!),
-                    )
-                        : const SizedBox())
-                    // 3. 通常のログ印刷 (★修正: 集計表(AnalysisPrintView)は削除し、ログ印刷の場合のみ画像化する)
-                        : (isLogTab
-                        ? (matchRecord != null && asyncStats.hasValue
-                        ? AnalysisLogPrintView(
-                      matchRecord: matchRecord,
-                      playerStats: asyncStats.value!,
-                      teamName: currentTeam?.name ?? "",
-                      periodLabel: _getCurrentPeriodLabel(),
-                    )
-                        : const SizedBox())
-                    // 集計表の画像生成は行わないため、それ以外は空ウィジェット
-                        : const SizedBox()),
+                    // 2. ログ印刷や日計ログ印刷はPDFネイティブ化されたため、ここでの画像生成は不要
+                    // よって空ウィジェットを返す
+                        : const SizedBox(),
                   ),
                 ),
               ),
