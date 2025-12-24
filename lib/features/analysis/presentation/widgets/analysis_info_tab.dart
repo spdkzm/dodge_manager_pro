@@ -10,7 +10,7 @@ import '../../../team_mgmt/domain/roster_item.dart';
 
 class AnalysisInfoTab extends ConsumerStatefulWidget {
   final String matchId;
-  final VoidCallback onUpdate; // ★追加: 更新完了時のコールバック
+  final VoidCallback onUpdate; // 更新完了時のコールバック
 
   const AnalysisInfoTab({
     super.key,
@@ -30,12 +30,14 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   String? _venueId;
   DateTime _editingDate = DateTime.now();
   MatchType _editingMatchType = MatchType.practiceMatch;
-  String? _lastLoadedMatchId; // ★修正: 最後にデータをロードして成功したMatch IDを追加
+  String? _lastLoadedMatchId;
+
+  // ★追加: 記録日時（内部ソート用）の表示・編集用
+  DateTime? _createdAt;
 
   @override
   void initState() {
     super.initState();
-    // initStateではref.readで初期ロードを試みる
     _loadMatchData(readOnly: true);
   }
 
@@ -43,8 +45,6 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   void didUpdateWidget(covariant AnalysisInfoTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matchId != widget.matchId) {
-      // matchId が変わったら、最後にロードしたIDをリセットし、_loadMatchDataを実行
-      // buildメソッドのwatchが新しいデータの到着を待って更新を行う
       _lastLoadedMatchId = null;
       _loadMatchData(readOnly: true);
     }
@@ -58,11 +58,9 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     super.dispose();
   }
 
-  // ★修正: readOnly引数を追加し、setStateを条件付きで実行するように変更
   void _loadMatchData({bool readOnly = false}) {
     final matchRecord = ref.read(selectedMatchRecordProvider);
 
-    // 現在のmatchIdに対応するデータが来ており、かつ、まだロードされていない場合のみ処理を実行
     if (matchRecord != null && matchRecord.id == widget.matchId && _lastLoadedMatchId != widget.matchId) {
       _opponentCtrl.text = matchRecord.opponent;
       _venueCtrl.text = matchRecord.venueName ?? "";
@@ -72,18 +70,23 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
 
       final newEditingDate = DateTime.tryParse(matchRecord.date.replaceAll('/', '-')) ?? DateTime.now();
 
-      // readOnlyでない（watch経由の正式な更新）場合、または初期ロード（initState）の場合にsetState
+      // createdAtのパース
+      DateTime? parsedCreatedAt;
+      if (matchRecord.createdAt != null) {
+        parsedCreatedAt = DateTime.tryParse(matchRecord.createdAt!);
+      }
+
       if (!readOnly) {
-        // buildから呼ばれた正式なデータ更新時にはsetStateで画面を再描画する
         setState(() {
           _editingDate = newEditingDate;
           _editingMatchType = matchRecord.matchType;
-          _lastLoadedMatchId = widget.matchId; // 成功したIDを記録
+          _createdAt = parsedCreatedAt;
+          _lastLoadedMatchId = widget.matchId;
         });
       } else {
-        // initState/didUpdateWidgetからの呼び出しの場合、setStateは不要（または安全ではない）
         _editingDate = newEditingDate;
         _editingMatchType = matchRecord.matchType;
+        _createdAt = parsedCreatedAt;
         _lastLoadedMatchId = widget.matchId;
       }
     }
@@ -101,10 +104,54 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
       note: _noteCtrl.text,
     );
 
-    // ★変更: 親画面の再ロード処理を呼び出す
     widget.onUpdate();
 
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("基本情報を更新しました")));
+  }
+
+  // ★追加: 記録日時の編集処理
+  Future<void> _editCreatedAt() async {
+    if (_createdAt == null) return;
+
+    // 日付選択
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _createdAt!,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2030),
+      helpText: "記録日時（日付）の変更",
+    );
+    if (pickedDate == null) return;
+
+    // 時間選択
+    if (!mounted) return;
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_createdAt!),
+      helpText: "記録日時（時間）の変更",
+    );
+    if (pickedTime == null) return;
+
+    final newDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+        _createdAt!.second // 秒は維持しておく
+    );
+
+    await ref.read(analysisControllerProvider.notifier).updateMatchCreationTime(
+      widget.matchId,
+      newDateTime,
+    );
+
+    // 親のリストを更新
+    widget.onUpdate();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("記録日時を変更しました（日計リストの並び順に影響します）")));
+    }
   }
 
   String _getMatchTypeName(MatchType type) { switch (type) { case MatchType.official: return "大会/公式戦"; case MatchType.practiceMatch: return "練習試合"; case MatchType.practice: return "練習"; } }
@@ -113,20 +160,13 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   Widget build(BuildContext context) {
     final store = ref.watch(teamStoreProvider);
     final team = store.currentTeam;
-    // ★修正: selectedMatchRecordProvider を watch する
     final matchRecord = ref.watch(selectedMatchRecordProvider);
 
-    // Provider のデータが更新されたときに、現在のウィジェットの matchId と一致するかをチェックし、
-    // まだロードされていない場合はロード処理を実行する
     if (matchRecord != null && matchRecord.id == widget.matchId && _lastLoadedMatchId != widget.matchId) {
-      // build完了後のマイクロタスクで_loadMatchDataを呼び出す（_loadMatchData内でsetStateが呼ばれるため）
       Future.microtask(() => _loadMatchData());
-      // この時点で matchRecord を利用すると古いデータが表示される可能性があるため、matchRecordが null/古い状態であればローディングを表示
     }
 
-    // 最初にロードが完了するまでローディングを表示、またはデータがない場合は何も表示しない
     if (team == null || matchRecord == null || _lastLoadedMatchId != widget.matchId) {
-      // 試合IDは来ているがデータがまだ来ていない、または古いIDの場合
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -159,7 +199,38 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
                   const SizedBox(height: 8),
                   TextField( controller: _noteCtrl, decoration: const InputDecoration( labelText: "備考", border: OutlineInputBorder(), alignLabelWithHint: true, ), maxLines: 3, ),
                   const SizedBox(height: 12),
-                  Align( alignment: Alignment.centerRight, child: ElevatedButton.icon( onPressed: _saveMatchInfo, icon: const Icon(Icons.save, size: 16), label: const Text("基本情報を更新"), style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo.shade50), ), )
+                  Align( alignment: Alignment.centerRight, child: ElevatedButton.icon( onPressed: _saveMatchInfo, icon: const Icon(Icons.save, size: 16), label: const Text("基本情報を更新"), style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo.shade50), ), ),
+
+                  // ★追加: 記録日時の表示・編集エリア
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 10),
+                  const Text("内部管理情報", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("記録日時 (リスト並び順)", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 2),
+                          Text(
+                            _createdAt != null ? DateFormat('yyyy/MM/dd HH:mm:ss').format(_createdAt!) : "--",
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                        ],
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _editCreatedAt,
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text("編集"),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

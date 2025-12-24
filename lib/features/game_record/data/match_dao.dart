@@ -160,6 +160,14 @@ class MatchDao {
     }, where: 'id = ?', whereArgs: [matchId]);
   }
 
+  /// ★追加: 内部記録日時（created_at）のみ更新（ソート順序制御用）
+  Future<void> updateMatchCreatedAt(String matchId, String newCreatedAt) async {
+    final db = await _dbHelper.database;
+    await db.update('matches', {
+      'created_at': newCreatedAt,
+    }, where: 'id = ?', whereArgs: [matchId]);
+  }
+
   // --------------------------------------------------------
 
   Future<void> updateMatchParticipations(String matchId, List<Map<String, dynamic>> members) async {
@@ -235,7 +243,6 @@ class MatchDao {
     ''', [actionName, teamId]);
   }
 
-  /// ★追加: 指定したサブアクションIDがログで使用されているか確認
   Future<bool> isSubActionUsed(String teamId, String subActionId) async {
     final db = await _dbHelper.database;
     final result = await db.rawQuery('''
@@ -247,7 +254,6 @@ class MatchDao {
     return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
 
-  /// ★追加: 指定したサブアクションIDのログを一括削除
   Future<void> deleteLogsBySubActionId(String teamId, String subActionId) async {
     final db = await _dbHelper.database;
     await db.rawDelete('''
@@ -258,7 +264,6 @@ class MatchDao {
     ''', [subActionId, teamId]);
   }
 
-  /// ★追加: 指定したサブアクションIDのログの名称を一括更新
   Future<void> updateSubActionNameById(String teamId, String subActionId, String newName) async {
     final db = await _dbHelper.database;
     await db.rawUpdate('''
@@ -271,12 +276,11 @@ class MatchDao {
   }
 
   /// ログの置換（マイグレーション）
-  /// 条件に一致するログのアクション、結果、詳細項目を一括更新する
   Future<void> migrateActionLogs({
     required String teamId,
     required String targetAction,
-    required int? targetResult, // nullなら結果問わず
-    required String? targetSubAction, // nullならサブ問わず
+    required int? targetResult,
+    required String? targetSubAction,
     required String newAction,
     required int newResult,
     required String? newSubAction,
@@ -284,7 +288,6 @@ class MatchDao {
   }) async {
     final db = await _dbHelper.database;
 
-    // 条件構築
     List<dynamic> args = [newAction, newResult, newSubAction, newSubActionId];
     String whereClause = "action = ?";
     args.add(targetAction);
@@ -299,7 +302,6 @@ class MatchDao {
       args.add(targetSubAction);
     }
 
-    // チームIDでの絞り込み
     whereClause += " AND match_id IN (SELECT id FROM matches WHERE team_id = ?)";
     args.add(teamId);
 

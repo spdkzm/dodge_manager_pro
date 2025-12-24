@@ -48,7 +48,6 @@ class UIActionItem with _$UIActionItem {
     required String name,
     required String parentName,
     required ActionResult fixedResult,
-    // ★修正: 文字列ではなく定義オブジェクトを持つ
     required List<SubActionDefinition> subActions,
     required bool isSubRequired,
     @Default(false) bool hasSuccess,
@@ -67,7 +66,6 @@ class LogEntry with _$LogEntry {
     String? playerId,
     required String action,
     String? subAction,
-    // ★追加: ID
     String? subActionId,
     @LogTypeConverter() @Default(LogType.action) LogType type,
     @ActionResultConverter() @Default(ActionResult.none) ActionResult result,
@@ -93,8 +91,9 @@ class MatchRecord with _$MatchRecord {
     @Default(false) bool isExtraTime,
     int? extraScoreOwn,
     int? extraScoreOpponent,
-    // ★追加: 備考
     String? note,
+    // ★追加: 内部記録日時（ソート順序制御用）
+    String? createdAt,
   }) = _MatchRecord;
 
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);

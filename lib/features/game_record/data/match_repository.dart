@@ -103,6 +103,11 @@ class MatchRepository {
     );
   }
 
+  /// ★追加: 内部記録日時のみ更新
+  Future<void> updateMatchCreatedAt(String matchId, String newCreatedAt) async {
+    await _dao.updateMatchCreatedAt(matchId, newCreatedAt);
+  }
+
   Future<void> updateMatchParticipations(String matchId, List<Map<String, dynamic>> members) async {
     await _dao.updateMatchParticipations(matchId, members);
   }

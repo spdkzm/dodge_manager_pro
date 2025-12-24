@@ -19,8 +19,7 @@ final _privateConstructorUsedError = UnsupportedError(
 mixin _$UIActionItem {
   String get name => throw _privateConstructorUsedError;
   String get parentName => throw _privateConstructorUsedError;
-  ActionResult get fixedResult =>
-      throw _privateConstructorUsedError; // ★修正: 文字列ではなく定義オブジェクトを持つ
+  ActionResult get fixedResult => throw _privateConstructorUsedError;
   List<SubActionDefinition> get subActions =>
       throw _privateConstructorUsedError;
   bool get isSubRequired => throw _privateConstructorUsedError;
@@ -207,9 +206,7 @@ class _$UIActionItemImpl implements _UIActionItem {
   final String parentName;
   @override
   final ActionResult fixedResult;
-  // ★修正: 文字列ではなく定義オブジェクトを持つ
   final List<SubActionDefinition> _subActions;
-  // ★修正: 文字列ではなく定義オブジェクトを持つ
   @override
   List<SubActionDefinition> get subActions {
     if (_subActions is EqualUnmodifiableListView) return _subActions;
@@ -290,7 +287,7 @@ abstract class _UIActionItem implements UIActionItem {
   @override
   String get parentName;
   @override
-  ActionResult get fixedResult; // ★修正: 文字列ではなく定義オブジェクトを持つ
+  ActionResult get fixedResult;
   @override
   List<SubActionDefinition> get subActions;
   @override
@@ -329,8 +326,8 @@ mixin _$LogEntry {
   String get action => throw _privateConstructorUsedError;
   set action(String value) => throw _privateConstructorUsedError;
   String? get subAction => throw _privateConstructorUsedError;
-  set subAction(String? value) => throw _privateConstructorUsedError; // ★追加: ID
-  String? get subActionId => throw _privateConstructorUsedError; // ★追加: ID
+  set subAction(String? value) => throw _privateConstructorUsedError;
+  String? get subActionId => throw _privateConstructorUsedError;
   set subActionId(String? value) => throw _privateConstructorUsedError;
   @LogTypeConverter()
   LogType get type => throw _privateConstructorUsedError;
@@ -587,7 +584,6 @@ class _$LogEntryImpl implements _LogEntry {
   String action;
   @override
   String? subAction;
-  // ★追加: ID
   @override
   String? subActionId;
   @override
@@ -659,9 +655,9 @@ abstract class _LogEntry implements LogEntry {
   set action(String value);
   @override
   String? get subAction;
-  set subAction(String? value); // ★追加: ID
+  set subAction(String? value);
   @override
-  String? get subActionId; // ★追加: ID
+  String? get subActionId;
   set subActionId(String? value);
   @override
   @LogTypeConverter()
@@ -703,8 +699,10 @@ mixin _$MatchRecord {
   int? get scoreOpponent => throw _privateConstructorUsedError;
   bool get isExtraTime => throw _privateConstructorUsedError;
   int? get extraScoreOwn => throw _privateConstructorUsedError;
-  int? get extraScoreOpponent => throw _privateConstructorUsedError; // ★追加: 備考
-  String? get note => throw _privateConstructorUsedError;
+  int? get extraScoreOpponent => throw _privateConstructorUsedError;
+  String? get note =>
+      throw _privateConstructorUsedError; // ★追加: 内部記録日時（ソート順序制御用）
+  String? get createdAt => throw _privateConstructorUsedError;
 
   /// Serializes this MatchRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -739,6 +737,7 @@ abstract class $MatchRecordCopyWith<$Res> {
     int? extraScoreOwn,
     int? extraScoreOpponent,
     String? note,
+    String? createdAt,
   });
 }
 
@@ -772,6 +771,7 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
     Object? extraScoreOwn = freezed,
     Object? extraScoreOpponent = freezed,
     Object? note = freezed,
+    Object? createdAt = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -835,6 +835,10 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
                 ? _value.note
                 : note // ignore: cast_nullable_to_non_nullable
                       as String?,
+            createdAt: freezed == createdAt
+                ? _value.createdAt
+                : createdAt // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -866,6 +870,7 @@ abstract class _$$MatchRecordImplCopyWith<$Res>
     int? extraScoreOwn,
     int? extraScoreOpponent,
     String? note,
+    String? createdAt,
   });
 }
 
@@ -898,6 +903,7 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
     Object? extraScoreOwn = freezed,
     Object? extraScoreOpponent = freezed,
     Object? note = freezed,
+    Object? createdAt = freezed,
   }) {
     return _then(
       _$MatchRecordImpl(
@@ -961,6 +967,10 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
             ? _value.note
             : note // ignore: cast_nullable_to_non_nullable
                   as String?,
+        createdAt: freezed == createdAt
+            ? _value.createdAt
+            : createdAt // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -985,6 +995,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     this.extraScoreOwn,
     this.extraScoreOpponent,
     this.note,
+    this.createdAt,
   }) : _logs = logs;
 
   factory _$MatchRecordImpl.fromJson(Map<String, dynamic> json) =>
@@ -1029,13 +1040,15 @@ class _$MatchRecordImpl implements _MatchRecord {
   final int? extraScoreOwn;
   @override
   final int? extraScoreOpponent;
-  // ★追加: 備考
   @override
   final String? note;
+  // ★追加: 内部記録日時（ソート順序制御用）
+  @override
+  final String? createdAt;
 
   @override
   String toString() {
-    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent, note: $note)';
+    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent, note: $note, createdAt: $createdAt)';
   }
 
   @override
@@ -1066,7 +1079,9 @@ class _$MatchRecordImpl implements _MatchRecord {
                 other.extraScoreOwn == extraScoreOwn) &&
             (identical(other.extraScoreOpponent, extraScoreOpponent) ||
                 other.extraScoreOpponent == extraScoreOpponent) &&
-            (identical(other.note, note) || other.note == note));
+            (identical(other.note, note) || other.note == note) &&
+            (identical(other.createdAt, createdAt) ||
+                other.createdAt == createdAt));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1088,6 +1103,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     extraScoreOwn,
     extraScoreOpponent,
     note,
+    createdAt,
   );
 
   /// Create a copy of MatchRecord
@@ -1121,6 +1137,7 @@ abstract class _MatchRecord implements MatchRecord {
     final int? extraScoreOwn,
     final int? extraScoreOpponent,
     final String? note,
+    final String? createdAt,
   }) = _$MatchRecordImpl;
 
   factory _MatchRecord.fromJson(Map<String, dynamic> json) =
@@ -1155,9 +1172,11 @@ abstract class _MatchRecord implements MatchRecord {
   @override
   int? get extraScoreOwn;
   @override
-  int? get extraScoreOpponent; // ★追加: 備考
+  int? get extraScoreOpponent;
   @override
-  String? get note;
+  String? get note; // ★追加: 内部記録日時（ソート順序制御用）
+  @override
+  String? get createdAt;
 
   /// Create a copy of MatchRecord
   /// with the given fields replaced by the non-null parameter values.
