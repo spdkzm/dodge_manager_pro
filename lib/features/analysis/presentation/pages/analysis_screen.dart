@@ -1,6 +1,6 @@
 // lib/features/analysis/presentation/pages/analysis_screen.dart
 import 'dart:ui' as ui;
-import 'dart:typed_data'; // Uint8List用
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,8 +10,8 @@ import '../../application/analysis_controller.dart';
 import '../../../game_record/domain/models.dart';
 import '../../../team_mgmt/application/team_store.dart';
 
-import '../../../settings/domain/action_definition.dart'; // ActionDefinition用
-import '../../domain/player_stats.dart'; // PlayerStats, ActionStats用
+import '../../../settings/domain/action_definition.dart';
+import '../../domain/player_stats.dart';
 import '../../data/pdf_export_service.dart';
 
 import '../widgets/analysis_stats_tab.dart';
@@ -19,8 +19,7 @@ import '../widgets/analysis_log_tab.dart';
 import '../widgets/analysis_info_tab.dart';
 import '../widgets/analysis_members_tab.dart';
 import '../widgets/analysis_print_view.dart';
-// AnalysisLogPrintView は使用しないため import 削除
-import '../widgets/action_detail_column.dart'; // 詳細印刷用
+import '../widgets/action_detail_column.dart';
 
 class AnalysisScreen extends ConsumerStatefulWidget {
   const AnalysisScreen({super.key});
@@ -39,10 +38,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   List<MatchType> _selectedMatchTypes = [];
   final GlobalKey _printKey = GlobalKey();
 
-  // 連続印刷中に表示する用の一時的なMatchRecord (ログ印刷用)
   MatchRecord? _printingMatchRecord;
 
-  // 全選手詳細一括印刷用の状態管理
   bool _isPrintingAllPlayers = false;
   PlayerStats? _currentPrintingPlayer;
   MapEntry<ActionDefinition, ActionStats?>? _currentPrintingEntry;
@@ -50,12 +47,10 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   @override
   void initState() {
     super.initState();
-    // タブ数は4つ (集計, ログ, 試合情報, 出場メンバー)
     _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadActionOrder();
     });
-    // タブ切り替え時（スワイプ含む）にUIを再描画してプリントボタンの状態を更新する
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {});
@@ -92,7 +87,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     );
   }
 
-  // 試合情報のラベル生成ロジックを共通化
   String _formatMatchLabel(MatchRecord record) {
     String dateStr = record.date;
     try {
@@ -126,7 +120,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
   }
 
   Future<void> _handlePrint() async {
-    if (_isPrintingAllPlayers) return; // 処理中なら何もしない
+    if (_isPrintingAllPlayers) return;
 
     final store = ref.read(teamStoreProvider);
     final currentTeam = store.currentTeam;
@@ -135,7 +129,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
     final isLogTab = _selectedMatchId != null && _tabController.index == 1;
     final matchRecord = ref.read(selectedMatchRecordProvider);
-    // 日計表示中かどうか
     final isDailyView = _selectedYear != null && _selectedMonth != null && _selectedDay != null && _selectedMatchId == null;
 
     if (currentTeam == null) {
@@ -143,14 +136,12 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       return;
     }
 
-    // ログタブでデータがない場合
     if (isLogTab) {
       if (matchRecord == null || matchRecord.logs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するログがありません")));
         return;
       }
     }
-    // 集計タブでデータがない場合
     else {
       if (stats == null || stats.isEmpty || !stats.any((s) => s.matchesPlayed > 0)) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("印刷するデータがありません")));
@@ -158,7 +149,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       }
     }
 
-    // ログタブ表示中は PDFネイティブ出力 (★修正)
     if (isLogTab) {
       try {
         final Map<String, String> nameMap = {};
@@ -182,7 +172,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         }
       }
     }
-    // それ以外（集計タブ、または日計ビュー）の場合はメニューを表示
     else {
       final List<SimpleDialogOption> options = [
         SimpleDialogOption(
@@ -201,7 +190,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         ),
       ];
 
-      // 日計の場合はログ一括印刷も追加
       if (isDailyView) {
         options.add(
           SimpleDialogOption(
@@ -236,10 +224,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         return;
       }
 
-      // 'stats' の場合はネイティブ表生成
       if (selectedType == 'stats' && stats != null) {
         try {
-          // 印刷対象（試合数0以外）にフィルタリング、およびソート
           final filteredStats = stats.where((s) => s.matchesPlayed > 0).toList();
           filteredStats.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
 
@@ -265,7 +251,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     }
   }
 
-  // 全選手の詳細を一括印刷する処理
   Future<void> _handlePrintAllPlayerDetails(List<PlayerStats> stats) async {
     try {
       setState(() {
@@ -278,9 +263,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         );
       }
 
-      // 試合数が0の選手を除外
       final targetPlayers = stats.where((p) => p.matchesPlayed > 0).toList();
-      // 背番号順などでソート
       targetPlayers.sort((a, b) => (int.tryParse(a.playerNumber) ?? 999).compareTo(int.tryParse(b.playerNumber) ?? 999));
 
       if (targetPlayers.isEmpty) {
@@ -293,7 +276,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
       final definitions = ref.read(analysisControllerProvider.notifier).actionDefinitions;
       final List<Map<String, dynamic>> allPlayersData = [];
 
-      // 1人ずつループ
       for (final player in targetPlayers) {
         if (!mounted) break;
 
@@ -303,7 +285,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
         final List<Uint8List> playerImages = [];
 
-        // 印刷対象のアクションを抽出（実績あり かつ サブアクション定義あり）
         final printingActions = definitions.map((def) {
           final stat = player.actions[def.name];
           return MapEntry(def, stat);
@@ -313,7 +294,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
           return (stat != null && stat.totalCount > 0) && def.subActions.isNotEmpty;
         }).toList();
 
-        // アクションごとにループしてキャプチャ
         for (final entry in printingActions) {
           if (!mounted) break;
 
@@ -321,12 +301,10 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
             _currentPrintingEntry = entry;
           });
 
-          // 描画完了を待機
           await Future.delayed(const Duration(milliseconds: 100));
 
           final boundary = _printKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
           if (boundary != null) {
-            // 高解像度でキャプチャ
             final image = await boundary.toImage(pixelRatio: 3.0);
             final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
             if (byteData != null) {
@@ -365,7 +343,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     }
   }
 
-  // 日計の全ログを連続印刷する処理 (★修正: ネイティブPDF化)
   Future<void> _handlePrintDailyLogs(String teamName) async {
     try {
       if (_selectedYear == null || _selectedMonth == null || _selectedDay == null) return;
@@ -374,7 +351,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
       final controller = ref.read(analysisControllerProvider.notifier);
 
-      // 1. その日の全試合レコードを取得
       final records = await controller.fetchMatchRecordsByDate(
           _selectedYear!, _selectedMonth!, _selectedDay!
       );
@@ -384,8 +360,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         return;
       }
 
-      // 2. その日の選手Stats（名前解決用）を取得
-      // ログだけだと名前が取れない場合があるので、その日時点の登録名簿(Stats)を使うのが確実
       final dailyStats = await controller.fetchStatsForExport(
         year: _selectedYear, month: _selectedMonth, day: _selectedDay,
       );
@@ -394,13 +368,11 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
         nameMap[p.playerNumber] = p.playerName;
       }
 
-      // 3. 印刷用リクエストを作成
       final List<Map<String, dynamic>> requests = records.map((r) => {
         'record': r,
         'nameMap': nameMap,
       }).toList();
 
-      // 4. PDF生成サービスへ
       final dateStr = "${_selectedYear}年${_selectedMonth}月${_selectedDay}日";
       await PdfExportService().printMatchLogsNative(
         baseFileName: "${teamName}_試合ログ_$dateStr",
@@ -419,34 +391,67 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
     final tempSelected = List<MatchType>.from(_selectedMatchTypes.isEmpty ? types : _selectedMatchTypes);
     showDialog(context: context, builder: (ctx) {
       return StatefulBuilder(builder: (context, setStateDialog) {
-        return AlertDialog(title: const Text("集計フィルタ"), content: Column(mainAxisSize: MainAxisSize.min, children: types.map((type) {
-          final isChecked = tempSelected.contains(type);
-          return CheckboxListTile(title: Text(_getMatchTypeName(type)), value: isChecked, onChanged: (val) {
-            setStateDialog(() {
-              if (val == true) {
-                tempSelected.add(type);
-              } else {
-                tempSelected.remove(type);
-              }
-            });
-          });
-        }).toList()), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")), ElevatedButton(onPressed: () {
-          setState(() {
-            if (tempSelected.length == types.length || tempSelected.isEmpty) {
-              _selectedMatchTypes = [];
-            } else {
-              _selectedMatchTypes = tempSelected;
-            }
-          });
-          Navigator.pop(ctx);
-          _runAnalysis();
-        }, child: const Text("適用"))]);
+        return AlertDialog(
+            title: const Text("集計フィルタ"),
+            // ★修正: SizedBoxでダイアログのサイズを制御できるようにしました
+            content: SizedBox(
+              width: 300, // ここで幅を指定できます
+              height: 400, // 高さを固定したい場合はコメントアウトを外して指定してください
+              child: SingleChildScrollView(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: types.map((type) {
+                      final isChecked = tempSelected.contains(type);
+                      return CheckboxListTile(
+                          title: Text(_getMatchTypeName(type)),
+                          value: isChecked,
+                          onChanged: (val) {
+                            setStateDialog(() {
+                              if (val == true) {
+                                tempSelected.add(type);
+                              } else {
+                                tempSelected.remove(type);
+                              }
+                            });
+                          });
+                    }).toList()),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("キャンセル")),
+              ElevatedButton(onPressed: () {
+                setState(() {
+                  if (tempSelected.length == types.length || tempSelected.isEmpty) {
+                    _selectedMatchTypes = [];
+                  } else {
+                    _selectedMatchTypes = tempSelected;
+                  }
+                });
+                Navigator.pop(ctx);
+                _runAnalysis();
+              }, child: const Text("適用"))
+            ]);
       });
     });
   }
 
-  String _getMatchTypeName(MatchType type) { switch (type) { case MatchType.official: return "大会/公式戦"; case MatchType.practiceMatch: return "練習試合"; case MatchType.practice: return "練習"; } }
-  IconData _getMatchTypeIcon(MatchType type) { switch (type) { case MatchType.official: return Icons.emoji_events; case MatchType.practiceMatch: return Icons.handshake; case MatchType.practice: return Icons.sports_handball; } }
+  String _getMatchTypeName(MatchType type) {
+    switch (type) {
+      case MatchType.official: return "大会/公式戦";
+      case MatchType.practiceMatch: return "練習試合";
+      case MatchType.practice: return "練習";
+      case MatchType.formationPractice: return "フォーメーション練習";
+    }
+  }
+
+  IconData _getMatchTypeIcon(MatchType type) {
+    switch (type) {
+      case MatchType.official: return Icons.emoji_events;
+      case MatchType.practiceMatch: return Icons.handshake;
+      case MatchType.practice: return Icons.sports_handball;
+      case MatchType.formationPractice: return Icons.grid_view;
+    }
+  }
 
   void _showAddMenu() {
     showModalBottomSheet(context: context, builder: (ctx) {
@@ -489,11 +494,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
 
     final isStatsTab = _selectedMatchId == null || _tabController.index == 0;
     final isLogTab = _selectedMatchId != null && _tabController.index == 1;
-    // 日計選択時も印刷可能とする
     final isDailyView = _selectedYear != null && _selectedMonth != null && _selectedDay != null && _selectedMatchId == null;
     final isPrintableTab = isStatsTab || isLogTab || isDailyView;
 
-    // 印刷ボタンが押せるかどうかの判定（日計の場合はStatsがあればOKとする）
     final bool canPrint = isStatsTab || isDailyView
         ? (asyncStats.valueOrNull?.isNotEmpty == true)
         : (isLogTab && matchRecord != null && matchRecord.logs.isNotEmpty);
@@ -552,13 +555,11 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                   key: _printKey,
                   child: Material(
                     color: Colors.white,
-                    // 印刷用データの切り替えロジック
                     child:
-                    // 1. 全選手詳細一括印刷
                     _isPrintingAllPlayers && _currentPrintingEntry != null && _currentPrintingPlayer != null
                         ? SizedBox(
-                      width: 350, // ActionDetailColumnの規定幅
-                      height: 800, // 高さを固定してUnbounded heightエラー回避
+                      width: 350,
+                      height: 800,
                       child: Padding(
                         padding: const EdgeInsets.all(8),
                         child: ActionDetailColumn(
@@ -567,8 +568,6 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with TickerProv
                         ),
                       ),
                     )
-                    // 2. ログ印刷や日計ログ印刷はPDFネイティブ化されたため、ここでの画像生成は不要
-                    // よって空ウィジェットを返す
                         : const SizedBox(),
                   ),
                 ),

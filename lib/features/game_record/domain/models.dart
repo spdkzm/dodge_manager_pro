@@ -7,7 +7,11 @@ part 'models.g.dart';
 
 enum ActionResult { none, success, failure }
 enum LogType { action, system }
-enum MatchType { practiceMatch, official, practice }
+
+// ★変更: ユーザー希望の順序に変更し、formationPracticeを追加
+// 0: official, 1: practiceMatch, 2: practice, 3: formationPractice
+enum MatchType { official, practiceMatch, practice, formationPractice }
+
 enum MatchResult { none, win, lose, draw }
 
 class ActionResultConverter implements JsonConverter<ActionResult, int> {
@@ -29,7 +33,7 @@ class LogTypeConverter implements JsonConverter<LogType, int> {
 class MatchTypeConverter implements JsonConverter<MatchType, int> {
   const MatchTypeConverter();
   @override
-  MatchType fromJson(int json) => MatchType.values.length > json ? MatchType.values[json] : MatchType.practiceMatch;
+  MatchType fromJson(int json) => MatchType.values.length > json ? MatchType.values[json] : MatchType.official; // デフォルトも先頭のofficialに変更
   @override
   int toJson(MatchType object) => object.index;
 }
@@ -84,7 +88,7 @@ class MatchRecord with _$MatchRecord {
     String? venueName,
     String? venueId,
     required List<LogEntry> logs,
-    @MatchTypeConverter() @Default(MatchType.practiceMatch) MatchType matchType,
+    @MatchTypeConverter() @Default(MatchType.official) MatchType matchType,
     @MatchResultConverter() @Default(MatchResult.none) MatchResult result,
     int? scoreOwn,
     int? scoreOpponent,
@@ -92,16 +96,12 @@ class MatchRecord with _$MatchRecord {
     int? extraScoreOwn,
     int? extraScoreOpponent,
     String? note,
-    // ★追加: 内部記録日時（ソート順序制御用）
     String? createdAt,
   }) = _MatchRecord;
 
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);
 }
 
-// AppSettings内での定義（デフォルト値用など）は簡易的なStringリストのままにするか、
-// 設定画面でActionDefinitionをフルに使うため、ここではActionItemは古い互換用として残すか、削除推奨ですが
-// 既存コード維持のため、ここは影響の少ない範囲で残します。
 @freezed
 class ActionItem with _$ActionItem {
   const factory ActionItem({

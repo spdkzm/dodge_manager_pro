@@ -44,11 +44,13 @@ class MatchRecordScreen extends HookConsumerWidget {
     final tabController = useTabController(initialLength: 3);
     useListenable(tabController);
 
+    // ★修正: formationPractice のケースを追加
     String getMatchTypeName(MatchType type) {
       switch (type) {
         case MatchType.official: return "大会";
         case MatchType.practiceMatch: return "練習試合";
         case MatchType.practice: return "練習";
+        case MatchType.formationPractice: return "フォーメーション練習";
       }
     }
 
@@ -311,7 +313,7 @@ class MatchRecordScreen extends HookConsumerWidget {
 
       final definitions = controller.actionDefinitions;
 
-      // ★修正: 選手IDのリストを取得
+      // 選手IDのリストを取得
       final allPlayerIds = [
         ...controller.courtPlayerIds,
         ...controller.benchPlayerIds,
@@ -331,7 +333,7 @@ class MatchRecordScreen extends HookConsumerWidget {
       final timeCtrl = TextEditingController(text: log.gameTime);
       final actionNameCtrl = TextEditingController(text: log.action);
 
-      // ★修正: IDで初期値を設定
+      // IDで初期値を設定
       String? playerIdVal = log.playerId;
       // もしログにIDがない場合は、背番号から探すなどのフォールバックが必要だが、
       // ここでは既にID移行済み前提とする
@@ -394,7 +396,7 @@ class MatchRecordScreen extends HookConsumerWidget {
                                   value: playerIdVal,
                                   decoration: const InputDecoration(labelText: "選手"),
                                   items: allPlayerIds.map((pid) {
-                                    // ★修正: IDから表示情報取得
+                                    // IDから表示情報取得
                                     final info = controller.getPlayerInfo(pid);
                                     final num = info?.number ?? "?";
                                     final name = info?.name ?? "";
@@ -470,14 +472,14 @@ class MatchRecordScreen extends HookConsumerWidget {
                             } else {
                               if (playerIdVal == null || actionNameVal == null) return;
 
-                              // ★修正: IDから背番号を取得して保存
+                              // IDから背番号を取得して保存
                               final info = controller.getPlayerInfo(playerIdVal!);
                               final pNum = info?.number ?? "";
 
                               final newLog = log.copyWith(
                                 gameTime: newTime,
                                 playerNumber: pNum, // 表示用
-                                playerId: playerIdVal, // ★ID保存
+                                playerId: playerIdVal, // ID保存
                                 action: actionNameVal!,
                                 subAction: subActionVal?.name,
                                 subActionId: subActionVal?.id,
@@ -567,7 +569,6 @@ class MatchRecordScreen extends HookConsumerWidget {
         ],
       ),
       body: Row(children: [
-        // ★修正: パラメータ名を変更して渡す
         Expanded(flex: 2, child: PlayerSelectionPanel(
             tabController: tabController,
             courtPlayerIds: controller.courtPlayerIds, // IDリスト
@@ -589,7 +590,6 @@ class MatchRecordScreen extends HookConsumerWidget {
               uiActions: controller.uiActions,
               gridColumns: controller.settings.gridColumns,
               hasMatchStarted: controller.hasMatchStarted,
-              // ★修正: パラメータ変更
               selectedPlayerId: controller.selectedPlayerId,
               playerInfoGetter: controller.getPlayerInfo,
               selectedUIAction: controller.selectedUIAction,

@@ -10,7 +10,7 @@ import '../../../team_mgmt/domain/roster_item.dart';
 
 class AnalysisInfoTab extends ConsumerStatefulWidget {
   final String matchId;
-  final VoidCallback onUpdate; // 更新完了時のコールバック
+  final VoidCallback onUpdate;
 
   const AnalysisInfoTab({
     super.key,
@@ -29,10 +29,8 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   String? _opponentId;
   String? _venueId;
   DateTime _editingDate = DateTime.now();
-  MatchType _editingMatchType = MatchType.practiceMatch;
+  MatchType _editingMatchType = MatchType.official; // デフォルト変更
   String? _lastLoadedMatchId;
-
-  // ★追加: 記録日時（内部ソート用）の表示・編集用
   DateTime? _createdAt;
 
   @override
@@ -70,7 +68,6 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
 
       final newEditingDate = DateTime.tryParse(matchRecord.date.replaceAll('/', '-')) ?? DateTime.now();
 
-      // createdAtのパース
       DateTime? parsedCreatedAt;
       if (matchRecord.createdAt != null) {
         parsedCreatedAt = DateTime.tryParse(matchRecord.createdAt!);
@@ -109,11 +106,9 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("基本情報を更新しました")));
   }
 
-  // ★追加: 記録日時の編集処理
   Future<void> _editCreatedAt() async {
     if (_createdAt == null) return;
 
-    // 日付選択
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _createdAt!,
@@ -123,7 +118,6 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     );
     if (pickedDate == null) return;
 
-    // 時間選択
     if (!mounted) return;
     final pickedTime = await showTimePicker(
       context: context,
@@ -138,7 +132,7 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
         pickedDate.day,
         pickedTime.hour,
         pickedTime.minute,
-        _createdAt!.second // 秒は維持しておく
+        _createdAt!.second
     );
 
     await ref.read(analysisControllerProvider.notifier).updateMatchCreationTime(
@@ -146,15 +140,22 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
       newDateTime,
     );
 
-    // 親のリストを更新
     widget.onUpdate();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("記録日時を変更しました（日計リストの並び順に影響します）")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("記録日時を変更しました")));
     }
   }
 
-  String _getMatchTypeName(MatchType type) { switch (type) { case MatchType.official: return "大会/公式戦"; case MatchType.practiceMatch: return "練習試合"; case MatchType.practice: return "練習"; } }
+  // ★修正: 表示名対応に formationPractice を追加
+  String _getMatchTypeName(MatchType type) {
+    switch (type) {
+      case MatchType.official: return "大会/公式戦";
+      case MatchType.practiceMatch: return "練習試合";
+      case MatchType.practice: return "練習";
+      case MatchType.formationPractice: return "フォーメーション練習";
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +202,6 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
                   const SizedBox(height: 12),
                   Align( alignment: Alignment.centerRight, child: ElevatedButton.icon( onPressed: _saveMatchInfo, icon: const Icon(Icons.save, size: 16), label: const Text("基本情報を更新"), style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo.shade50), ), ),
 
-                  // ★追加: 記録日時の表示・編集エリア
                   const SizedBox(height: 20),
                   const Divider(),
                   const SizedBox(height: 10),

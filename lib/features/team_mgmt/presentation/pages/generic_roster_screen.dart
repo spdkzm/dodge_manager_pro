@@ -11,7 +11,6 @@ import '../../domain/team.dart';
 import '../../domain/roster_category.dart';
 import '../../data/uniform_number_dao.dart';
 
-import 'team_management_screen.dart';
 import 'schema_settings_screen.dart';
 
 class GenericRosterScreen extends ConsumerStatefulWidget {

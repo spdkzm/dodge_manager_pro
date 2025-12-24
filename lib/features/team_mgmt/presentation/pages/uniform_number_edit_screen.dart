@@ -193,7 +193,7 @@ class _UniformNumberEditDialogState extends ConsumerState<UniformNumberEditDialo
     );
 
     if (confirm == true) {
-      await _dao.deleteUniformNumber(record.id!);
+      await _dao.deleteUniformNumber(record.id);
       await _loadHistory(); // 削除後、リストに戻る
     }
   }

@@ -55,7 +55,7 @@ _$MatchRecordImpl _$$MatchRecordImplFromJson(
       .map((e) => LogEntry.fromJson(e as Map<String, dynamic>))
       .toList(),
   matchType: json['matchType'] == null
-      ? MatchType.practiceMatch
+      ? MatchType.official
       : const MatchTypeConverter().fromJson((json['matchType'] as num).toInt()),
   result: json['result'] == null
       ? MatchResult.none

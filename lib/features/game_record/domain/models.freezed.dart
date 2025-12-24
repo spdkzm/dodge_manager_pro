@@ -700,8 +700,7 @@ mixin _$MatchRecord {
   bool get isExtraTime => throw _privateConstructorUsedError;
   int? get extraScoreOwn => throw _privateConstructorUsedError;
   int? get extraScoreOpponent => throw _privateConstructorUsedError;
-  String? get note =>
-      throw _privateConstructorUsedError; // ★追加: 内部記録日時（ソート順序制御用）
+  String? get note => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
 
   /// Serializes this MatchRecord to a JSON map.
@@ -987,7 +986,7 @@ class _$MatchRecordImpl implements _MatchRecord {
     this.venueName,
     this.venueId,
     required final List<LogEntry> logs,
-    @MatchTypeConverter() this.matchType = MatchType.practiceMatch,
+    @MatchTypeConverter() this.matchType = MatchType.official,
     @MatchResultConverter() this.result = MatchResult.none,
     this.scoreOwn,
     this.scoreOpponent,
@@ -1042,7 +1041,6 @@ class _$MatchRecordImpl implements _MatchRecord {
   final int? extraScoreOpponent;
   @override
   final String? note;
-  // ★追加: 内部記録日時（ソート順序制御用）
   @override
   final String? createdAt;
 
@@ -1174,7 +1172,7 @@ abstract class _MatchRecord implements MatchRecord {
   @override
   int? get extraScoreOpponent;
   @override
-  String? get note; // ★追加: 内部記録日時（ソート順序制御用）
+  String? get note;
   @override
   String? get createdAt;
 
