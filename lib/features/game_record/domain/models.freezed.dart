@@ -702,6 +702,8 @@ mixin _$MatchRecord {
   int? get extraScoreOpponent => throw _privateConstructorUsedError;
   String? get note => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
+  String? get tournamentName => throw _privateConstructorUsedError;
+  String? get matchDivision => throw _privateConstructorUsedError;
 
   /// Serializes this MatchRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -737,6 +739,8 @@ abstract class $MatchRecordCopyWith<$Res> {
     int? extraScoreOpponent,
     String? note,
     String? createdAt,
+    String? tournamentName,
+    String? matchDivision,
   });
 }
 
@@ -771,6 +775,8 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
     Object? extraScoreOpponent = freezed,
     Object? note = freezed,
     Object? createdAt = freezed,
+    Object? tournamentName = freezed,
+    Object? matchDivision = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -838,6 +844,14 @@ class _$MatchRecordCopyWithImpl<$Res, $Val extends MatchRecord>
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
                       as String?,
+            tournamentName: freezed == tournamentName
+                ? _value.tournamentName
+                : tournamentName // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            matchDivision: freezed == matchDivision
+                ? _value.matchDivision
+                : matchDivision // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -870,6 +884,8 @@ abstract class _$$MatchRecordImplCopyWith<$Res>
     int? extraScoreOpponent,
     String? note,
     String? createdAt,
+    String? tournamentName,
+    String? matchDivision,
   });
 }
 
@@ -903,6 +919,8 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
     Object? extraScoreOpponent = freezed,
     Object? note = freezed,
     Object? createdAt = freezed,
+    Object? tournamentName = freezed,
+    Object? matchDivision = freezed,
   }) {
     return _then(
       _$MatchRecordImpl(
@@ -970,6 +988,14 @@ class __$$MatchRecordImplCopyWithImpl<$Res>
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
                   as String?,
+        tournamentName: freezed == tournamentName
+            ? _value.tournamentName
+            : tournamentName // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        matchDivision: freezed == matchDivision
+            ? _value.matchDivision
+            : matchDivision // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -995,6 +1021,8 @@ class _$MatchRecordImpl implements _MatchRecord {
     this.extraScoreOpponent,
     this.note,
     this.createdAt,
+    this.tournamentName,
+    this.matchDivision,
   }) : _logs = logs;
 
   factory _$MatchRecordImpl.fromJson(Map<String, dynamic> json) =>
@@ -1043,10 +1071,14 @@ class _$MatchRecordImpl implements _MatchRecord {
   final String? note;
   @override
   final String? createdAt;
+  @override
+  final String? tournamentName;
+  @override
+  final String? matchDivision;
 
   @override
   String toString() {
-    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent, note: $note, createdAt: $createdAt)';
+    return 'MatchRecord(id: $id, date: $date, opponent: $opponent, opponentId: $opponentId, venueName: $venueName, venueId: $venueId, logs: $logs, matchType: $matchType, result: $result, scoreOwn: $scoreOwn, scoreOpponent: $scoreOpponent, isExtraTime: $isExtraTime, extraScoreOwn: $extraScoreOwn, extraScoreOpponent: $extraScoreOpponent, note: $note, createdAt: $createdAt, tournamentName: $tournamentName, matchDivision: $matchDivision)';
   }
 
   @override
@@ -1079,7 +1111,11 @@ class _$MatchRecordImpl implements _MatchRecord {
                 other.extraScoreOpponent == extraScoreOpponent) &&
             (identical(other.note, note) || other.note == note) &&
             (identical(other.createdAt, createdAt) ||
-                other.createdAt == createdAt));
+                other.createdAt == createdAt) &&
+            (identical(other.tournamentName, tournamentName) ||
+                other.tournamentName == tournamentName) &&
+            (identical(other.matchDivision, matchDivision) ||
+                other.matchDivision == matchDivision));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1102,6 +1138,8 @@ class _$MatchRecordImpl implements _MatchRecord {
     extraScoreOpponent,
     note,
     createdAt,
+    tournamentName,
+    matchDivision,
   );
 
   /// Create a copy of MatchRecord
@@ -1136,6 +1174,8 @@ abstract class _MatchRecord implements MatchRecord {
     final int? extraScoreOpponent,
     final String? note,
     final String? createdAt,
+    final String? tournamentName,
+    final String? matchDivision,
   }) = _$MatchRecordImpl;
 
   factory _MatchRecord.fromJson(Map<String, dynamic> json) =
@@ -1175,6 +1215,10 @@ abstract class _MatchRecord implements MatchRecord {
   String? get note;
   @override
   String? get createdAt;
+  @override
+  String? get tournamentName;
+  @override
+  String? get matchDivision;
 
   /// Create a copy of MatchRecord
   /// with the given fields replaced by the non-null parameter values.

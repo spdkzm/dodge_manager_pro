@@ -32,6 +32,8 @@ class MatchDao {
         'extra_score_opponent': matchData['extra_score_opponent'],
         'note': matchData['note'],
         'created_at': DateTime.now().toIso8601String(),
+        'tournament_name': matchData['tournament_name'],
+        'match_division': matchData['match_division'],
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       for (var log in logs) {
@@ -126,6 +128,8 @@ class MatchDao {
     String? venueId,
     required int matchType,
     String? note,
+    String? tournamentName, // 追加
+    String? matchDivision,  // 追加
   }) async {
     final db = await _dbHelper.database;
     await db.update('matches', {
@@ -136,6 +140,8 @@ class MatchDao {
       'venue_id': venueId,
       'match_type': matchType,
       'note': note,
+      'tournament_name': tournamentName, // 追加
+      'match_division': matchDivision,   // 追加
     }, where: 'id = ?', whereArgs: [matchId]);
   }
 

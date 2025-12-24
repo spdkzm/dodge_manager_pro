@@ -38,9 +38,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
   }
 
   Future<void> addLog(String matchId, LogEntry log) async {
-    // ログ追加時の背番号解決は、本来記録画面で行われるべきだが、
-    // ここで補完する場合も最新の背番号ロジックを使う必要がある。
-    // 簡易的にログ上の番号を信じる実装とする。
     final logMap = log.toJson();
     await _matchRepository.insertMatchLog(matchId, logMap);
   }
@@ -55,7 +52,20 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchRepository.deleteMatchLog(logId);
   }
 
-  Future<void> updateMatchInfo(String matchId, DateTime newDate, MatchType newType, {String? opponentName, String? opponentId, String? venueName, String? venueId, String? note}) async {
+  Future<void> updateMatchInfo(
+      String matchId,
+      DateTime newDate,
+      MatchType newType,
+      {
+        String? opponentName,
+        String? opponentId,
+        String? venueName,
+        String? venueId,
+        String? note,
+        String? tournamentName,
+        String? matchDivision,
+      }
+      ) async {
     final teamStore = ref.read(teamStoreProvider);
     final currentTeamId = teamStore.currentTeam?.id;
     if (currentTeamId == null) return;
@@ -91,23 +101,23 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     String? noteToSave = note ?? currentRecord?.note;
 
     await _matchRepository.updateBasicInfo(
-        matchId: matchId,
-        date: dateStr,
-        opponent: newOpponentName,
-        opponentId: finalOpponentId,
-        venueName: venueName,
-        venueId: finalVenueId,
-        matchType: newType.index,
-        note: noteToSave
+      matchId: matchId,
+      date: dateStr,
+      opponent: newOpponentName,
+      opponentId: finalOpponentId,
+      venueName: venueName,
+      venueId: finalVenueId,
+      matchType: newType.index,
+      note: noteToSave,
+      tournamentName: tournamentName,
+      matchDivision: matchDivision,
     );
 
     await _loadSelectedMatchRecord(matchId);
   }
 
-  /// 内部記録日時（created_at）を更新する
   Future<void> updateMatchCreationTime(String matchId, DateTime newTime) async {
     await _matchRepository.updateMatchCreatedAt(matchId, newTime.toIso8601String());
-    // データを再読み込み
     await _loadSelectedMatchRecord(matchId);
   }
 
@@ -128,19 +138,14 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     final team = ref.read(teamStoreProvider).currentTeam;
     if (team == null) return;
 
-    // メンバー更新時、背番号からIDを逆引きするロジック
-    // ここでは背番号とIDの対応表を、その試合日時点のデータで作成する必要がある
-    // まず試合日を取得
     final matchRecord = await fetchMatchRecordById(matchId);
     if (matchRecord == null) return;
 
     final matchDate = DateTime.tryParse(matchRecord.date) ?? DateTime.now();
     final allUniforms = await _uniformDao.getUniformNumbersByTeam(team.id);
 
-    // ID逆引き用マップ (Number -> ID)
     final numToIdMap = <String, String>{};
     for (var u in allUniforms) {
-      // 試合日時点で有効なもの
       if (u.isActiveAt(matchDate)) {
         numToIdMap[u.number] = u.playerId;
       }
@@ -150,7 +155,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
 
     void add(List<String> list, int status) {
       for (var num in list) {
-        final playerId = numToIdMap[num] ?? ""; // IDが見つからなければ空文字（あるいはログ整合性のため要検討）
+        final playerId = numToIdMap[num] ?? "";
         participations.add({'player_number': num, 'player_id': playerId, 'status': status});
       }
     }
@@ -162,7 +167,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     await _matchRepository.updateMatchParticipations(matchId, participations);
   }
 
-  // IDからMatchRecordを単発取得するヘルパー
   Future<MatchRecord?> fetchMatchRecordById(String matchId) async {
     final team = ref.read(teamStoreProvider).currentTeam;
     if (team == null) return null;
@@ -237,7 +241,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     final dateStr = DateFormat('yyyy-MM-dd').format(DateTime(year, month, day));
     final allMatches = await _matchRepository.getMatches(currentTeam.id);
 
-    // ★修正: 日計ログ出力時、作成日時順（古い順）にソートする
     final matchesOnDate = allMatches.where((m) => m['date'] == dateStr).toList();
     matchesOnDate.sort((a, b) {
       final tA = a['created_at'] as String? ?? '';
@@ -275,7 +278,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       ref.read(availableDaysProvider.notifier).state = days; ref.read(availableMatchesProvider.notifier).state = {};
     } else {
       if (year != null && month != null && day != null) {
-        // ★修正: 日計表示時、作成日時順（古い順）にソートしてリスト表示する
         var matches = allMatches.where((m) {
           final dateStr = m['date'] as String?;
           final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
@@ -285,7 +287,7 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
         matches.sort((a, b) {
           final tA = a['created_at'] as String? ?? '';
           final tB = b['created_at'] as String? ?? '';
-          return tA.compareTo(tB); // 昇順（古い順）
+          return tA.compareTo(tB);
         });
 
         final matchMap = {for (var m in matches) m['id'] as String: m['opponent'] as String? ?? '(相手なし)'};
@@ -337,18 +339,16 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       extraScoreOpponent: matchRow['extra_score_opponent'],
       note: matchRow['note'] as String?,
       createdAt: matchRow['created_at'] as String?,
+      tournamentName: matchRow['tournament_name'] as String?,
+      matchDivision: matchRow['match_division'] as String?,
     );
   }
 
   Future<List<PlayerStats>> _calculateStats({required Team currentTeam, required String startDateStr, required String endDateStr, String? matchId, List<MatchType>? targetTypes}) async {
     final Map<String, PlayerStats> statsMap = {};
-
-    // 名簿データの背番号フィールドを使わず、UniformNumberDaoを使用
-    // 期間の「終了日」時点での背番号を、その選手の表示用番号として採用する
     final targetDate = DateTime.parse(endDateStr);
     final allUniforms = await _uniformDao.getUniformNumbersByTeam(currentTeam.id);
 
-    // 名前のフィールドを探す
     String? courtNameFieldId; String? nameFieldId;
     for(var f in currentTeam.schema) {
       if(f.type == FieldType.courtName) courtNameFieldId = f.id;
@@ -356,27 +356,23 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     }
 
     for (var item in currentTeam.items) {
-      // 終了日時点で有効な背番号を取得
       UniformNumber? activeNum;
       try {
         activeNum = allUniforms.firstWhere((u) => u.playerId == item.id && u.isActiveAt(targetDate));
       } catch (_) {
         activeNum = null;
       }
-
-      final num = activeNum?.number ?? ""; // なければ空
+      final num = activeNum?.number ?? "";
 
       String name = "";
       if (courtNameFieldId != null) name = item.data[courtNameFieldId]?.toString() ?? "";
       if (name.isEmpty && nameFieldId != null) { final n = item.data[nameFieldId]; if (n is Map) name = "${n['last'] ?? ''} ${n['first'] ?? ''}".trim(); }
 
-      // 選手全員分を初期化（背番号がない選手も含む）
       statsMap[item.id] = PlayerStats(playerId: item.id, playerNumber: num, playerName: name, matchesPlayed: 0, actions: {});
     }
 
     final typeIndices = targetTypes?.map((t) => t.index).toList();
 
-    // 試合数の集計
     final matchCounts = await _matchRepository.getPlayerMatchCounts(
         currentTeam.id, startDateStr, endDateStr, typeIndices, matchId
     );
@@ -389,16 +385,12 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       String targetKey = pId.isNotEmpty ? pId : "UNKNOWN_$pNum";
 
       if (statsMap.containsKey(targetKey)) {
-        // マッチした選手がいれば、試合数を更新
-        // (背番号は期間終了日時点のものを優先するが、ログにしか存在しない選手の場合はログの番号を使う)
         statsMap[targetKey] = statsMap[targetKey]!.copyWith(matchesPlayed: count);
       } else {
-        // 名簿にない（削除された選手など）場合
         statsMap[targetKey] = PlayerStats(playerId: targetKey, playerNumber: pNum, playerName: "(未登録)", matchesPlayed: count, actions: {});
       }
     }
 
-    // アクションごとの集計
     final actionStatsRows = await _matchRepository.getAggregatedActionStats(
         currentTeam.id, startDateStr, endDateStr, typeIndices, matchId
     );
@@ -433,7 +425,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
       statsMap[targetKey] = currentStats.copyWith(actions: newActions);
     }
 
-    // サブアクション集計
     final subActionRows = await _matchRepository.getAggregatedSubActionStats(
         currentTeam.id, startDateStr, endDateStr, typeIndices, matchId
     );
@@ -462,7 +453,6 @@ class AnalysisController extends StateNotifier<AsyncValue<List<PlayerStats>>> {
     }
 
     final List<PlayerStats> resultList = statsMap.values.toList();
-    // 背番号でソート
     resultList.sort((a, b) { final numA = int.tryParse(a.playerNumber); final numB = int.tryParse(b.playerNumber); if (numA != null && numB != null) return numA.compareTo(numB); if (numA != null) return -1; if (numB != null) return 1; return a.playerNumber.compareTo(b.playerNumber); });
     return resultList;
   }

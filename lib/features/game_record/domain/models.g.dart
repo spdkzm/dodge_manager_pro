@@ -67,6 +67,8 @@ _$MatchRecordImpl _$$MatchRecordImplFromJson(
   extraScoreOpponent: (json['extraScoreOpponent'] as num?)?.toInt(),
   note: json['note'] as String?,
   createdAt: json['createdAt'] as String?,
+  tournamentName: json['tournamentName'] as String?,
+  matchDivision: json['matchDivision'] as String?,
 );
 
 Map<String, dynamic> _$$MatchRecordImplToJson(_$MatchRecordImpl instance) =>
@@ -87,6 +89,8 @@ Map<String, dynamic> _$$MatchRecordImplToJson(_$MatchRecordImpl instance) =>
       'extraScoreOpponent': instance.extraScoreOpponent,
       'note': instance.note,
       'createdAt': instance.createdAt,
+      'tournamentName': instance.tournamentName,
+      'matchDivision': instance.matchDivision,
     };
 
 _$ActionItemImpl _$$ActionItemImplFromJson(Map<String, dynamic> json) =>

@@ -6,7 +6,7 @@ import '../../application/analysis_controller.dart';
 import '../../../team_mgmt/application/team_store.dart';
 import '../../../team_mgmt/domain/schema.dart';
 import '../../../team_mgmt/data/uniform_number_dao.dart';
-import '../../../team_mgmt/domain/uniform_number.dart'; // ★追加: これが必要です
+import '../../../team_mgmt/domain/uniform_number.dart';
 
 class AnalysisMembersTab extends ConsumerStatefulWidget {
   final String matchId;
@@ -195,115 +195,129 @@ class _AnalysisMembersTabState extends ConsumerState<AnalysisMembersTab> {
   Widget build(BuildContext context) {
     final hasSelection = _selectedMember != null || _selectedMembersForMove.isNotEmpty;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(8.0),
-      child: Card(
-        elevation: 2,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text("出場メンバー編集", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  if (hasSelection)
-                    Row(
-                      children: [
-                        ElevatedButton(onPressed: () => _moveSelectedMembers('court'), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade50, foregroundColor: Colors.orange), child: const Text("コートへ")),
-                        const SizedBox(width: 8),
-                        ElevatedButton(onPressed: () => _moveSelectedMembers('bench'), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade50, foregroundColor: Colors.blue), child: const Text("ベンチへ")),
-                        const SizedBox(width: 8),
-                        ElevatedButton(onPressed: () => _moveSelectedMembers('absent'), style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black87), child: const Text("欠席へ")),
-                        const SizedBox(width: 16),
-                        IconButton(onPressed: _clearMemberSelection, icon: const Icon(Icons.close), tooltip: "選択解除"),
-                      ],
-                    )
-                  else
-                    ElevatedButton.icon(
-                      onPressed: _saveMembers,
-                      icon: const Icon(Icons.save),
-                      label: const Text("メンバー変更を保存"),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                    )
-                ],
+    return Column(
+      children: [
+        // ヘッダーエリア (通常時と選択時で切り替え)
+        Container(
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: hasSelection ? Colors.orange.shade100 : Colors.white,
+          child: hasSelection
+              ? Row(
+            children: [
+              Text(
+                "${_isMemberMultiSelectMode ? _selectedMembersForMove.length : 1}人選択中",
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildMemberColumn("コート (${_editingCourtMembers.length})", _editingCourtMembers, Colors.orange.shade100, Colors.orange.shade50)),
-                  const VerticalDivider(width: 1),
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildMemberColumn("ベンチ (${_editingBenchMembers.length})", _editingBenchMembers, Colors.blue.shade100, Colors.blue.shade50)),
-                  const VerticalDivider(width: 1),
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildMemberColumn("欠席 (${_editingAbsentMembers.length})", _editingAbsentMembers, Colors.grey.shade300, Colors.grey.shade100)),
-                ],
-              ),
-            ),
-          ],
+              const Spacer(),
+              IconButton(icon: const Icon(Icons.sports_basketball), tooltip: "コートへ", onPressed: () => _moveSelectedMembers('court')),
+              IconButton(icon: const Icon(Icons.chair), tooltip: "ベンチへ", onPressed: () => _moveSelectedMembers('bench')),
+              IconButton(icon: const Icon(Icons.cancel), tooltip: "欠席へ", onPressed: () => _moveSelectedMembers('absent')),
+              IconButton(icon: const Icon(Icons.close), tooltip: "選択解除", onPressed: _clearMemberSelection),
+            ],
+          )
+              : Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("出場メンバー編集", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ElevatedButton.icon(
+                onPressed: _saveMembers,
+                icon: const Icon(Icons.save),
+                label: const Text("保存"),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+              )
+            ],
+          ),
         ),
-      ),
+        const Divider(height: 1),
+
+        // 3分割リストエリア
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _buildSection("コート", _editingCourtMembers, Colors.orange.shade50, Colors.orange.shade100),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: _buildSection("ベンチ", _editingBenchMembers, Colors.blue.shade50, Colors.blue.shade100),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: _buildSection("欠席", _editingAbsentMembers, Colors.grey.shade100, Colors.grey.shade300),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildMemberColumn(String title, List<String> members, Color headerColor, Color bgColor) {
+  Widget _buildSection(String title, List<String> members, Color bgColor, Color headerColor) {
     return Column(
       children: [
+        // セクションヘッダー
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 8),
           color: headerColor,
           alignment: Alignment.center,
-          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            "$title (${members.length})",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
         ),
-        Container(
-          color: bgColor,
-          constraints: const BoxConstraints(minHeight: 200),
-          child: ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: members.length,
-            itemBuilder: (context, index) {
-              final num = members[index];
-              final isSelected = _selectedMember == num || _selectedMembersForMove.contains(num);
+        // リスト
+        Expanded(
+          child: Container(
+            color: bgColor,
+            child: members.isEmpty
+                ? const Center(child: Text("なし", style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+              padding: const EdgeInsets.all(4),
+              itemCount: members.length,
+              itemBuilder: (context, index) {
+                final num = members[index];
+                final name = _playerNames[num] ?? "";
+                final isSelected = _selectedMember == num;
+                final isMultiSelected = _selectedMembersForMove.contains(num);
 
-              return InkWell(
-                onTap: () => _onMemberTap(num),
-                onLongPress: () => _onMemberLongPress(num),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.indigo.shade100 : Colors.white,
-                    border: Border.all(color: isSelected ? Colors.indigo : Colors.transparent),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 12,
-                        backgroundColor: Colors.grey.shade300,
-                        child: Text(num, style: const TextStyle(fontSize: 10, color: Colors.black87)),
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  color: isMultiSelected
+                      ? Colors.orange[200]
+                      : (isSelected ? Colors.yellow[100] : Colors.white),
+                  elevation: 1,
+                  child: InkWell(
+                    onTap: () => _onMemberTap(num),
+                    onLongPress: () => _onMemberLongPress(num),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                      child: Column(
+                        children: [
+                          Text(
+                            num,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (name.isNotEmpty)
+                            Text(
+                              name,
+                              style: const TextStyle(fontSize: 10),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
+                            ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _playerNames[num] ?? "",
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (isSelected) const Icon(Icons.check_circle, size: 16, color: Colors.indigo),
-                    ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],

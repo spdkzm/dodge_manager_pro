@@ -16,3 +16,4 @@ enum RosterCategory {
     return RosterCategory.player; // デフォルト
   }
 }
+

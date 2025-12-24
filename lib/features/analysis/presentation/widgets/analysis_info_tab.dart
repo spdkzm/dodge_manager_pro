@@ -26,17 +26,33 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
   final TextEditingController _opponentCtrl = TextEditingController();
   final TextEditingController _venueCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
+  final TextEditingController _tournamentNameCtrl = TextEditingController();
+
   String? _opponentId;
   String? _venueId;
   DateTime _editingDate = DateTime.now();
-  MatchType _editingMatchType = MatchType.official; // デフォルト変更
+  MatchType _editingMatchType = MatchType.official;
+  String? _selectedMatchDivision;
+
   String? _lastLoadedMatchId;
   DateTime? _createdAt;
+
+  // 試合区分の選択肢リスト
+  final List<String> _matchDivisions = [
+    for (var i = 1; i <= 10; i++) '予選リーグ${i}試合目',
+    for (var i = 1; i <= 5; i++) '決勝トーナメント${i}試合目',
+    '準々決勝',
+    '準決勝',
+    '3位決定戦',
+    '決勝',
+    '交流戦',
+    'その他',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadMatchData(readOnly: true);
+    _loadMatchData(forceLoad: true);
   }
 
   @override
@@ -44,7 +60,7 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matchId != widget.matchId) {
       _lastLoadedMatchId = null;
-      _loadMatchData(readOnly: true);
+      _loadMatchData(forceLoad: true);
     }
   }
 
@@ -53,16 +69,26 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     _opponentCtrl.dispose();
     _venueCtrl.dispose();
     _noteCtrl.dispose();
+    _tournamentNameCtrl.dispose();
     super.dispose();
   }
 
-  void _loadMatchData({bool readOnly = false}) {
+  void _loadMatchData({bool forceLoad = false}) {
     final matchRecord = ref.read(selectedMatchRecordProvider);
 
-    if (matchRecord != null && matchRecord.id == widget.matchId && _lastLoadedMatchId != widget.matchId) {
+    // IDが一致し、かつ「まだロードしていない」または「強制ロード」の場合に反映
+    if (matchRecord != null && matchRecord.id == widget.matchId) {
+      if (!forceLoad && _lastLoadedMatchId == widget.matchId) {
+        // すでにロード済みなら、ユーザー入力を優先して何もしない
+        // ただし、DB更新後など明示的にリロードしたい場合は forceLoad=true で呼ぶ
+        return;
+      }
+
       _opponentCtrl.text = matchRecord.opponent;
       _venueCtrl.text = matchRecord.venueName ?? "";
       _noteCtrl.text = matchRecord.note ?? "";
+      _tournamentNameCtrl.text = matchRecord.tournamentName ?? "";
+
       _opponentId = matchRecord.opponentId;
       _venueId = matchRecord.venueId;
 
@@ -73,23 +99,23 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
         parsedCreatedAt = DateTime.tryParse(matchRecord.createdAt!);
       }
 
-      if (!readOnly) {
-        setState(() {
-          _editingDate = newEditingDate;
-          _editingMatchType = matchRecord.matchType;
-          _createdAt = parsedCreatedAt;
-          _lastLoadedMatchId = widget.matchId;
-        });
-      } else {
+      String? division = matchRecord.matchDivision;
+      if (division != null && division.isNotEmpty && !_matchDivisions.contains(division)) {
+        _matchDivisions.add(division);
+      }
+
+      setState(() {
         _editingDate = newEditingDate;
         _editingMatchType = matchRecord.matchType;
+        _selectedMatchDivision = division;
         _createdAt = parsedCreatedAt;
         _lastLoadedMatchId = widget.matchId;
-      }
+      });
     }
   }
 
   Future<void> _saveMatchInfo() async {
+    // 1. DB更新
     await ref.read(analysisControllerProvider.notifier).updateMatchInfo(
       widget.matchId,
       _editingDate,
@@ -99,7 +125,12 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
       venueName: _venueCtrl.text,
       venueId: _venueId,
       note: _noteCtrl.text,
+      tournamentName: _editingMatchType == MatchType.official ? _tournamentNameCtrl.text : null,
+      matchDivision: _editingMatchType == MatchType.official ? _selectedMatchDivision : null,
     );
+
+    // 2. 更新後のデータを画面に再反映 (これで保持されない問題を解消)
+    _loadMatchData(forceLoad: true);
 
     widget.onUpdate();
 
@@ -140,6 +171,7 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
       newDateTime,
     );
 
+    _loadMatchData(forceLoad: true);
     widget.onUpdate();
 
     if (mounted) {
@@ -147,7 +179,6 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     }
   }
 
-  // ★修正: 表示名対応に formationPractice を追加
   String _getMatchTypeName(MatchType type) {
     switch (type) {
       case MatchType.official: return "大会/公式戦";
@@ -163,6 +194,7 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     final team = store.currentTeam;
     final matchRecord = ref.watch(selectedMatchRecordProvider);
 
+    // 初回ロード、または別試合に切り替わった場合のみロード
     if (matchRecord != null && matchRecord.id == widget.matchId && _lastLoadedMatchId != widget.matchId) {
       Future.microtask(() => _loadMatchData());
     }
@@ -175,6 +207,8 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
     final venues = team.venueItems;
     final opSchema = team.opponentSchema.firstWhere((f)=>f.label=='チーム名', orElse: ()=>team.opponentSchema.first);
     final veSchema = team.venueSchema.firstWhere((f)=>f.label=='会場名', orElse: ()=>team.venueSchema.first);
+
+    final isOfficial = _editingMatchType == MatchType.official;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8.0),
@@ -193,6 +227,46 @@ class _AnalysisInfoTabState extends ConsumerState<AnalysisInfoTab> {
                   InkWell( onTap: () async { final picked = await showDatePicker( context: context, initialDate: _editingDate, firstDate: DateTime(2000), lastDate: DateTime(2030) ); if(picked != null) setState(() => _editingDate = picked); }, child: InputDecorator( decoration: const InputDecoration(labelText: "日付", border: OutlineInputBorder()), child: Row( mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Text(DateFormat('yyyy/MM/dd (E)', 'ja').format(_editingDate)), const Icon(Icons.calendar_today, size: 20), ], ), ), ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<MatchType>( value: _editingMatchType, decoration: const InputDecoration(labelText: "試合種別", border: OutlineInputBorder()), items: MatchType.values.map((t) => DropdownMenuItem(value: t, child: Text(_getMatchTypeName(t)))).toList(), onChanged: (val) { if(val != null) setState(() => _editingMatchType = val); }, ),
+
+                  if (isOfficial) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        border: Border.all(color: Colors.orange.shade200),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Column(
+                        children: [
+                          TextField(
+                            controller: _tournamentNameCtrl,
+                            decoration: const InputDecoration(
+                              labelText: "大会名",
+                              border: OutlineInputBorder(),
+                              fillColor: Colors.white,
+                              filled: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: _selectedMatchDivision,
+                            decoration: const InputDecoration(
+                              labelText: "試合区分",
+                              border: OutlineInputBorder(),
+                              fillColor: Colors.white,
+                              filled: true,
+                            ),
+                            items: _matchDivisions.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+                            onChanged: (val) {
+                              setState(() => _selectedMatchDivision = val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 8),
                   Row(children: [ Expanded(child: TextField(controller: _opponentCtrl, decoration: const InputDecoration(labelText: "対戦相手"))), PopupMenuButton<RosterItem>( icon: const Icon(Icons.list), onSelected: (item) { setState(() { _opponentCtrl.text = item.data[opSchema.id]?.toString() ?? ""; _opponentId = item.id; }); }, itemBuilder: (context) => opponents.map((i) => PopupMenuItem(value: i, child: Text(i.data[opSchema.id]?.toString() ?? ""))).toList(), ), ]),
                   const SizedBox(height: 8),

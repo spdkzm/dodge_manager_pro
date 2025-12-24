@@ -6,13 +6,15 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
+  // ★修正: 外部からアクセスするための getter を追加
+  static DatabaseHelper get instance => _instance;
+
   factory DatabaseHelper() => _instance;
   static Database? _database;
 
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v9.db';
-  // ★修正: バージョンを10に上げる
   static const int _dbVersion = 10;
 
   Future<Database> get database async {
@@ -133,6 +135,8 @@ class DatabaseHelper {
         extra_score_opponent INTEGER,
         note TEXT,
         created_at TEXT,
+        tournament_name TEXT,
+        match_division TEXT,
         FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
       )
     ''');
@@ -164,7 +168,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ★追加: 背番号履歴管理テーブル
     await db.execute('''
       CREATE TABLE uniform_numbers(
         id TEXT PRIMARY KEY,
@@ -215,14 +218,12 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE matches ADD COLUMN note TEXT");
     }
     if (oldVersion < 9) {
-      // 既存のカラム構成を確認して追加
       final columns = await db.rawQuery("PRAGMA table_info(match_participations)");
       final hasStatus = columns.any((col) => col['name'] == 'status');
       if (!hasStatus) {
         await db.execute("ALTER TABLE match_participations ADD COLUMN status INTEGER DEFAULT 0");
       }
     }
-    // ★追加: v10への移行 (背番号テーブルの追加)
     if (oldVersion < 10) {
       await db.execute('''
         CREATE TABLE uniform_numbers(
@@ -235,6 +236,16 @@ class DatabaseHelper {
           FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
         )
       ''');
+
+      // matchesテーブルの更新
+      final tableInfo = await db.rawQuery("PRAGMA table_info(matches)");
+      final columnNames = tableInfo.map((row) => row['name'] as String).toSet();
+      if (!columnNames.contains('tournament_name')) {
+        await db.execute("ALTER TABLE matches ADD COLUMN tournament_name TEXT");
+      }
+      if (!columnNames.contains('match_division')) {
+        await db.execute("ALTER TABLE matches ADD COLUMN match_division TEXT");
+      }
     }
   }
 

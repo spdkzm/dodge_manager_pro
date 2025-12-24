@@ -8,7 +8,6 @@ part 'models.g.dart';
 enum ActionResult { none, success, failure }
 enum LogType { action, system }
 
-// ★変更: ユーザー希望の順序に変更し、formationPracticeを追加
 // 0: official, 1: practiceMatch, 2: practice, 3: formationPractice
 enum MatchType { official, practiceMatch, practice, formationPractice }
 
@@ -33,7 +32,7 @@ class LogTypeConverter implements JsonConverter<LogType, int> {
 class MatchTypeConverter implements JsonConverter<MatchType, int> {
   const MatchTypeConverter();
   @override
-  MatchType fromJson(int json) => MatchType.values.length > json ? MatchType.values[json] : MatchType.official; // デフォルトも先頭のofficialに変更
+  MatchType fromJson(int json) => MatchType.values.length > json ? MatchType.values[json] : MatchType.official;
   @override
   int toJson(MatchType object) => object.index;
 }
@@ -97,6 +96,8 @@ class MatchRecord with _$MatchRecord {
     int? extraScoreOpponent,
     String? note,
     String? createdAt,
+    String? tournamentName,
+    String? matchDivision,
   }) = _MatchRecord;
 
   factory MatchRecord.fromJson(Map<String, dynamic> json) => _$MatchRecordFromJson(json);

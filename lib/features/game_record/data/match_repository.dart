@@ -69,6 +69,8 @@ class MatchRepository {
     String? venueId,
     required int matchType,
     String? note,
+    String? tournamentName, // 追加
+    String? matchDivision,  // 追加
   }) async {
     await _dao.updateBasicInfo(
       matchId: matchId,
@@ -79,6 +81,8 @@ class MatchRepository {
       venueId: venueId,
       matchType: matchType,
       note: note,
+      tournamentName: tournamentName, // 追加
+      matchDivision: matchDivision,   // 追加
     );
   }
 
