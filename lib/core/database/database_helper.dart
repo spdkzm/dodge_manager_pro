@@ -15,7 +15,7 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'dodge_manager_v9.db';
-  static const int _dbVersion = 10;
+  static const int _dbVersion = 11;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -240,6 +240,32 @@ class DatabaseHelper {
       // matchesテーブルの更新
       final tableInfo = await db.rawQuery("PRAGMA table_info(matches)");
       final columnNames = tableInfo.map((row) => row['name'] as String).toSet();
+      if (!columnNames.contains('tournament_name')) {
+        await db.execute("ALTER TABLE matches ADD COLUMN tournament_name TEXT");
+      }
+      if (!columnNames.contains('match_division')) {
+        await db.execute("ALTER TABLE matches ADD COLUMN match_division TEXT");
+      }
+    }
+    // ★追加: v10で適用漏れしたカラムやテーブルを救済するためのブロック
+    if (oldVersion < 11) {
+      // uniform_numbers の救済 (存在しなければ作成)
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS uniform_numbers(
+          id TEXT PRIMARY KEY,
+          team_id TEXT,
+          player_id TEXT,
+          number TEXT,
+          start_date TEXT,
+          end_date TEXT,
+          FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
+        )
+      ''');
+
+      // matches カラムの救済
+      final tableInfo = await db.rawQuery("PRAGMA table_info(matches)");
+      final columnNames = tableInfo.map((row) => row['name'] as String).toSet();
+
       if (!columnNames.contains('tournament_name')) {
         await db.execute("ALTER TABLE matches ADD COLUMN tournament_name TEXT");
       }
